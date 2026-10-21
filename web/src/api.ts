@@ -1,0 +1,179 @@
+export interface User {
+  id: number;
+  name: string;
+  language: "mr" | "hi" | "en";
+  wake_time: string;
+  lunch_time: string;
+  dinner_time: string;
+  interests: string[];
+  opener_start: string;
+  opener_end: string;
+  consent_distress_alert: boolean;
+}
+
+export interface Reminder {
+  id: number;
+  task: string;
+  due_at: string;
+  status: string;
+}
+
+export interface Appointment {
+  id: number;
+  title: string;
+  starts_at: string;
+  location: string;
+}
+
+export interface Contact {
+  id: number;
+  name: string;
+  relation: string;
+  phone: string;
+}
+
+export interface SharedStory {
+  id: number;
+  summary: string;
+  created_at: string;
+}
+
+export interface Note {
+  id: number;
+  kind?: string;
+  message?: string;
+  body?: string;
+  created_at: string;
+}
+
+export type Anchor = "fixed" | "wake" | "lunch" | "dinner";
+
+export interface Medicine {
+  id: number;
+  name: string;
+  dose: string;
+  anchor: Anchor;
+  time: string | null;
+  offset_min: number;
+  max_reminders: number;
+  repeat_minutes: number;
+  window_min: number;
+  photo_url: string;
+  active: boolean;
+}
+export type MedicineInput = Omit<Medicine, "id">;
+
+export interface Dose {
+  id: number;
+  medicine_id: number;
+  name: string;
+  dose: string;
+  photo_url: string;
+  anchor: Anchor;
+  due_at: string;
+  status: "due" | "reminded" | "taken" | "unconfirmed";
+  reminders_sent: number;
+  snoozed_until: string | null;
+  taken_at: string | null;
+  /** null until taken. Always self-reported. */
+  on_time: boolean | null;
+}
+
+export interface DueNow {
+  current: Dose[];
+  next: Dose | null;
+}
+
+export interface PendingAction {
+  id: number;
+  action_type: string;
+  payload: Record<string, unknown>;
+  status: string;
+}
+
+export interface DayItem {
+  kind: "reminder" | "appointment" | "medicine" | "meal" | "wake";
+  at: string;
+  label: string;
+  detail: string;
+  status: string;
+  ref_id: number | null;
+}
+
+/** Server-side view of today. `now` is the household wall clock: the one source of time. */
+export interface Day {
+  now: string;
+  weekday: number;
+  part: "morning" | "afternoon" | "evening" | "night";
+  items: DayItem[];
+  open_now: DayItem[];
+  next: DayItem | null;
+}
+
+export interface TurnReply {
+  reply: string;
+  intent: string;
+  mode: string;
+  language: string;
+  awaiting_confirmation: boolean;
+}
+
+async function call<T>(base: string, path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${base}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+const core = <T,>(path: string, init?: RequestInit) => call<T>("/core", path, init);
+const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
+
+export const api = {
+  createUser: (name: string) =>
+    core<User>("/users", post({ name, language: "mr", interests: ["cooking"] })),
+  getUser: (id: number) => core<User>(`/users/${id}`),
+  patchUser: (id: number, body: Partial<Omit<User, "id" | "name">>) =>
+    core<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  reminders: (id: number) => core<Reminder[]>(`/users/${id}/reminders`),
+  addReminder: (id: number, task: string, date: string, time: string) =>
+    core<Reminder>(`/users/${id}/reminders`, post({ task, date, time })),
+  deleteReminder: (id: number, rid: number) =>
+    core<void>(`/users/${id}/reminders/${rid}`, { method: "DELETE" }),
+  appointments: (id: number) => core<Appointment[]>(`/users/${id}/appointments`),
+  addAppointment: (id: number, title: string, startsAt: string, location: string) =>
+    core<Appointment>(
+      `/users/${id}/appointments`,
+      post({ title, starts_at: startsAt, location }),
+    ),
+  contacts: (id: number) => core<Contact[]>(`/users/${id}/contacts`),
+  addContact: (id: number, name: string, relation: string, phone: string) =>
+    core<Contact>(`/users/${id}/contacts`, post({ name, relation, phone })),
+  // Caregiver view: ONLY stories the elder explicitly shared. Never calls /stories.
+  memoryBook: (id: number) => core<SharedStory[]>(`/users/${id}/memory-book`),
+  caregiverRequests: (id: number) => core<Note[]>(`/users/${id}/caregiver-requests`),
+  notifications: (id: number) => core<Note[]>(`/users/${id}/notifications`),
+  medicines: (id: number) => core<Medicine[]>(`/users/${id}/medicines`),
+  addMedicine: (id: number, body: MedicineInput) =>
+    core<Medicine>(`/users/${id}/medicines`, post(body)),
+  patchMedicine: (id: number, mid: number, body: Partial<MedicineInput>) =>
+    core<Medicine>(`/users/${id}/medicines/${mid}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteMedicine: (id: number, mid: number) =>
+    core<void>(`/users/${id}/medicines/${mid}`, { method: "DELETE" }),
+  medicineDoses: (id: number, days = 7) => core<Dose[]>(`/users/${id}/medicine-doses?days=${days}`),
+  dueMedicines: (id: number) => core<DueNow>(`/users/${id}/medicines/due`),
+  doseTaken: (id: number, doseId: number) =>
+    core<Dose>(`/users/${id}/medicine-doses/${doseId}/taken`, { method: "POST" }),
+  doseSnooze: (id: number, doseId: number) =>
+    core<Dose>(`/users/${id}/medicine-doses/${doseId}/snooze`, post({ minutes: 15 })),
+  day: (id: number) => core<Day>(`/users/${id}/day`),
+  pendingAction: (id: number) => core<PendingAction | null>(`/users/${id}/actions/pending`),
+  nextAppointment: (id: number) => core<Appointment | null>(`/users/${id}/appointments/next`),
+  turn: (userId: number, text: string) =>
+    call<TurnReply>("/reasoning", "/turn", post({ user_id: userId, text })),
+};

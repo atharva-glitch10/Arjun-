@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReasoningIntent",
+  "type": "object",
+  "required": ["intent", "confidence", "language"],
+  "additionalProperties": false,
+  "properties": {
+    "intent": {
+      "enum": [
+        "CREATE_REMINDER", "LIST_TODAY", "COMPLETE_REMINDER", "GET_APPOINTMENT",
+        "CALL_FAMILY_REMINDER", "REQUEST_CAREGIVER", "CONFIRM_YES", "CONFIRM_NO",
+        "CHAT", "SHARE_STORY_WITH_FAMILY", "FORGET_MEMORY", "DECLINE_TOPIC",
+        "MED_TAKEN", "MED_SNOOZE", "MEDICAL_QUESTION", "TIME_QUERY", "NEXT_UP", "DISTRESS", "UNKNOWN"
+      ]
+    },
+    "task": {"type": ["string", "null"]},
+    "date": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "time": {"type": ["string", "null"], "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"},
+    "time_ambiguous": {"type": "boolean"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "language": {"enum": ["mr", "hi", "en"]}
+  }
+}

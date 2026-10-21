@@ -1,0 +1,35 @@
+# Secrets: one root .env only; only .env.example is tracked
+.env
+*.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node / build output
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Local databases and editor state
+*.db
+.vscode/
+
+# Audio recordings (never stored, see CLAUDE.md boundary 9)
+*.wav
+*.mp3
+*.ogg
+*.opus
+*.m4a
+*.flac
+*.webm
+
+# Private eval data and per-turn logs
+eval/private/
+eval/results/turns.jsonl

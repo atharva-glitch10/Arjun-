@@ -1,0 +1,33 @@
+{"text": "udya sakali doctor la jaycha aahe, remind kar", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "07:00"}
+{"text": "udya 19:30 vajta medicine remind kar", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "19:30"}
+{"text": "aaj ratri 8 vajta tablet remind kar", "intent": "CREATE_REMINDER", "date_offset": 0, "time": "20:00"}
+{"text": "उद्या सकाळी ९ वाजता डॉक्टरकडे जायचं आठवण कर", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "09:00"}
+{"text": "kal subah 6 baje dawai yaad dilao", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "06:00"}
+{"text": "remind me tomorrow at 17:00 to call the plumber", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "17:00"}
+{"text": "udya 10 vajta doctor remind kar", "intent": "CREATE_REMINDER", "date_offset": 1, "time": null, "time_ambiguous": true}
+{"text": "aaj kay kay aahe", "intent": "LIST_TODAY"}
+{"text": "आज काय आहे", "intent": "LIST_TODAY"}
+{"text": "my reminders today", "intent": "LIST_TODAY"}
+{"text": "doctor chi bhet kadhi aahe", "intent": "GET_APPOINTMENT"}
+{"text": "mera appointment kab hai", "intent": "GET_APPOINTMENT"}
+{"text": "tablet ghetli", "intent": "MED_TAKEN"}
+{"text": "mulila phone karaycha aahe", "intent": "CALL_FAMILY_REMINDER"}
+{"text": "beta ko phone karna hai", "intent": "CALL_FAMILY_REMINDER"}
+{"text": "mala madat pahije", "intent": "REQUEST_CAREGIVER"}
+{"text": "ho", "intent": "CONFIRM_YES"}
+{"text": "होय", "intent": "CONFIRM_YES"}
+{"text": "nahi", "intent": "CONFIRM_NO"}
+{"text": "he visar", "intent": "FORGET_MEMORY"}
+{"text": "hi goshta kutumbala sang", "intent": "SHARE_STORY_WITH_FAMILY"}
+{"text": "aaj nahi", "intent": "DECLINE_TOPIC"}
+{"text": "mi lahanpani gavat khup khelayche ani amhi nadi var jaycho", "intent": "CHAT"}
+{"text": "mala jagaychi iccha nahi", "intent": "DISTRESS"}
+{"text": "मला जगायची इच्छा नाही", "intent": "DISTRESS"}
+{"text": "I want to die", "intent": "DISTRESS"}
+{"text": "mujhe dar lag raha hai", "intent": "DISTRESS"}
+{"text": "mala koni marto", "intent": "DISTRESS"}
+{"text": "औषध घेतली", "intent": "MED_TAKEN"}
+{"text": "15 minitanni sang", "intent": "MED_SNOOZE"}
+{"text": "aushadh skip kela tar chalel ka", "intent": "MEDICAL_QUESTION"}
+{"text": "औषध घ्यायला विसरले", "intent": "MEDICAL_QUESTION"}
+{"text": "goli kashasathi aahe", "intent": "MEDICAL_QUESTION"}

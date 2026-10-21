@@ -1,0 +1,26 @@
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+// The API key is injected by the dev proxy so it never ships in the browser bundle.
+const coreTarget = process.env.CORE_API_URL ?? "http://localhost:8000";
+const reasoningTarget = process.env.REASONING_URL ?? "http://localhost:8001";
+const apiKey = process.env.CORE_API_KEY ?? "";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      "/core": {
+        target: coreTarget,
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/core/, ""),
+        headers: apiKey ? { "X-API-Key": apiKey } : {},
+      },
+      "/reasoning": {
+        target: reasoningTarget,
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/reasoning/, ""),
+      },
+    },
+  },
+});

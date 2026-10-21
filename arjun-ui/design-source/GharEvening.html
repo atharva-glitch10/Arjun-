@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="mr">
+<head>
+<meta charset="utf-8">
+<title>Ghar evening home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;800&amp;family=Tiro+Devanagari+Marathi&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F2B632}a:hover{color:#FFD36E}
+button{font-family:inherit;cursor:pointer}
+button:active{transform:scale(.97)}
+@keyframes flicker{0%,100%{transform:scale(1,1)}50%{transform:scale(1.07,1.15)}}
+.flame{transform-box:fill-box;transform-origin:50% 100%;animation:flicker 1.5s ease-in-out infinite}
+@keyframes halo{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:.8;transform:scale(1.1)}}
+.halo{animation:halo 3s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.flame,.halo{animation:none}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 44px 22px 22px; background: #1B2447; font-family: 'Mukta', sans-serif; color: #FBF1DE; display: flex; flex-direction: column; gap: 18px">
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+    <div style="display: flex; flex-direction: column">
+      <h1 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 34px; line-height: 1.35; font-weight: 400">शुभ संध्याकाळ, आजी</h1>
+      <span style="font-size: 22px; line-height: 1.4; color: #D9CCB4">मंगळवार · संध्याकाळी ७:१०</span>
+    </div>
+    <svg width="48" height="48" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" fill="#F2B632"></path></svg>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 24px; background: #FBF1DE; color: #2A1E14">
+    <div style="width: 60px; height: 60px; flex-shrink: 0; border-radius: 50%; background: #DCEBD8; display: flex; align-items: center; justify-content: center">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2F6B3A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 20.5l10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7z"></path><path d="M8.5 8.5l7 7"></path></svg>
+    </div>
+    <div style="display: flex; flex-direction: column">
+      <span style="font-size: 20px; line-height: 1.35; color: #5C4632">रात्री जेवणानंतर · ८:४५</span>
+      <span style="font-size: 26px; line-height: 1.3; font-weight: 800">Homin XY</span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px">
+    <button aria-label="अर्जुनशी बोला" style="position: relative; width: 210px; height: 210px; border-radius: 50%; border: none; background: transparent; display: flex; align-items: center; justify-content: center">
+      <div class="halo" style="position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgba(242,182,50,.6) 0%, rgba(242,182,50,0) 68%)"></div>
+      <div style="position: relative; width: 150px; height: 150px; border-radius: 50%; background: #F2B632; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #2A1E14">
+        <svg width="54" height="54" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15 Q12 23 21 15 Z" fill="#B5652A"></path><path class="flame" d="M12 3 C14.6 7 15 9.4 12 12.5 C9 9.4 9.4 7 12 3 Z" fill="#B3261E"></path></svg>
+        <span style="font-size: 32px; line-height: 1.1; font-weight: 800">बोला</span>
+      </div>
+    </button>
+    <span style="font-size: 22px; line-height: 1.4; color: #D9CCB4">गप्पा मारूया?</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+    <button style="min-height: 84px; border-radius: 22px; border: 3px solid #FBF1DE; background: transparent; color: #FBF1DE; font-size: 24px; line-height: 1.3; font-weight: 800">आज काय?</button>
+    <button style="min-height: 84px; border-radius: 22px; border: 3px solid #FBF1DE; background: #B3261E; color: #FFFFFF; font-size: 24px; line-height: 1.3; font-weight: 800">मदत</button>
+  </div>
+  <span style="font-size: 18px; line-height: 1.4; text-align: center; color: #D9CCB4">अर्जुन — तुमचा AI सोबती</span>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

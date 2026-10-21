@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="mr">
+<head>
+<meta charset="utf-8">
+<title>Ghar Kahani diary</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;800&amp;family=Tiro+Devanagari+Marathi&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#23305E}a:hover{color:#151D3B}
+button{font-family:inherit;cursor:pointer}
+button:active{transform:scale(.97)}
+@keyframes flicker{0%,100%{transform:scale(1,1)}50%{transform:scale(1.07,1.15)}}
+.flame{transform-box:fill-box;transform-origin:50% 100%;animation:flicker 1.5s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.flame{animation:none}}
+.ruled{background-color:#FFFDF6;background-image:repeating-linear-gradient(to bottom, transparent 0, transparent 41px, #E7D6B5 41px, #E7D6B5 42px)}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 40px 20px 22px; background: #23305E; font-family: 'Mukta', sans-serif; color: #2A1E14; display: flex; flex-direction: column; gap: 16px">
+  <div style="display: flex; align-items: center; gap: 10px; color: #FFFFFF">
+    <svg width="36" height="36" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15 Q12 23 21 15 Z" fill="#C97A3A"></path><path class="flame" d="M12 3 C14.6 7 15 9.4 12 12.5 C9 9.4 9.4 7 12 3 Z" fill="#F2B632"></path></svg>
+    <h1 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 32px; line-height: 1.35; font-weight: 400">आजीची वही</h1>
+  </div>
+
+  <div style="padding: 14px 18px; border-radius: 20px; background: #F2B632; color: #2A1E14">
+    <p style="margin: 0; font-size: 23px; line-height: 1.5; font-weight: 600">आजी, आज धपाटे करायचे का? तुमची रेसिपी मला शिकवा ना?</p>
+  </div>
+
+  <div class="ruled" style="flex-grow: 1; border-radius: 6px 22px 22px 6px; padding: 14px 20px 14px 30px; box-shadow: inset 6px 0 0 #B3261E; display: flex; flex-direction: column">
+    <span style="font-size: 18px; line-height: 42px; font-weight: 600; color: #5C4632">मंगळवार · धपाटे</span>
+    <p style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 25px; line-height: 42px">ज्वारीचं पीठ घ्यायचं, त्यात थोडं बेसन. कांदा बारीक चिरायचा, मेथी घालायची…</p>
+    <span style="font-size: 18px; line-height: 42px; color: #5C4632">ऐकतोय… सावकाश सांगा</span>
+  </div>
+
+  <div style="padding: 18px; border-radius: 22px; background: #FFFFFF; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: center; gap: 12px">
+      <div style="display: flex">
+        <div style="width: 52px; height: 52px; border-radius: 50%; background: #E8833A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; border: 3px solid #FFFFFF" role="img" aria-label="[नेहाचा फोटो]">ने</div>
+        <div style="width: 52px; height: 52px; margin-left: -14px; border-radius: 50%; background: #2F6B3A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; border: 3px solid #FFFFFF" role="img" aria-label="[आर्यनचा फोटो]">आ</div>
+      </div>
+      <p style="margin: 0; font-size: 24px; line-height: 1.4; font-weight: 800">नेहा आणि आर्यनला पाठवू?</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+      <button style="min-height: 76px; border-radius: 18px; border: none; background: #23305E; color: #FFFFFF; font-size: 24px; line-height: 1.3; font-weight: 800">हो, पाठवा</button>
+      <button style="min-height: 76px; border-radius: 18px; border: 3px solid #5C4632; background: #FFFFFF; color: #2A1E14; font-size: 24px; line-height: 1.3; font-weight: 800">नको</button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; color: #5C4632">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      <span style="font-size: 18px; line-height: 1.4">“हो” म्हणेपर्यंत फक्त तुमच्यासाठी</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

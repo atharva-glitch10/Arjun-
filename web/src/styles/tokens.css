@@ -1,0 +1,68 @@
+/* Arjun "Ghar" design tokens */
+@import url('https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;800&family=Tiro+Devanagari+Marathi&display=swap');
+
+:root {
+  --ghar-ground: #FBF1DE;
+  --ghar-surface: #FFFFFF;
+  --ghar-ink: #2A1E14;
+  --ghar-ink-muted: #5C4632;
+  --ghar-indigo: #23305E;
+  --ghar-night: #1B2447;
+  --ghar-haldi: #F2B632;
+  --ghar-kumkum: #B3261E;
+  --ghar-leaf: #2F6B3A;
+  --ghar-card-shadow: #EAD9B8;
+
+  --font-display: 'Tiro Devanagari Marathi', serif;
+  --font-body: 'Mukta', sans-serif;
+
+  --elder-text: 24px;
+  --elder-text-key: 48px;
+  --elder-button-h: 88px;
+  --radius-card: 24px;
+  --radius-button: 22px;
+}
+
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 12px rgba(242,182,50,.45), 0 0 0 26px rgba(242,182,50,.18); }
+  50% { box-shadow: 0 0 0 18px rgba(242,182,50,.35), 0 0 0 36px rgba(242,182,50,.10); }
+}
+@keyframes flicker { 0%, 100% { transform: scale(1,1); } 50% { transform: scale(1.07,1.15); } }
+@keyframes halo { 0%, 100% { opacity: .5; transform: scale(1); } 50% { opacity: .9; transform: scale(1.1); } }
+@keyframes pop { 0% { transform: scale(.5); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+
+.breathe { animation: breathe 2.8s ease-in-out infinite; }
+.flame { transform-box: fill-box; transform-origin: 50% 100%; animation: flicker 1.5s ease-in-out infinite; }
+.halo { animation: halo 2.4s ease-in-out infinite; }
+.pop { animation: pop .55s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe, .flame, .halo, .pop { animation: none; }
+}
+
+/* Supporting tones taken from the design mockups (not in the handoff token table). */
+:root {
+  --ghar-haldi-soft: #FDE7A6;
+  --ghar-leaf-soft: #DCEBD8;
+  --ghar-leaf-deep: #1E4A27;
+  --ghar-marigold: #E8833A;
+  --ghar-leaf-light: #4E8A3E;
+  --ghar-wood: #7A4A22;
+  --ghar-copper: #B5652A;
+  --ghar-copper-light: #C97A3A;
+  --ghar-night-text: #D9CCB4;
+  --ghar-paper: #FFFDF6;
+  --ghar-rule: #E7D6B5;
+  --ghar-sand: #F3E6CC;
+  --ghar-row: #FBF6EC;
+  --ghar-line: #F0E3C8;
+  --ghar-miss: #8A7560;
+  --ghar-photo: #EDE3D0;
+}
+
+@keyframes sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+.sway { transform-origin: 50% 0; animation: sway 3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .sway { animation: none; } }
+
+/* Family-controlled "reduce motion" setting (see DESIGN_HANDOFF: Motion). */
+.no-motion .breathe, .no-motion .flame, .no-motion .halo, .no-motion .pop, .no-motion .sway { animation: none; }

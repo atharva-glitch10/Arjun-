@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProposedAction",
+  "description": "Action proposed by reasoning; core-api validates, stores as pending, executes only after spoken confirmation.",
+  "type": "object",
+  "required": ["action_type", "payload"],
+  "properties": {
+    "action_type": {
+      "enum": ["CREATE_REMINDER", "COMPLETE_REMINDER", "REQUEST_CAREGIVER", "SHARE_STORY", "SAVE_STORY",
+             "MEDICINE_TAKEN", "MEDICINE_SNOOZE"]
+    },
+    "payload": {"type": "object"}
+  }
+}

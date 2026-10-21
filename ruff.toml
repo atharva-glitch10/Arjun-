@@ -1,0 +1,8 @@
+line-length = 100
+target-version = "py311"
+extend-exclude = ["web", ".venv"]
+
+[lint]
+select = ["E", "F", "I", "B"]
+# E501: reply templates are long Devanagari strings. B008: FastAPI's Depends() idiom.
+ignore = ["E501", "B008"]

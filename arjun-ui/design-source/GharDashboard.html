@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Family dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;800&amp;family=Tiro+Devanagari+Marathi&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FBF1DE}
+a{color:#23305E}a:hover{color:#151D3B}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="box-sizing: border-box; width: 100%; min-height: 1180px; background: #FBF1DE; font-family: 'Mukta', sans-serif; color: #2A1E14; padding: 28px 4% 40px">
+<div style="max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+    <div style="display: flex; align-items: center; gap: 12px">
+      <svg width="44" height="44" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15 Q12 23 21 15 Z" fill="#B5652A"></path><path d="M12 3 C14.6 7 15 9.4 12 12.5 C9 9.4 9.4 7 12 3 Z" fill="#F2B632"></path></svg>
+      <div style="display: flex; flex-direction: column">
+        <h1 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 34px; line-height: 1.25; font-weight: 400">Aaji's day</h1>
+        <span style="font-size: 17px; line-height: 1.4; color: #5C4632">Tuesday, 13 Oct · updated 9:15 PM</span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; background: #FFFFFF; font-size: 17px; font-weight: 600; box-shadow: 0 2px 0 #EAD9B8">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2F6B3A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>
+      No help requests today
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px">
+    <div style="padding: 16px 18px; border-radius: 20px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 16px; color: #5C4632">Medicines</span>
+      <span style="font-size: 26px; line-height: 1.25; font-weight: 800">2 of 2 on time</span>
+    </div>
+    <div style="padding: 16px 18px; border-radius: 20px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 16px; color: #5C4632">Meals</span>
+      <span style="font-size: 26px; line-height: 1.25; font-weight: 800">3 of 3 eaten</span>
+    </div>
+    <div style="padding: 16px 18px; border-radius: 20px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 16px; color: #5C4632">Evening walk</span>
+      <span style="font-size: 26px; line-height: 1.25; font-weight: 800">Done · 6:10 PM</span>
+    </div>
+    <div style="padding: 16px 18px; border-radius: 20px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 16px; color: #5C4632">BP check</span>
+      <span style="font-size: 26px; line-height: 1.25; font-weight: 800">142/88 · 9:05 AM</span>
+    </div>
+    <div style="padding: 16px 18px; border-radius: 20px; background: #F3E6CC; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 16px; color: #5C4632">Sugar check</span>
+      <span style="font-size: 26px; line-height: 1.25; font-weight: 800">Not set up</span>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start">
+
+    <section style="flex: 1 1 480px; min-width: 0; box-sizing: border-box; padding: 22px; border-radius: 22px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8; display: flex; flex-direction: column; gap: 12px">
+      <h2 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 26px; line-height: 1.3; font-weight: 400">Today</h2>
+      <sc-for list="{{timeline}}" as="t" hint-placeholder-count="8">
+        <div style="display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 14px; background: #FBF6EC">
+          <span style="width: 78px; flex-shrink: 0; font-size: 17px; font-weight: 800">{{t.time}}</span>
+          <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+            <span style="font-size: 18px; line-height: 1.35; font-weight: 600">{{t.label}}</span>
+            <span style="font-size: 15px; line-height: 1.4; color: #5C4632">{{t.detail}}</span>
+          </div>
+          <sc-if value="{{t.ok}}" hint-placeholder-val="{{true}}">
+            <span style="flex-shrink: 0; font-size: 14px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #DCEBD8; color: #1E4A27">{{t.status}}</span>
+          </sc-if>
+          <sc-if value="{{t.info}}" hint-placeholder-val="{{false}}">
+            <span style="flex-shrink: 0; font-size: 14px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #FDE7A6; color: #2A1E14">{{t.status}}</span>
+          </sc-if>
+        </div>
+      </sc-for>
+      <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #5C4632">Everything here is what Aaji told Arjun. “On time” = within 30 min of the set time.</p>
+    </section>
+
+    <div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 22px">
+
+      <section style="box-sizing: border-box; padding: 22px; border-radius: 22px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8; display: flex; flex-direction: column; gap: 12px">
+        <h2 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 26px; line-height: 1.3; font-weight: 400">This week</h2>
+        <div style="overflow-x: auto">
+          <div style="min-width: 380px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: grid; grid-template-columns: 110px repeat(7, minmax(0, 1fr)); gap: 6px; font-size: 14px; font-weight: 600; color: #5C4632; text-align: center">
+              <span></span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span><span>Mon</span><span>Tue</span>
+            </div>
+            <sc-for list="{{week}}" as="row" hint-placeholder-count="4">
+              <div style="display: grid; grid-template-columns: 110px repeat(7, minmax(0, 1fr)); gap: 6px; align-items: center">
+                <span style="font-size: 16px; font-weight: 600">{{row.name}}</span>
+                <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="7">
+                  <div style="display: flex; justify-content: center">
+                    <sc-if value="{{c.ok}}" hint-placeholder-val="{{true}}">
+                      <div style="width: 30px; height: 30px; border-radius: 50%; background: #2F6B3A; display: flex; align-items: center; justify-content: center" role="img" aria-label="On time"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg></div>
+                    </sc-if>
+                    <sc-if value="{{c.late}}" hint-placeholder-val="{{false}}">
+                      <div style="width: 30px; height: 30px; border-radius: 50%; background: #F2B632; display: flex; align-items: center; justify-content: center" role="img" aria-label="Late"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2A1E14" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 1.5"></path></svg></div>
+                    </sc-if>
+                    <sc-if value="{{c.miss}}" hint-placeholder-val="{{false}}">
+                      <div style="width: 26px; height: 26px; border-radius: 50%; border: 2px solid #8A7560; background: #FFFFFF; display: flex; align-items: center; justify-content: center" role="img" aria-label="Not confirmed"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5C4632" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 15px; color: #5C4632">
+          <span>● green check = on time</span><span>● haldi clock = late</span><span>○ cross = not confirmed</span>
+        </div>
+      </section>
+
+      <section style="box-sizing: border-box; padding: 22px; border-radius: 22px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px">
+          <h2 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 26px; line-height: 1.3; font-weight: 400">Health checks</h2>
+          <button style="min-height: 44px; padding: 8px 16px; border-radius: 12px; border: 2px solid #23305E; background: #FFFFFF; color: #23305E; font-size: 16px; font-weight: 800">Export for doctor</button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 18px; font-weight: 800">BP · every morning before breakfast</span>
+          <span style="font-size: 15px; line-height: 1.4; color: #5C4632">Doctor's range: [enter range from doctor]</span>
+        </div>
+        <div style="display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; border: 2px solid #F0E3C8">
+          <sc-for list="{{bp}}" as="r" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px 14px; background: #FFFFFF; border-bottom: 1px solid #F0E3C8; font-size: 16px">
+              <span style="color: #5C4632">{{r.day}}</span>
+              <span style="font-weight: 800">{{r.value}}</span>
+              <span style="color: #5C4632">{{r.pulse}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding: 14px 16px; border-radius: 14px; background: #F3E6CC; display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 18px; font-weight: 800">Sugar · not set up</span>
+          <span style="font-size: 15px; line-height: 1.5">Turn on only if Aaji's doctor has asked for home sugar checks. Arjun will ask at the times you set.</span>
+          <button style="align-self: flex-start; min-height: 44px; padding: 8px 16px; border-radius: 12px; border: none; background: #23305E; color: #FFFFFF; font-size: 16px; font-weight: 800">Set up sugar checks</button>
+        </div>
+        <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #5C4632">Arjun records the numbers Aaji reads out and repeats them back to confirm. It never tells her whether a reading is good or bad. Please discuss readings with her doctor.</p>
+      </section>
+
+    </div>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const tl = [
+      ['8:10 AM', 'Breakfast', 'Set for 8:00', 'Eaten', 'ok'],
+      ['9:05 AM', 'BP check', '142/88 · pulse 76 · confirmed by Aaji', 'Recorded', 'info'],
+      ['1:05 PM', 'Lunch', 'Set for 1:00', 'Eaten', 'ok'],
+      ['1:20 PM', 'Telma AM · [dose]', 'After lunch · set for 1:15', 'On time', 'ok'],
+      ['4:02 PM', 'Call Rahul', 'Reminder', 'Done', 'ok'],
+      ['6:10 PM', 'Evening walk', 'Set for 6:00', 'Done', 'ok'],
+      ['8:40 PM', 'Dinner', 'Set for 8:30', 'Eaten', 'ok'],
+      ['8:50 PM', 'Homin XY · [dose]', 'After dinner · set for 8:45', 'On time', 'ok']
+    ].map(([time, label, detail, status, kind]) => ({ time, label, detail, status, ok: kind === 'ok', info: kind === 'info' }));
+    const cell = (k) => ({ ok: k === 'o', late: k === 'l', miss: k === 'x' });
+    const row = (name, s) => ({ name, cells: s.split('').map(cell) });
+    return {
+      timeline: tl,
+      week: [
+        row('Telma AM', 'oooloo' + 'o'),
+        row('Homin XY', 'oxooooo'),
+        row('Meals', 'ooool' + 'oo'),
+        row('Walk', 'ooxoooo')
+      ],
+      bp: [
+        { day: 'Tue 13', value: '142/88', pulse: 'pulse 76' },
+        { day: 'Mon 12', value: '136/84', pulse: 'pulse 74' },
+        { day: 'Sun 11', value: '138/86', pulse: 'pulse 78' },
+        { day: 'Sat 10', value: 'not recorded', pulse: '' },
+        { day: 'Fri 9', value: '134/82', pulse: 'pulse 72' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

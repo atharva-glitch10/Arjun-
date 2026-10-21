@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: arjun
+      POSTGRES_PASSWORD: arjun
+      POSTGRES_DB: arjun
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arjun"]
+      interval: 5s
+      retries: 10
+
+  core-api:
+    build: ./services/core-api
+    environment:
+      DATABASE_URL: postgresql+psycopg://arjun:arjun@postgres:5432/arjun
+      CORE_API_KEY: ${CORE_API_KEY:-dev-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports: ["8000:8000"]
+
+  reasoning:
+    build:
+      context: .
+      dockerfile: services/reasoning/Dockerfile
+    environment:
+      CORE_API_URL: http://core-api:8000
+      CORE_API_KEY: ${CORE_API_KEY:-dev-change-me}
+      EVON_BASE_URL: ${EVON_BASE_URL:-}
+      EVON_MODEL: ${EVON_MODEL:-gnani/gnani-evon-v3.3-30B-A3B}
+    depends_on: [core-api]
+    ports: ["8001:8001"]
+
+  scheduler:
+    build: ./services/scheduler
+    environment:
+      CORE_API_URL: http://core-api:8000
+      REASONING_URL: http://reasoning:8001
+      CORE_API_KEY: ${CORE_API_KEY:-dev-change-me}
+      OPENER_USER_IDS: ${OPENER_USER_IDS:-}
+    depends_on: [core-api, reasoning]
+
+  web:
+    build: ./web
+    environment:
+      CORE_API_URL: http://core-api:8000
+      REASONING_URL: http://reasoning:8001
+      CORE_API_KEY: ${CORE_API_KEY:-dev-change-me}
+    depends_on: [core-api, reasoning]
+    ports: ["5173:5173"]
+
+volumes:
+  pgdata:

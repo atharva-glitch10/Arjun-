@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="mr">
+<head>
+<meta charset="utf-8">
+<title>Ghar home prototype</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;800&amp;family=Tiro+Devanagari+Marathi&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#23305E}a:hover{color:#151D3B}
+button{font-family:inherit;cursor:pointer}
+button:active{transform:scale(.97)}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 12px rgba(242,182,50,.45),0 0 0 26px rgba(242,182,50,.18)}50%{box-shadow:0 0 0 18px rgba(242,182,50,.35),0 0 0 36px rgba(242,182,50,.10)}}
+.breathe{animation:breathe 2.8s ease-in-out infinite}
+@keyframes flicker{0%,100%{transform:scale(1,1)}50%{transform:scale(1.07,1.15)}}
+.flame{transform-box:fill-box;transform-origin:50% 100%;animation:flicker 1.5s ease-in-out infinite}
+@keyframes halo{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.9;transform:scale(1.1)}}
+.halo{animation:halo 2.4s ease-in-out infinite}
+@keyframes pop{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.08);opacity:1}100%{transform:scale(1)}}
+.pop{animation:pop .55s ease-out both}
+@media (prefers-reduced-motion: reduce){.breathe,.flame,.halo,.pop{animation:none}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; font-family: 'Mukta', sans-serif; color: #2A1E14">
+
+<sc-if value="{{isHome}}" hint-placeholder-val="{{true}}">
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #FBF1DE; display: flex; flex-direction: column">
+  <svg width="390" height="58" viewBox="0 0 390 58" aria-hidden="true">
+    <path d="M0 10 Q195 26 390 10" fill="none" stroke="#7A4A22" stroke-width="2"></path>
+    <path d="M24 13 q-10 18 0 38 q10 -20 0 -38z" fill="#2F6B3A"></path>
+    <circle cx="45" cy="17" r="7" fill="#F2B632"></circle>
+    <path d="M66 16 q-10 18 0 38 q10 -20 0 -38z" fill="#4E8A3E"></path>
+    <circle cx="87" cy="19" r="7" fill="#E8833A"></circle>
+    <path d="M108 18 q-10 18 0 38 q10 -20 0 -38z" fill="#2F6B3A"></path>
+    <circle cx="129" cy="20" r="7" fill="#F2B632"></circle>
+    <path d="M150 19 q-10 18 0 38 q10 -20 0 -38z" fill="#4E8A3E"></path>
+    <circle cx="172" cy="20" r="7" fill="#E8833A"></circle>
+    <path d="M195 19 q-10 18 0 38 q10 -20 0 -38z" fill="#2F6B3A"></path>
+    <circle cx="218" cy="20" r="7" fill="#F2B632"></circle>
+    <path d="M240 19 q-10 18 0 38 q10 -20 0 -38z" fill="#4E8A3E"></path>
+    <circle cx="261" cy="20" r="7" fill="#E8833A"></circle>
+    <path d="M282 18 q-10 18 0 38 q10 -20 0 -38z" fill="#2F6B3A"></path>
+    <circle cx="303" cy="19" r="7" fill="#F2B632"></circle>
+    <path d="M324 16 q-10 18 0 38 q10 -20 0 -38z" fill="#4E8A3E"></path>
+    <circle cx="345" cy="17" r="7" fill="#E8833A"></circle>
+    <path d="M366 13 q-10 18 0 38 q10 -20 0 -38z" fill="#2F6B3A"></path>
+  </svg>
+
+  <div style="flex-grow: 1; box-sizing: border-box; padding: 8px 22px 22px; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <div style="display: flex; flex-direction: column">
+        <h1 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 36px; line-height: 1.35; font-weight: 400">शुभ सकाळ, आजी</h1>
+        <span style="font-size: 22px; line-height: 1.4; color: #5C4632">मंगळवार, १३ ऑक्टोबर</span>
+      </div>
+      <svg width="56" height="56" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="5.5" fill="#F2B632"></circle><path d="M12 4v2.5M4.5 14H2M22 14h-2.5M6.3 8.3 4.6 6.6M17.7 8.3l1.7-1.7" stroke="#E8833A" stroke-width="2" stroke-linecap="round"></path><path d="M1 20h22" stroke="#7A4A22" stroke-width="2" stroke-linecap="round"></path></svg>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 24px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8">
+        <div style="width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; background: #23305E; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800" aria-label="[राहुलचा फोटो]" role="img">रा</div>
+        <div style="display: flex; flex-direction: column">
+          <span style="font-size: 20px; line-height: 1.35; color: #5C4632">दुपारी ४ वाजता</span>
+          <span style="font-size: 26px; line-height: 1.35; font-weight: 800">राहुलला फोन</span>
+        </div>
+      </div>
+      <sc-if value="{{hasSaved}}" hint-placeholder-val="{{false}}">
+      <div class="pop" style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 24px; background: #FFFFFF; box-shadow: 0 2px 0 #EAD9B8">
+        <div style="width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; background: #FDE7A6; display: flex; align-items: center; justify-content: center">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2A1E14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+        </div>
+        <div style="display: flex; flex-direction: column">
+          <span style="font-size: 20px; line-height: 1.35; color: #5C4632">उद्या सकाळी १० वाजता</span>
+          <span style="font-size: 26px; line-height: 1.35; font-weight: 800">डॉक्टरकडे</span>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+
+    <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px">
+      <button class="breathe" onClick="{{toListen}}" aria-label="अर्जुनशी बोला" style="width: 196px; height: 196px; border-radius: 50%; border: none; background: #23305E; color: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10v1a7 7 0 0 0 14 0v-1"></path><path d="M12 18v4"></path><path d="M8 22h8"></path></svg>
+        <span style="font-size: 36px; line-height: 1.2; font-weight: 800">बोला</span>
+      </button>
+      <span style="font-size: 22px; line-height: 1.4; color: #5C4632">दाबा आणि बोला</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+      <button style="min-height: 84px; border-radius: 22px; border: 3px solid #23305E; background: #FFFFFF; color: #23305E; font-size: 24px; line-height: 1.3; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 8px">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>
+        आज काय?
+      </button>
+      <button style="min-height: 84px; border-radius: 22px; border: 3px solid #B3261E; background: #B3261E; color: #FFFFFF; font-size: 24px; line-height: 1.3; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 8px">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>
+        मदत
+      </button>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15 Q12 23 21 15 Z" fill="#B5652A"></path><path class="flame" d="M12 3 C14.6 7 15 9.4 12 12.5 C9 9.4 9.4 7 12 3 Z" fill="#F2B632"></path></svg>
+      <span style="font-size: 18px; line-height: 1.4; color: #5C4632">अर्जुन — तुमचा AI सोबती</span>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{isListen}}" hint-placeholder-val="{{false}}">
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 48px 24px 28px; background: #23305E; color: #FFFFFF; display: flex; flex-direction: column; gap: 22px">
+  <h1 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 38px; line-height: 1.35; font-weight: 400; text-align: center">मी ऐकतोय…</h1>
+  <div style="height: 250px; position: relative; display: flex; align-items: center; justify-content: center">
+    <div class="halo" style="position: absolute; width: 230px; height: 230px; border-radius: 50%; background: radial-gradient(circle, rgba(242,182,50,.55) 0%, rgba(242,182,50,0) 70%)"></div>
+    <svg width="150" height="150" viewBox="0 0 24 24" role="img" aria-label="अर्जुन ऐकत आहे" style="position: relative"><path d="M3 15 Q12 23 21 15 Z" fill="#C97A3A"></path><path d="M5 15 Q12 19.5 19 15" fill="none" stroke="#7A4A22" stroke-width=".8"></path><path class="flame" d="M12 2.5 C15 7 15.5 9.6 12 13 C8.5 9.6 9 7 12 2.5 Z" fill="#F2B632"></path><path class="flame" d="M12 6.5 C13.2 8.6 13.3 10 12 11.6 C10.7 10 10.8 8.6 12 6.5 Z" fill="#FFF4D6"></path></svg>
+  </div>
+  <div style="padding: 20px; border-radius: 22px; background: #FBF1DE; color: #2A1E14; display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 20px; line-height: 1.4; color: #5C4632">तुम्ही म्हणालात</span>
+    <p style="margin: 0; font-size: 28px; line-height: 1.5; font-weight: 600">“उद्या सकाळी १० वाजता डॉक्टरकडे जायचं आहे, आठवण कर”</p>
+  </div>
+  <div style="margin-top: auto; display: flex; flex-direction: column; gap: 12px">
+    <button onClick="{{toConfirm}}" style="min-height: 88px; border-radius: 22px; border: none; background: #F2B632; color: #2A1E14; font-size: 28px; line-height: 1.3; font-weight: 800">झालं, पुढे</button>
+    <button onClick="{{toHome}}" style="min-height: 76px; border-radius: 22px; border: 3px solid #FFFFFF; background: transparent; color: #FFFFFF; font-size: 24px; line-height: 1.3; font-weight: 600">थांबा</button>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{isConfirm}}" hint-placeholder-val="{{false}}">
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 48px 22px 26px; background: #FBF1DE; display: flex; flex-direction: column; gap: 20px">
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+    <h1 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 34px; line-height: 1.35; font-weight: 400">मी असं समजलो</h1>
+    <button aria-label="पुन्हा ऐका" style="width: 64px; height: 64px; border-radius: 50%; border: 3px solid #23305E; background: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#23305E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg>
+    </button>
+  </div>
+  <div style="border-radius: 26px; overflow: hidden; background: #FFFFFF; box-shadow: 0 3px 0 #EAD9B8">
+    <div style="padding: 14px 22px; background: #F2B632; font-size: 24px; line-height: 1.35; font-weight: 800">उद्या · बुधवार</div>
+    <div style="padding: 20px 22px 24px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 54px; line-height: 1.1; font-weight: 800; color: #23305E">सकाळी १०:००</span>
+      <span style="font-size: 28px; line-height: 1.4; font-weight: 600">डॉक्टरकडे जायचं</span>
+    </div>
+  </div>
+  <p style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 32px; line-height: 1.35; text-align: center">बरोबर आहे का?</p>
+  <div style="margin-top: auto; display: flex; flex-direction: column; gap: 12px">
+    <button onClick="{{toSaved}}" style="min-height: 92px; border-radius: 22px; border: none; background: #23305E; color: #FFFFFF; font-size: 30px; line-height: 1.3; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 12px">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>
+      हो, बरोबर
+    </button>
+    <button onClick="{{toListen}}" style="min-height: 84px; border-radius: 22px; border: 3px solid #5C4632; background: #FFFFFF; color: #2A1E14; font-size: 26px; line-height: 1.3; font-weight: 800">नाही, परत सांगते</button>
+  </div>
+  <p style="margin: 0; font-size: 19px; line-height: 1.45; text-align: center; color: #5C4632">“हो” किंवा “नाही” बोलूनही चालेल</p>
+</div>
+</sc-if>
+
+<sc-if value="{{isSaved}}" hint-placeholder-val="{{false}}">
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 60px 24px 28px; background: #FBF1DE; display: flex; flex-direction: column; align-items: center; gap: 22px">
+  <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px">
+    <div class="pop" style="width: 168px; height: 168px; border-radius: 50%; background: #2F6B3A; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 16px rgba(47,107,58,.15)">
+      <svg width="88" height="88" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>
+    </div>
+    <h1 style="margin: 0; font-family: 'Tiro Devanagari Marathi', serif; font-size: 40px; line-height: 1.35; font-weight: 400; text-align: center">आठवण ठेवली!</h1>
+    <p style="margin: 0; font-size: 26px; line-height: 1.5; text-align: center">उद्या सकाळी मी तुम्हाला सांगेन</p>
+  </div>
+  <button onClick="{{toHome}}" style="width: 100%; min-height: 88px; border-radius: 22px; border: none; background: #23305E; color: #FFFFFF; font-size: 28px; line-height: 1.3; font-weight: 800">ठीक आहे</button>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { screen: 'home', saved: false };
+  }
+  renderVals() {
+    const s = this.state.screen;
+    return {
+      isHome: s === 'home',
+      isListen: s === 'listen',
+      isConfirm: s === 'confirm',
+      isSaved: s === 'saved',
+      hasSaved: this.state.saved,
+      toHome: () => this.setState({ screen: 'home' }),
+      toListen: () => this.setState({ screen: 'listen' }),
+      toConfirm: () => this.setState({ screen: 'confirm' }),
+      toSaved: () => this.setState({ screen: 'saved', saved: true })
+    };
+  }
+}
+</script>
+</body>
+</html>
