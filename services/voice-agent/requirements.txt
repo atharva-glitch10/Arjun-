@@ -2,3 +2,4 @@ livekit-agents>=1.8
 livekit-plugins-gnani>=1.8
 livekit-plugins-silero>=1.8
 httpx>=0.27
+python-dotenv>=1.0

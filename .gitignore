@@ -33,3 +33,6 @@ build/
 # Private eval data and per-turn logs
 eval/private/
 eval/results/turns.jsonl
+
+# Per-service logs from scripts/dev-up.ps1
+logs/

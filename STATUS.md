@@ -4,10 +4,12 @@
 - T1: first commit on `main`, `.gitignore` expanded.
 - T2 (file part): `.env.example` lists every variable the code reads, one comment each.
 
+- T3: voice-agent loads GNANI_*/LIVEKIT_* from root .env via dotenv_values (fail-fast on missing names); `scripts/dev-up.ps1`
+  starts core-api, reasoning, voice-agent, web; old run-dev.ps1 files removed. Worker registered with rotated keys (2026-10-21).
+- T2: keys rotated by user; "registered worker" line confirmed.
+
 ## In progress / blocked
-- T2: waiting for "keys rotated" (user rotates Gnani + LiveKit keys), then paste "registered worker" log line.
-- T3: approved design, not started. dotenv_values() in agent.py copying only GNANI_*/LIVEKIT_*, fail fast on missing names;
-  single scripts/dev-up.ps1; delete both old run-dev.ps1 in the same commit. Waiting for user sign-off before the T3 check.
+- T4: waiting for user (LiveKit token + Playground join, spoken test).
 
 ## Next
-- T3 implementation, then T4 after keys are rotated.
+- T4 live voice test.

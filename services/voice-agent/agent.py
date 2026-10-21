@@ -2,17 +2,41 @@
 
 STATUS: names and constructor arguments checked against livekit-plugins-gnani 1.8.6 / livekit-agents
 1.8.6 (imports and signatures only). NOT yet run against the live Gnani or LiveKit services - that
-needs GNANI_API_KEY and LIVEKIT_* in .env. No LLM is configured: every reply is the templated text
+needs GNANI_API_KEY and LIVEKIT_* in the root .env. No LLM is configured: every reply is the templated text
 returned by reasoning /turn. The tested logic is in bridge.py.
 """
 
 import asyncio
 import os
+import sys
+from pathlib import Path
 
 from bridge import ask_reasoning
+from dotenv import dotenv_values
 from livekit import agents
 from livekit.agents import Agent, AgentSession, StopResponse
 from livekit.plugins import gnani, silero
+
+REQUIRED_ENV = ("GNANI_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
+ENV_PREFIXES = ("GNANI_", "LIVEKIT_")
+
+
+def load_agent_env(env_file: Path | None = None) -> None:
+    """Copy only GNANI_* / LIVEKIT_* from the root .env into os.environ (a real env var wins).
+
+    Exits with the NAMES of missing required variables; values are never printed.
+    """
+    path = env_file or Path(__file__).resolve().parents[2] / ".env"
+    values = dotenv_values(path) if path.is_file() else {}
+    for name, value in values.items():
+        if name.startswith(ENV_PREFIXES) and value and not os.environ.get(name):
+            os.environ[name] = value
+    missing = [n for n in REQUIRED_ENV if not os.environ.get(n)]
+    if missing:
+        sys.exit(f"voice-agent: missing required environment variables: {', '.join(missing)} (set them in {path})")
+
+
+load_agent_env()  # job subprocesses re-import this module; they inherit the already-set env
 
 USER_ID = int(os.environ.get("ARJUN_USER_ID", "1"))  # demo: one synthetic user per deployment
 # "mr-IN", or "en-IN,hi-IN" for the plugin's code-mixed mode. Marathi *streaming* support is still

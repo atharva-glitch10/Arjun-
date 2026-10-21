@@ -23,7 +23,8 @@ Submit by Nov 8; main public demo posted by ~Nov 1.
    At most one opener per day window; "nako" means no more that day.
 9. **Stories are private by default**; saved only after a yes, shared only after a second yes;
    "he visar" deletes. No raw audio stored. Demo uses synthetic data only.
-10. **Secrets**: `GNANI_API_KEY` and LiveKit keys live only in voice-agent's `.env`. Never in React
+10. **Secrets**: the project uses ONE root `.env` (only `.env.example` is tracked). `GNANI_API_KEY` and LiveKit keys
+    are read only by voice-agent (it loads just `GNANI_*`/`LIVEKIT_*`; `scripts/dev-up.ps1` passes them to no one else). Never in React
     code, never in Git, never logged.
 11. **Never invent numbers.** Report only what was measured (WER, latency, accuracy).
 

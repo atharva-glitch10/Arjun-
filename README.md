@@ -13,15 +13,17 @@ Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Mar
 | `services/scheduler` | Polls core-api to fire due reminders; optional once-a-day opener per user. Not covered by tests. |
 | `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `arjun-ui/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. `npm run build` passes; the screens were rendered in headless Edge (`/?preview` gallery, dashboard, elder home) but not tested on a real device or with real speech. |
 | `eval/` | `python eval/run_eval.py` - intent / slot / distress on 33 synthetic text cases. |
-| `services/voice-agent` | `agent.py` imports and its plugin arguments match livekit-plugins-gnani 1.8.6 (STT `mr-IN`, TTS, silero VAD, `StopResponse`). **Never run against live Gnani/LiveKit** - needs credentials. `bridge.py` is tested. |
+| `services/voice-agent` | `agent.py` imports and its plugin arguments match livekit-plugins-gnani 1.8.6 (STT `mr-IN`, TTS, silero VAD, `StopResponse`). Verified 2026-10-21: the worker starts and registers with LiveKit Cloud. **No speech turn has been run yet** (Gnani STT/TTS untested). `bridge.py` is tested. |
 
 ## Run
 ```
 cp .env.example .env            # set CORE_API_KEY; leave EVON_BASE_URL empty for rule-based mode
 docker compose up --build       # postgres, core-api :8000, reasoning :8001, scheduler, web :5173
 ```
-Local without Docker: `./run-dev.ps1` starts core-api (SQLite), reasoning and web in separate windows (`.env` points at
-compose-only hosts, so the script overrides them). Tests: create a venv, `pip install -r services/core-api/requirements.txt -r services/reasoning/requirements.txt`,
+Local without Docker: `scripts\dev-up.ps1` starts core-api (SQLite), reasoning, voice-agent and web, in that order, one window
+each (logs also go to `logs/`). It reads the one root `.env`, passes each service only the variables it needs and overrides the
+compose-only hosts. `-Only <service>` starts one. The scheduler is not started by it. voice-agent loads only `GNANI_*` and
+`LIVEKIT_*` from `.env` itself and exits naming any missing required variable. Tests: create a venv, `pip install -r services/core-api/requirements.txt -r services/reasoning/requirements.txt`,
 then `pytest` inside each service and `ruff check .` at the root.
 
 ## Safety design in code
