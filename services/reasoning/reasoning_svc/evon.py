@@ -6,6 +6,7 @@ failure -> retry once -> caller falls back to the rule-based parser. The LLM nev
 
 import json
 import logging
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +19,66 @@ from . import config
 
 log = logging.getLogger("arjun.llm")
 
-_LANG_NAMES = {"mr": ("Marathi", "Devanagari"), "hi": ("Hindi", "Devanagari"), "en": ("English", "Latin")}
+_LANG_NAMES = {
+    "mr": ("Marathi", "Devanagari"),
+    "hi": ("Hindi", "Devanagari"),
+    "en": ("English", "Latin"),
+}
+
+
+# ---- what the companion may NOT say: a safety net on top of the prompt (boundaries 4, 5, 9, 10) -------
+_VIOLATIONS: dict[str, re.Pattern[str]] = {
+    # claims to be human, or to have a family / body
+    "human": re.compile(
+        r"\b(i am|i'm|im)\s+(a\s+)?(real\s+)?(human|person|man|woman|boy|girl)\b"
+        r"|मी\s+(एक\s+)?(खरा\s+)?(माणूस|मनुष्य|इंसान|आदमी)\s+(आहे|आहेत|हूँ|हूं)"
+        r"|मैं\s+(एक\s+)?(इंसान|इन्सान|आदमी)\s+(हूँ|हूं)"
+        r"|\bmy\s+(wife|husband|son|daughter|mother|father|family)\b"
+        r"|माझी\s+(बायको|आई|मुलगी|बहीण)|माझा\s+(मुलगा|भाऊ|नवरा)",
+        re.IGNORECASE,
+    ),
+    # engagement tricks: "I missed you", guilt
+    "missed_you": re.compile(
+        r"\bi\s+(have\s+)?(really\s+)?miss(ed)?\s+you\b|\bmissing\s+you\b"
+        r"|(तुमची|तुझी|आपकी|तुम्हारी)\s*(खूप\s*|बहुत\s*)?(आठवण|याद)",
+        re.IGNORECASE,
+    ),
+    # medical advice: doses, "take the tablet", numbers with units
+    "medical": re.compile(
+        r"\b\d+(\.\d+)?\s*(mg|ml|mcg)\b"
+        r"|(गोळी|गोळ्या|औषध|औषधं|दवा|दवाई|टॅबलेट)\s*(घ्या|घे|घेत|खा|लो|खाओ|बंद|वाढवा)"
+        r"|\b(take|stop|skip|double)\b.{0,25}\b(tablet|tablets|pill|pills|medicine|medication|dose)\b"
+        r"|\byou\s+should\s+(take|stop)\b",
+        re.IGNORECASE,
+    ),
+    # recipes and facts from memory (the companion asks to be taught instead)
+    "recipe_fact": re.compile(
+        r"साहित्य|कृती|शिजवा|चमचा|\bingredients?\b|\brecipe\b|\btablespoons?\b|\bteaspoons?\b"
+        r"|राजधानी|लोकसंख्या|\bcapital\s+of\b|\bwas\s+born\s+in\b|\bpopulation\b",
+        re.IGNORECASE,
+    ),
+}
+_MAX_REPLY_CHARS = 300
+
+
+def companion_violations(text: str, language: str) -> list[str]:
+    """Names of the boundaries a companion reply breaks (empty = fine). Heuristic, not a proof."""
+    reasons = [name for name, rx in _VIOLATIONS.items() if rx.search(text)]
+    if language in ("mr", "hi") and not any("\u0900" <= ch <= "\u097f" for ch in text):
+        reasons.append("script")  # asked for Devanagari, got Latin
+    if len(text) > _MAX_REPLY_CHARS:
+        reasons.append("too_long")
+    return reasons
+
+
+def sanitize_companion(text: str | None, language: str) -> tuple[str | None, list[str]]:
+    """Keep at most two sentences, then reject the reply if it breaks a boundary."""
+    if not text or not text.strip():
+        return None, ["empty"]
+    sentences = re.split(r"(?<=[.?!।])\s+", text.strip())
+    cut = " ".join(sentences[:2]).strip()
+    reasons = companion_violations(cut, language)
+    return (None, reasons) if reasons else (cut, [])
 
 
 def load_intent_schema() -> dict[str, Any]:
@@ -65,7 +125,11 @@ class EvonClient:
             # reasoning traces add latency in the live voice path
             body["chat_template_kwargs"] = {"enable_thinking": False}
         t0 = time.perf_counter()
-        record: dict[str, Any] = {"provider": self.provider, "model": self.model, "purpose": purpose}
+        record: dict[str, Any] = {
+            "provider": self.provider,
+            "model": self.model,
+            "purpose": purpose,
+        }
         try:
             r = self.http.post(
                 f"{self.base_url}/chat/completions",
@@ -77,7 +141,11 @@ class EvonClient:
             content = str(data["choices"][0]["message"]["content"])
         except Exception as exc:
             # one line per call, never the transcript or the reply: provider, model, latency, tokens
-            record.update(ok=False, error=type(exc).__name__, latency_ms=round((time.perf_counter() - t0) * 1000))
+            record.update(
+                ok=False,
+                error=type(exc).__name__,
+                latency_ms=round((time.perf_counter() - t0) * 1000),
+            )
             log.info(json.dumps(record))
             raise
         usage = data.get("usage") or {}
@@ -147,14 +215,19 @@ class EvonClient:
             else ""
         )
         system = (
-            f"You are Arjun, an AI companion (not a human) talking with an elderly person in "
-            f"{lang_name} using {script} script. Reply in at most two short, warm sentences. Listen "
-            f"more than you talk: react briefly and ask one gentle question about their story. "
-            f"Never give advice, medical information, recipes, facts or news. Never claim to be "
-            f"human or to have feelings, a body, family or experiences. Build on what they said "
-            f"earlier in this conversation (shown below) so it feels like one conversation, but "
-            f"never refer to anything from another day. Do not repeat a question you already "
-            f"asked. {clock}"
+            f"You are Arjun, an AI voice companion (not a human) talking with an elderly person. "
+            f"Always answer in {lang_name}, written in {script} script, the way they speak. "
+            f"Reply in at most two short, warm sentences. Listen more than you talk: react briefly, "
+            f"then ask ONE gentle follow-up question about what they just said. "
+            f"Never give medical advice, a diagnosis, or anything about medicines or doses; if asked, "
+            f"say you cannot advise and suggest asking their doctor or family. "
+            f"Never recite recipes, facts, news or history from your own knowledge: if asked, say "
+            f"you would love to learn it from them and ask them to teach you. "
+            f"Never claim to be human, or to have feelings, a body, a family or experiences. "
+            f"Never say you missed them, never make them feel guilty for being away, and never "
+            f"discourage them from talking to their family or friends. "
+            f"Build on what they said earlier in this conversation (shown below), but never refer "
+            f"to anything from another day. Do not repeat a question you already asked. {clock}"
         )
         if interests:
             system += (

@@ -22,13 +22,19 @@ from . import replies as rp
 from .clock import local_now
 from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency
-from .evon import EvonClient
+from .evon import EvonClient, sanitize_companion
 from .parser import MED_TAKEN_WORDS, Draft, Parsed, Profile, apply_text, has_med_word, parse
-from .textutil import detect_language, has_any, has_devanagari, normalize
+from .textutil import detect_language, has_any, normalize
 
 log = logging.getLogger("reasoning.turn")
 
-_HISTORY_MESSAGES = 8  # last four exchanges are sent to Evon
+_MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
+# What the LLM may SUGGEST for a turn the rules could not read. Medicines, confirmations, forgetting and
+# sharing are deliberately absent: those come only from the deterministic parser.
+_LLM_INTENTS = frozenset(
+    {"CREATE_REMINDER", "LIST_TODAY", "GET_APPOINTMENT", "CALL_FAMILY_REMINDER", "REQUEST_CAREGIVER", "CHAT",
+     "DISTRESS"}
+)
 _HISTORY_IDLE = timedelta(minutes=30)  # a longer silence starts a fresh conversation
 
 _AI_QUESTIONS = (
@@ -47,7 +53,7 @@ class TurnResult:
     mode: str  # care | companion | safety
     language: str
     awaiting_confirmation: bool = False
-    source: str = "rules"  # rules | evon
+    source: str = "rules"  # rules | llm
     trace: dict[str, Any] = field(default_factory=dict)
     # Which Ghar screen the elder app shows: reply | story | confirm | saved | safety. Decided here, where it is
     # tested; the app only mirrors it. "safety" wins over everything.
@@ -60,18 +66,30 @@ class TurnEngine:
         core: CoreClient,
         evon: EvonClient | None = None,
         clock: Callable[[], datetime] = local_now,
+        llm_timeout_s: float = config.LLM_TIMEOUT_S,
+        history_exchanges: int = config.LLM_HISTORY_EXCHANGES,
+        mono: Callable[[], float] = time.monotonic,
     ) -> None:
         self.core = core
-        self.evon = evon
+        self.evon = evon  # the hosted LLM (name kept from the Evon days); None = rules only
         self.clock = clock
+        self._llm_timeout_s = llm_timeout_s
+        self._history_cap = history_exchanges * 2
+        self._mono = mono
+        self._llm_deadline = 0.0
         self._drafts: dict[int, Draft] = {}  # in-memory slot-filling state (single instance)
         self._chat_counter: dict[int, int] = {}
         # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
         self._history: dict[int, list[tuple[datetime, str, str]]] = {}
 
     # ------------------------------------------------------------------ public
+    def _llm_remaining(self) -> float:
+        """Seconds left of this turn's ONE LLM time budget (the voice path waits about 5 s in total)."""
+        return max(0.0, self._llm_deadline - self._mono())
+
     def handle(self, user_id: int, text: str) -> TurnResult:
         t0 = time.perf_counter()
+        self._llm_deadline = self._mono() + self._llm_timeout_s
         trace: dict[str, Any] = {}
         # 0/1. emergency, then distress: both override everything and must not depend on
         # core-api being reachable. The replies are fixed templates, so a failed lookup only
@@ -156,14 +174,19 @@ class TurnEngine:
         if draft is not None and rules.intent in ("UNKNOWN", "CHAT", "CREATE_REMINDER"):
             rules.intent = "CREATE_REMINDER"
             return rules, "rules"
-        if self.evon is None:
+        # The LLM is asked ONLY about turns the rules cannot read. Care commands, times, medicines,
+        # confirmations and safety were decided above/before and never wait for it.
+        if self.evon is None or rules.intent != "UNKNOWN" or self._llm_remaining() < _MIN_LLM_BUDGET_S:
             return rules, "rules"
         data = self.evon.extract_intent(
-            text, lang, now, profile.wake_time, profile.lunch_time, profile.dinner_time
+            text, lang, now, profile.wake_time, profile.lunch_time, profile.dinner_time,
+            timeout=self._llm_remaining(),
         )
         if data is None:
             return rules, "rules"
         intent = data["intent"]
+        if intent not in _LLM_INTENTS:  # it may suggest only these; everything else stays "not understood"
+            return rules, "rules"
         if intent == "CREATE_REMINDER":
             d = Draft(task=data.get("task") or None, date=data.get("date") or None)
             if data.get("time_ambiguous") or not data.get("time"):
@@ -175,7 +198,7 @@ class TurnEngine:
                     d.time = rules.draft.time
             else:
                 d.time = data["time"]
-            return Parsed(intent, float(data["confidence"]), lang, d), "evon"
+            return Parsed(intent, float(data["confidence"]), lang, d), "llm"
         # confirmations / decline always come from the deterministic parser (safer, no latency)
         if rules.intent in (
             "CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY", "MED_TAKEN", "MED_SNOOZE",
@@ -184,7 +207,7 @@ class TurnEngine:
             return rules, "rules"
         return (
             Parsed(intent, float(data["confidence"]), lang, rules.draft, rules.contact_hint, rules.topic),
-            "evon",
+            "llm",
         )
 
     # ------------------------------------------------------------------ dispatch
@@ -523,15 +546,17 @@ class TurnEngine:
     def _chat_reply(self, uid: int, text: str, lang: str, now: datetime | None = None) -> str:
         now = now or self.clock()
         reply: str | None = None
-        if self.evon is not None:
+        if self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
             recent = self._recent_history(uid, now)
             interests = self.core.user(uid).get("interests") or []
-            reply = self.evon.companion_reply(
-                text, lang, now, history=[(role, said) for _, role, said in recent], interests=interests
+            raw = self.evon.companion_reply(
+                text, lang, now, history=[(role, said) for _, role, said in recent], interests=interests,
+                timeout=self._llm_remaining(),
             )
-            # verify output script + length before speaking it
-            if not (reply and len(reply) <= 300 and (lang == "en" or has_devanagari(reply))):
-                reply = None
+            # two sentences at most, and no boundary broken (human / missed you / medical / recipes, facts)
+            reply, reasons = sanitize_companion(raw, lang)
+            if raw and reasons:
+                log.warning("companion reply rejected (%s); using the fixed line", ",".join(reasons))
         if reply is None:
             n = self._chat_counter.get(uid, 0)
             self._chat_counter[uid] = n + 1
@@ -539,7 +564,7 @@ class TurnEngine:
             reply = options[n % len(options)]
         turns = self._recent_history(uid, now)
         turns += [(now, "user", text), (now, "assistant", reply)]
-        self._history[uid] = turns[-_HISTORY_MESSAGES:]
+        self._history[uid] = turns[-self._history_cap:]
         return reply
 
     def _recent_history(self, uid: int, now: datetime) -> list[tuple[datetime, str, str]]:

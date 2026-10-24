@@ -28,7 +28,9 @@ def get_engine() -> TurnEngine:
             if s.configured
             else None
         )
-        _engine = TurnEngine(CoreClient(), llm)
+        _engine = TurnEngine(
+            CoreClient(), llm, llm_timeout_s=s.timeout_s, history_exchanges=s.history_exchanges
+        )
     return _engine
 
 
@@ -44,7 +46,7 @@ class TurnOut(BaseModel):
     language: str
     awaiting_confirmation: bool
     screen: str = "reply"
-    source: str
+    source: str  # rules | llm
     trace: dict[str, object]
 
 

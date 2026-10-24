@@ -219,8 +219,8 @@ def test_evon_intent_is_used_when_valid(core_http, uid):
         )
 
     eng = TurnEngine(CoreClient(core_http), _evon(handler), clock=lambda: datetime(2026, 10, 6, 9, 0))
-    res = eng.handle(uid, "udya doctor la jaycha aahe")
-    assert res.source == "evon" and res.awaiting_confirmation
+    res = eng.handle(uid, "udya doctor")  # the rules cannot read this, so the LLM is asked
+    assert res.source == "llm" and res.awaiting_confirmation
     assert core_http.get(f"/users/{uid}/actions/pending").json()["payload"]["time"] == "10:00"
 
 
@@ -244,12 +244,12 @@ def test_companion_gets_this_conversations_history_and_interests(core_http, uid)
     from datetime import datetime
 
     eng, bodies = _companion_engine(core_http, lambda: datetime(2026, 10, 6, 9, 0))
-    eng.handle(uid, "aaj me jevan kela")
-    eng.handle(uid, "mag me firayla gelo")
+    eng.handle(uid, "आज मी बागेत फिरायला गेलो होतो")
+    eng.handle(uid, "मग तिथे माझे जुने मित्र भेटले")
     first, second = bodies
     assert [m["role"] for m in first["messages"]] == ["system", "user"]
     assert [m["role"] for m in second["messages"]] == ["system", "user", "assistant", "user"]
-    assert second["messages"][1]["content"] == "aaj me jevan kela"
+    assert second["messages"][1]["content"] == "आज मी बागेत फिरायला गेलो होतो"
     assert "cooking" in second["messages"][0]["content"]  # interest hint, to be taught not told
 
 
@@ -258,9 +258,9 @@ def test_companion_history_expires_after_idle(core_http, uid):
 
     now = [datetime(2026, 10, 6, 9, 0)]
     eng, bodies = _companion_engine(core_http, lambda: now[0])
-    eng.handle(uid, "aaj me jevan kela")
+    eng.handle(uid, "आज मी बागेत फिरायला गेलो होतो")
     now[0] += timedelta(minutes=31)
-    eng.handle(uid, "mag me firayla gelo")
+    eng.handle(uid, "मग तिथे माझे जुने मित्र भेटले")
     assert [m["role"] for m in bodies[1]["messages"]] == ["system", "user"]
 
 
@@ -268,9 +268,9 @@ def test_distress_clears_companion_history(core_http, uid):
     from datetime import datetime
 
     eng, bodies = _companion_engine(core_http, lambda: datetime(2026, 10, 6, 9, 0))
-    eng.handle(uid, "aaj me jevan kela")
+    eng.handle(uid, "आज मी बागेत फिरायला गेलो होतो")
     assert eng.handle(uid, "mala jagaychach nahi").mode == "safety"
-    eng.handle(uid, "mag me firayla gelo")
+    eng.handle(uid, "मग तिथे माझे जुने मित्र भेटले")
     assert [m["role"] for m in bodies[-1]["messages"]] == ["system", "user"]
 
 
