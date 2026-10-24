@@ -89,7 +89,8 @@ not be used anywhere in the elder app.
   Room name per elder (e.g. `elder-<id>`). Secret never leaves the server.
 - web elder app: use `livekit-client` (or `@livekit/components-react`) to join the room when
   Aaji taps बोला; publish mic; play the agent's audio track. Disable frontend noise suppression
-  if agent-side BVC is used (no double processing).
+  if agent-side BVC is used (no double processing). BVC is not in the code yet, so the browser's own
+  echo cancellation + noise suppression stay on.
 - Screen states (home → listen → confirm → saved) must follow what the agent is doing. Send
   state from the agent to the app with LiveKit data messages or participant attributes
   (choose one, explain why). The screen mirrors what Arjun says; voice and tap both work.

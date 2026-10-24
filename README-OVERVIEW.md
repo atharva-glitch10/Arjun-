@@ -48,7 +48,7 @@ Text or a transcript goes in, and a templated reply comes out, in Marathi, Hindi
 
 ```
  Browser (React SPA)
-   │  elder page: SpeechRecognition / SpeechSynthesis (stand-in for LiveKit)
+   │  elder page: livekit-client -> LiveKit room -> voice-agent (Gnani Prisma + Timbre)
    │  caregiver dashboard
    │
    ├── /reasoning ──────────▶ reasoning  (FastAPI :8001)
@@ -106,9 +106,9 @@ Opener delivery is currently log-only.
 ### `web/` — React SPA
 Vite 5 + React 18 + strict TypeScript.
 
-- **Elder view:** one large talk button using browser speech APIs, plus a text fallback box. Always shows "Arjun is an AI assistant".
+- **Elder view:** one large talk button; it joins a LiveKit room and mirrors the agent (listening / confirm / saved / safety). Speech is Gnani only, no browser speech APIs. Always shows "Arjun is an AI assistant".
 - **Caregiver dashboard:** reads and edits everything above, including the distress-alert consent checkbox. Uses `/memory-book` only, never `/stories`.
-- **Dev proxy:** `/core` and `/reasoning` are proxied by Vite, and the API key is injected there so it never ships in the bundle.
+- **Dev proxy:** `/core` is proxied by Vite, and the API key is injected there so it never ships in the bundle. The browser no longer reaches reasoning at all.
 
 ### `services/voice-agent` — LiveKit + Gnani
 - `bridge.py`: HTTP bridge to `/turn`, with placeholder endpointing delays (0.7 s care, 1.2 s companion).

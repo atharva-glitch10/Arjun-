@@ -100,8 +100,17 @@ then `pytest` inside each service and `ruff check .` at the root.
   `web/src/ghar/Screens.tsx` (shown at `/?preview`) but is not wired.
 - New tables (`medicines`, `medicine_doses`) are added by `create_all`; there are no migrations, and an
   existing database is not altered otherwise.
-- Elder UI uses browser speech recognition/synthesis (not Gnani), so Marathi recognition quality depends on the
-  browser. Spoken yes/no on confirm screens starts after Arjun finishes speaking; unverified on real devices.
+- The elder UI talks only through LiveKit + Gnani (T6): tap बोला -> `POST /livekit/token` (fresh room, explicit
+  "arjun" dispatch) -> mic -> the screen mirrors the agent's `arjun.screen` attribute. No browser speech API is
+  used anywhere (`scripts/check_no_browser_speech.py`, also a test). Verified without a browser by a LiveKit client
+  script; **not yet verified in a real browser**. Browser echo cancellation + noise suppression are ON because the
+  agent has no noise filter (open question 6).
+- The elder page needs a secure origin for the microphone: `http://localhost` works; a phone needs HTTPS. Options,
+  none set up yet: (1) Android + USB: `adb reverse tcp:5173 tcp:5173`, then open `http://localhost:5173` on the
+  phone; (2) `vite --https` with a local certificate (mkcert) and the laptop's LAN address; (3) an HTTPS tunnel
+  (cloudflared / ngrok) to port 5173, which also exposes the dev proxy and its API key, so demo data only;
+  (4) Chrome's `unsafely-treat-insecure-origin-as-secure` flag on the phone, for a quick test only.
+- Due-medicine prompts on the elder screen are **screen only** and say so ("not spoken") until T8.
 - Honorific ("आजी") and the animation switch are not stored server-side: honorific is a constant, "turn off
   animations" is per-device (localStorage). Evening theme is chosen by clock (17:00-05:00) or `?theme=evening`.
 - Design open questions still need testing with real elders: diya-only speak button, motion, script preference.

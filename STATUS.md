@@ -48,6 +48,7 @@
 ## Next (in order)
 1. Retest in a fresh Console session (T4 again): watch for late or out-of-order replies.
 1b. TTS: per-reply WebSocket connect costs ~1 s; SSE through a pooled session looks faster. Needs an OK (see report).
-2. T6 elder app via LiveKit + Gnani (remove browser speech) + core-api `/livekit/token`.
+2. T6 elder app via LiveKit + Gnani: BUILT 2026-10-24, awaiting the speaker's hand verification in a browser
+   (token endpoint, agent attributes + tap path, web hook and screens, browser speech removed). See the T6 section.
 3. T8 spoken delivery of reminders/medicines. 4. ~~T9 Evon decision~~ DECIDED 2026-10-24: no Evon for the demo (rules-only; EVON_BASE_URL stays empty). OPENER_USER_IDS / BRIEFING_USER_IDS stay empty until T8 makes openers/briefings actually spoken.
 5. T12 native-speaker review of distress + emergency lexicons. 6. T14 production proxy + auth.

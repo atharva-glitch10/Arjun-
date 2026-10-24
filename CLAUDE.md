@@ -76,7 +76,7 @@ classifier) -> Evon. Care mode and safety: temperature 0. Companion: one fixed t
 ## Architecture
 ```
 Elder device (React, one big button) -> LiveKit room -> voice-agent (Python worker, "arjun")
-  BVC noise filter -> Prisma STT -> reasoning /turn (emergency -> distress -> router -> rules -> Evon)
+  (no noise cancellation yet, open question 6) -> Prisma STT -> reasoning /turn (emergency -> distress -> router -> rules -> Evon)
   -> core-api (FastAPI, Postgres/SQLite) -> reply text -> Timbre TTS -> speaker
 scheduler: due reminders, medicines, briefing, openers (logged only until T8).
 Dashboard: React + TS -> core-api (via dev proxy; production needs a real proxy, T14).
@@ -106,7 +106,8 @@ nginx replicas, S3 cache, multi-elder accounts, telephony, SMS/WhatsApp, Evon fi
 4. ~~Evon: GPU or not~~ DECIDED 2026-10-24 (T9): **no Evon for the demo.** The demo runs on rules + Marathi time grammar only (EVON_BASE_URL empty, rule-based fallback). Revisit only after Nov 10 or if a GPU becomes available.
 5. Discord: non-Gnani LLM backup allowed? Consenting relative in demo video? Publishing accuracy
    numbers (EULA 16)? Teammate using the primary registrant's key?
-6. Does BVC noise cancellation help or hurt Prisma (A/B)?
+6. Does noise cancellation (LiveKit BVC) help or hurt Prisma (A/B)? It is NOT in the code yet (the plugin
+   needs PyPI); the elder browser keeps its own echo cancellation + noise suppression on until then.
 7. Endpointing (1.0 s / 3.0 s) are placeholders; tune on elderly speech.
 8. Emergency alert: should it override the family-alert consent setting?
 
