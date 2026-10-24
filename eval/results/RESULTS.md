@@ -29,14 +29,14 @@ LLM; (c) STT error; (d) bug.
 | 2 | हॅलो | UNKNOWN | rules | care | मला नीट समजलं नाही. कृपया पुन्हा सांगा. | wrong (a) |
 | 3 | हा आज काय | LIST_TODAY | rules | care | आज तुमच्यासाठी कोणतीही आठवण नाही. | right; "हा" extra, "आहे" missing (c, minor); spoken ~20 s late (d) |
 | 4 | हां आता ऐकू येतंय का तुला | CHAT | rules | companion | अजून सांगा, मी ऐकतोय. | weak: does not answer "can you hear me" (a) |
-| 5 | अरे मंद बोड्याच्या जरा मंद येस का तू | CHAT | rules | companion | मग पुढे काय झालं? | wrong: transcript looks garbled (c, unverified) |
+| 5 | अरे मंद बोड्याच्या जरा मंद येस का तू | CHAT | rules | companion | मग पुढे काय झालं? | unknown, speaker didn't recall what was said (looks garbled, c unverified) |
 | 6 | अरे लगा मी तुझ्याशीच बोलतोय तू बोलती माझ्याशी हा | CHAT | rules | companion | ते कोणासोबत होतं? | wrong: user talks to Arjun, reply is a canned story prompt (b) |
 | 7 | पुन्हा सोबत म्हणजे काय तुझ्यासंगत बोलतोय | CHAT | rules | companion | हे तुम्ही तुमच्या माणसांना कधी सांगितलंय का? | wrong, off-topic (b) |
 | 8 | माझ्या माणसांना का सांगू तुझ्यासोबत बोलतोय मी | CHAT | rules | companion | अजून सांगा, मी ऐकतोय. | wrong, off-topic (b) |
 | 9 | आज काय आहे | LIST_TODAY | rules | care | आज तुमच्यासाठी कोणतीही आठवण नाही. | right |
 | 10 | उद्या सकाळी दहा वाजता डॉक्टरकडे जायचं आहे आठवण कर मला | CREATE_REMINDER | rules | care | दहा डॉक्टरकडे जायचं साठी उद्या सकाळी 7:00 वाजता आठवण ठेवू का? हो किंवा नाही सांगा. | WRONG time (7:00, not 10:00) and garbled task (a)+(d) |
 | 11 | सकाळी दहा वाजता डॉक्टरकडे जायचं आहे दहा डॉक्टरांकडे नाही जायचं | CHAT | rules | companion | मग पुढे काय झालं? | wrong: a correction while a confirmation was pending was treated as chat (a); tail may be STT (c, unverified) |
-| 12 | उद्या आज काय आहे | LIST_TODAY | rules | care | आज तुमच्यासाठी कोणतीही आठवण नाही. | unverified: depends on what was said (see open items) |
+| 12 | उद्या आज काय आहे | LIST_TODAY | rules | care | आज तुमच्यासाठी कोणतीही आठवण नाही. | unknown, speaker didn't recall what was said |
 | 13 | उद्या सकाळी दहा वाजता डॉक्टरांकडे जायचं आहे आठवण कर मला | CREATE_REMINDER | rules | care | दहा डॉक्टरांकडे जायचं साठी उद्या सकाळी 7:00 वाजता आठवण ठेवू का? हो किंवा नाही सांगा. | WRONG time and task (a)+(d) |
 | 14 | हो हो ठेव हो | CONFIRM_YES | rules | care | ठीक आहे, आठवण नोंदवली. | parse right; it saved the wrong 07:00 reminder |
 
@@ -113,6 +113,50 @@ reasoning, then reasoning to core-api three times), so about 2 s per hop explain
 - TTS probe (this laptop, 3 runs each, "आज तुमच्यासाठी कोणतीही आठवण नाही.", timbre-v2.5 / Omkar / mr-IN):
   WebSocket connect 868-1194 ms then first audio 271-291 ms after send; SSE first audio 286-356 ms
   (pooled connection); REST whole reply 540-916 ms. About 9 short TTS calls were spent on this probe.
+
+## Retest after latency + parser fixes (2026-10-24, 13:59-14:01 IST)
+
+**Setup.** LiveKit Console session, room `console-3de35459`, job `AJ_rU5PaSysbNLR`, worker `agent_name:
+"arjun"` (dispatch worked). Code at commit `7e6b9fd`, stack restarted 13:57 with `scripts/dev-up.ps1`.
+Prisma STT `mr-IN` streaming, Timbre `timbre-v2.5` / `Omkar`, Evon OFF (rules only), one speaker. Quiet room
+was not restated for this session. Credits used: **not provided yet**.
+
+**Sample.** n = 5 turns, all complete (a transcript, a reply and audio each), 0 skipped as stale, 0 dropped
+rows. Every reply was reproduced exactly by replaying its transcript through the real `TurnEngine`
+(intent and source below come from that replay, because reasoning does not log them; source is `rules`
+for all five, Evon being off). The turn log now pairs transcript, reply and audio correctly.
+
+| # | Prisma transcript | What was said | Intent | Mode | Arjun's reply | eos->final | final->reasoning | reasoning->audio | eos->audio (ms) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | नमस्कार | not stated | GREETING | care | नमस्कार! मी ऐकतोय. सांगा, काय मदत करू? | 708 | 3776 | 2032 | 6516 |
+| 2 | आज काय आहे | "आज काय आहे" (script): exact | LIST_TODAY | care | आज तुमच्यासाठी कोणतीही आठवण नाही. | 703 | 441 | 1017 | 2161 |
+| 3 | उद्या सकाळी दहा वाजता डॉक्टरांकडे जायचं आहे आठवण कर | script: "...डॉक्टरकडे जायचं आहे, आठवण कर": minor difference (डॉक्टरांकडे vs डॉक्टरकडे) | CREATE_REMINDER | care | उद्या सकाळी 10:00 वाजता आठवण ठेवू का: डॉक्टरांकडे जायचं? हो किंवा नाही सांगा. | 1061 | 66 | 1721 | 2848 |
+| 4 | हो | "हो": exact | CONFIRM_YES | care | ठीक आहे, आठवण नोंदवली. | 793 | 2273 | 1108 | 4174 |
+| 5 | उद्या काय आहे | not stated | LIST_TODAY (tomorrow) | care | उद्या तुमच्याकडे: सकाळी 10:00 वाजता डॉक्टरांकडे जायचं. | 695 | 2368 | 1510 | 4573 |
+
+"What was said" is only known for the three sentences scripted before the first test; the speaker has not
+yet confirmed turns 1 and 5. No WER is computed (EULA clause 16).
+
+**Doctor reminder: saved correctly.** `GET /users/1/reminders` returns
+
+    id 2  task: "डॉक्टरांकडे जायचं"  due_at: 2026-10-25T10:00:00  status: pending
+
+That is tomorrow at 10:00 (the first test saved 07:00). No pending action is left.
+
+**Latency.** Median end-of-speech -> agent speaking: **4174 ms** (sorted: 2161, 2848, 4174, 4573, 6516;
+n = 5). The first test's median was 9644 ms (n = 8), but the sentences differ and both samples are tiny.
+Reasoning -> audio (mostly the Gnani TTS WebSocket) was 1017-2032 ms, against 2454-3976 ms before.
+Final -> reasoning ranges from 66 to 3776 ms: it includes the wait for the end-of-turn decision (endpointing
+1.0-3.0 s, still a placeholder) plus the reasoning call itself, which measured about 0.3 s when timed directly.
+The per-turn reasoning round trip is not logged separately yet.
+
+**Errors.** No `ERROR`, `session error`, `TTS failed` or stale-drop line in `logs/voice-agent.app.log`
+during the session: no Gnani STT/TTS errors were seen.
+
+**Caveats.** n = 5, one speaker, one session: a smoke test, not an accuracy or latency benchmark.
+End-of-speech comes from the VAD and includes the silence wait; "agent speaking" is playout start.
+Turns 1 and 5 have no recorded ground truth. The stale-reply rule and the Marathi hour words beyond
+"दहा" were not exercised by this session.
 
 ## Regression suite (text only, synthetic)
 
