@@ -124,3 +124,17 @@ def test_readback_wording(engine, uid):
 def test_readback_wording_in_hindi_and_english():
     assert rp.R["hi"]["confirm_reminder"].format(task="X", when="W") == "W याद दिलाऊँ: X? हाँ या नहीं बताइए।"
     assert rp.R["en"]["confirm_reminder"].format(task="X", when="W") == "Shall I remind you W: X? Please say yes or no."
+
+
+# ---- task text: filler words from the live T6 test ----------------------------------------------------------
+REAL_17_15_30 = "उद्या सकाळी दहा वाजता आपल्याला डॉक्टरांकडे जायचं आहे मला आठवण करून द्या"  # real Prisma transcript
+
+
+def test_filler_words_do_not_end_up_in_the_task():
+    d = _draft(REAL_17_15_30)
+    assert d.task == "डॉक्टरांकडे जायचं" and d.time == "10:00" and d.date == "2026-10-07"
+
+
+def test_the_live_readback_is_now_clean(engine, uid):
+    res = engine.handle(uid, REAL_17_15_30)
+    assert res.reply == "उद्या सकाळी 10:00 वाजता आठवण ठेवू का: डॉक्टरांकडे जायचं? हो किंवा नाही सांगा."

@@ -112,7 +112,7 @@ STOP = set(
     "vajta वाजता baje बजे o'clock am pm at on for the a an and sakali सकाळी subah सुबह dupari "
     "दुपारी dopahar दोपहर sandhyakali संध्याकाळी shaam शाम ratri रात्री raat रात night evening "
     "morning afternoon nantar नंतर baad बाद jevna जेवणा jevan जेवण jevnanantar remind-kar "
-    "रिमाइंडर रिमाइंड जेवणानंतर".split()
+    "रिमाइंडर रिमाइंड जेवणानंतर आपल्याला करून द्या".split()  # last three: "(मला) ... आठवण करून द्या"
 )
 # unambiguous time words ("साडे", "दीड", ...) never belong in a task; plain hour words are rewritten
 # to digits only when they are a clock time, so "दहा मिनिटं चालणे" keeps its "दहा".
