@@ -24,7 +24,7 @@ from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency
 from .evon import EvonClient, sanitize_companion
 from .parser import MED_TAKEN_WORDS, Draft, Parsed, Profile, apply_text, has_med_word, parse
-from .textutil import detect_language, has_any, normalize
+from .textutil import collapse_repeats, detect_language, has_any, normalize
 
 log = logging.getLogger("reasoning.turn")
 
@@ -90,6 +90,7 @@ class TurnEngine:
     def handle(self, user_id: int, text: str) -> TurnResult:
         t0 = time.perf_counter()
         self._llm_deadline = self._mono() + self._llm_timeout_s
+        text = collapse_repeats(text)  # recognizer artifacts ("हो हो हो कर कर कर ...") before ANY parsing or safety check
         trace: dict[str, Any] = {}
         # 0/1. emergency, then distress: both override everything and must not depend on
         # core-api being reachable. The replies are fixed templates, so a failed lookup only

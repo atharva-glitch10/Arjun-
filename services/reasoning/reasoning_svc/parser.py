@@ -92,6 +92,11 @@ NEXT_Q = ("pudhe kay", "पुढे काय", "pudhcha kay", "next kay", "ata
           "what's next", "whats next", "what should i do", "kya karun", "kay karu", "ata kay")
 
 
+# every word of these, said alone, is a yes / a no (used only while an action is pending)
+_YES_TOKENS = frozenset(w for phrase in YES for w in phrase.split()) | {"चालेल", "ठेव", "ठेवा", "करा", "होऊ", "द्या"}
+_NO_TOKENS = frozenset(w for phrase in NO for w in phrase.split())
+
+
 def has_med_word(norm: str) -> bool:
     toks = tokens(norm)
     if has_any(norm, MED_WORDS):
@@ -446,6 +451,14 @@ def parse(
             return done("TIME_QUERY", 0.85)
         if has_any(norm, NEXT_Q):
             return done("NEXT_UP", 0.75)
+
+    # While an action awaits its yes/no, an answer made ONLY of yes-words (or only no-words) is that answer at
+    # any length: speech recognizers pad a "हो" ("हो हो चालेल हो हो ठेव").
+    if has_pending and toks and not has_any(norm, REMIND):
+        if all(t in _YES_TOKENS for t in toks):
+            return done("CONFIRM_YES", 0.85)
+        if all(t in _NO_TOKENS for t in toks):
+            return done("CONFIRM_NO", 0.85)
 
     # short bare answers -> confirmations
     if n <= 4 and not has_any(norm, REMIND):

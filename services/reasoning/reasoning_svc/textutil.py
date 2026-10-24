@@ -22,6 +22,35 @@ def tokens(norm: str) -> list[str]:
     return norm.split(" ") if norm else []
 
 
+def _collapse_k(tokens: list[str], k: int) -> list[str]:
+    keys = [normalize(t) for t in tokens]
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        gram = keys[i : i + k]
+        reps = 1
+        if len(gram) == k and all(gram):
+            while keys[i + reps * k : i + (reps + 1) * k] == gram:
+                reps += 1
+        if reps >= 3:  # three or more in a row is a recognizer artifact, not speech
+            out.extend(tokens[i : i + k])
+            i += reps * k
+        else:
+            out.append(tokens[i])
+            i += 1
+    return out
+
+
+def collapse_repeats(text: str) -> str:
+    """Collapse runaway repetition ("हो हो हो कर कर कर कर" -> "हो कर"): a word or a 2-3 word phrase repeated
+    three or more times in a row. Two in a row ("नाही नाही") is normal speech and is left alone."""
+    tokens = text.split()
+    out = tokens
+    for k in (1, 2, 3):
+        out = _collapse_k(out, k)
+    return " ".join(out) if out != tokens else text
+
+
 def has_devanagari(text: str) -> bool:
     return any("ऀ" <= ch <= "ॿ" for ch in text)
 
