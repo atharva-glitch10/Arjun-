@@ -10,6 +10,7 @@ from . import schemas as s
 from .day import router as day_router
 from .db import Base, engine, get_db
 from .deps import check_api_key_configured, get_now, require_key
+from .livekit_token import router as livekit_router
 from .medicines import mark_snoozed, mark_taken, open_dose
 from .medicines import router as medicines_router
 
@@ -439,3 +440,4 @@ def fire_due(
 app.include_router(router)
 app.include_router(medicines_router)
 app.include_router(day_router)
+app.include_router(livekit_router)
