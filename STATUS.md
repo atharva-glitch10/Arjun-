@@ -28,6 +28,21 @@
   scheduler 3 passed; ruff clean; web `tsc --noEmit` clean; eval 33/33, 7/7, 5/5 (regression only).
   NOT run: the live agent, LiveKit, Gnani (needs your machine and keys).
 
+## T6 built (2026-10-24): elder app through LiveKit + Gnani
+- `POST /livekit/token` (core-api, same auth): 600 s token, fresh room per call, explicit "arjun" dispatch,
+  mic-only publish, secret server-side. The Vite proxy injects the API key; the browser never reaches reasoning.
+- Reasoning returns `screen` (reply | story | confirm | saved | safety); the agent publishes `arjun.screen`,
+  `arjun.turn`, `arjun.reply` as participant attributes (state, not events). One `Responder` path serves spoken
+  and tapped turns (taps arrive as text on `lk.chat`). Turn log now splits endpointing / reasoning / TTS.
+- Web: `useArjunVoice` + pure `shownFor` (safety wins over every state; plain failure screen with a big retry).
+  All browser speech removed (`scripts/check_no_browser_speech.py`, also a test). Replay button dropped.
+  Medicine prompts are screen-only and labelled so until T8.
+- Verified WITHOUT a browser (LiveKit Python client): token via the proxy 200, agent dispatched, tapped text gave
+  confirm -> saved -> safety and story / reply screens with the agent speaking. NOT verified in a real browser:
+  mic permission, audio playback, live transcription text, the screens themselves. First tap to agent listening:
+  3.5 s (first tap after a worker restart; 7.3 s on an earlier run) and 1.8 s on the next (script timings, not the browser).
+- Tests: core-api 54, reasoning 221, voice-agent 32, scheduler 3, vitest 13 passed; ruff and `tsc` clean; eval 42/42, 12/12, 5/5.
+
 ## After the first real-speech test (2026-10-24, 14 turns, see eval/results/RESULTS.md)
 - **Latency**: `localhost` cost ~2 s per hop on this Windows machine; all service URLs now use `127.0.0.1`.
   One `/turn` round trip: median 2334 ms before, 351 ms after (5 runs each).

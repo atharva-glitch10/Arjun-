@@ -158,8 +158,18 @@ End-of-speech comes from the VAD and includes the silence wait; "agent speaking"
 The stale-reply rule and the Marathi hour words beyond
 "दहा" were not exercised by this session.
 
+## T6 build check (2026-10-24, no browser, no speech from a person)
+
+A LiveKit Python client played the elder: token from `/core/livekit/token` through the Vite proxy (HTTP 200),
+joined a fresh room, the agent `arjun` was dispatched, and tapped text on `lk.chat` produced these attribute
+changes with the agent going to `speaking`: doctor sentence -> `confirm`, "हो" -> `saved` (the reminder was
+created, then deleted by hand), emergency sentence -> `safety`, companion sentence -> `story`, "नमस्कार" -> `reply`.
+Token request to agent listening: 7.3 s, 3.5 s, then 1.8 s (the first two on a freshly started worker).
+Tapped turns log `source: tap`, reasoning round trips of 83-933 ms, reasoning -> audio 1.3-1.6 s.
+n = a handful of taps: a plumbing check, not a speech test. Gnani credits: a few short TTS replies, not read from the dashboard.
+
 ## Regression suite (text only, synthetic)
 
-core-api 40, reasoning 207, voice-agent 20, scheduler 3 passed; ruff clean; web `tsc` clean; eval 42/42
+core-api 54, reasoning 221, voice-agent 32, scheduler 3, vitest 13 passed; ruff clean; web `tsc` clean; eval 42/42
 intent, 12/12 slot, 5/5 distress (2026-10-24, Windows, Python 3.12). These are regression checks on
 synthetic text, not accuracy on real speech.
