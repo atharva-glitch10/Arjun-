@@ -51,8 +51,9 @@ then `pytest` inside each service and `ruff check .` at the root.
   fixed replies; everything else waits for a hosted LLM decision.
 - "उद्या काय आहे" reads tomorrow from SQL (medicines are computed from the family schedule, nothing is written). A
   sentence naming two days ("उद्या आज काय आहे") asks which day; the answer "उद्या" alone is not understood yet.
-- A stale reply (the user spoke again first) is dropped, except one that asks for a yes/no, which is always spoken so a
-  later "yes" never confirms an action the user did not hear. UNVERIFIED live.
+- A stale reply (the user spoke again first) is dropped only if it is a plain care or companion reply. Safety replies
+  (emergency / distress) and any reply that asks a yes/no are always spoken, so a later "yes" never confirms an action
+  the user did not hear. UNVERIFIED live.
 - Gnani TTS: each spoken reply opens a new WebSocket (~0.9-1.2 s connect on this laptop, measured) before audio
   starts; see STATUS.md. Not changed yet.
 - Only the first interest is used for openers; opener delivery to the voice session is not wired (scheduler logs it).

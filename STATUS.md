@@ -38,10 +38,10 @@
 - **New rules**: greeting, hearing check, long "no" with a pending reminder cancels it and asks again,
   "उद्या काय आहे" lists tomorrow (core-api `GET /users/{id}/day?on=YYYY-MM-DD`, read-only).
 - **Voice agent**: turn log keyed by transcript (the old one paired replies with the wrong sentence);
-  outdated replies are not spoken unless they ask a yes/no; direct file log `logs/voice-agent.app.log` plus
+  outdated plain replies are not spoken (safety replies and yes/no questions always are); direct file log `logs/voice-agent.app.log` plus
   session errors, because the console pipe delivered no session lines. UNVERIFIED live until the retest.
 - Wrong reminder id 2 (07:00) deleted from the dev database.
-- Tests run on Windows, Python 3.12: core-api 40, reasoning 196, voice-agent 17, scheduler 3 passed; ruff
+- Tests run on Windows, Python 3.12: core-api 40, reasoning 207, voice-agent 20, scheduler 3 passed; ruff
   clean; web `tsc --noEmit` clean; eval 42/42, 12/12, 5/5 (regression only, synthetic). Real-speech
   regression (`eval/private`, git-ignored) 9 cases pass; turns 5, 6-8 and 12 await the speaker's ground truth.
 

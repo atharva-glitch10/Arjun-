@@ -83,10 +83,15 @@ def should_speak(reply: BridgeReply, stale: bool) -> bool:
     """Speak this reply? An outdated one is dropped: the user has already said something newer, and
     answering the old sentence is how Arjun seemed to reply to the wrong thing (2026-10-24).
 
-    The one exception is a reply that asks for a yes/no: reasoning has already stored a pending action,
-    so the user must hear what they would be agreeing to, or a later spoken "yes" would confirm blind.
+    Only plain care and companion replies (and the spoken fallback) may be skipped. Never skipped:
+    - mode "safety" (emergency / distress): 112, calling out for help, Elderline. Always spoken.
+    - a reply that asks for a yes/no: reasoning has already stored a pending action. Skipping the reply
+      would leave an action the user never heard, which a later "हो" would confirm blind. We speak the
+      question instead of rejecting the action: the request is kept and the user hears what a "हो" does.
+      This relies on reasoning flagging every pending action with awaiting_confirmation
+      (tests/test_pending_is_announced.py).
     """
-    return (not stale) or reply.awaiting_confirmation
+    return stale is False or reply.mode == "safety" or reply.awaiting_confirmation
 
 
 def endpointing_delay(mode: str) -> float:

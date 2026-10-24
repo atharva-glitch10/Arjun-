@@ -4,16 +4,35 @@ import applog
 from bridge import BridgeReply, should_speak
 
 
-def test_stale_reply_is_dropped_unless_it_awaits_a_confirmation():
-    plain = BridgeReply("x", "care", False, 1.0)
-    asks = BridgeReply("y", "care", True, 1.0)
-    assert should_speak(plain, stale=False) and should_speak(asks, stale=False)
-    assert not should_speak(plain, stale=True)  # the user already said something newer
-    assert should_speak(asks, stale=True)  # a proposed action must be announced, or a later "yes" is blind
+def _r(mode="care", ask=False):
+    return BridgeReply("x", mode, ask, 1.0)
 
 
-def test_fallback_reply_is_dropped_when_stale_too():
-    assert not should_speak(BridgeReply("sorry", "fallback", False, 1.0), stale=True)
+def test_only_plain_care_and_companion_replies_may_be_skipped_as_stale():
+    for mode in ("care", "companion", "fallback"):
+        assert should_speak(_r(mode), stale=False)
+        assert not should_speak(_r(mode), stale=True)  # the user already said something newer
+
+
+def test_safety_replies_are_always_spoken_even_when_stale():
+    # emergency / distress: 112, call out for someone, Elderline. Never dropped (CLAUDE.md boundary 8).
+    assert should_speak(_r("safety"), stale=True) and should_speak(_r("safety"), stale=False)
+
+
+def test_a_reply_that_asks_for_confirmation_is_always_spoken_even_when_stale():
+    """Chosen over "skip it and reject the pending action": the user's request is kept, and the spoken
+    question tells them what a later "हो" would execute. Together with reasoning's invariant (every
+    pending action comes with awaiting_confirmation), a "हो" can never confirm an unheard action."""
+    for mode in ("care", "companion"):
+        assert should_speak(_r(mode, ask=True), stale=True)
+
+
+def test_a_stale_confirmation_is_never_skipped_so_no_unheard_pending_action_exists():
+    # Simulate the agent loop: a reply is skipped only when should_speak says no.
+    replies = [_r("care", ask=True), _r("companion"), _r("safety"), _r("care")]
+    skipped = [r for r in replies if not should_speak(r, stale=True)]
+    assert all(not r.awaiting_confirmation and r.mode != "safety" for r in skipped)
+    assert len(skipped) == 2
 
 
 def test_file_log_is_added_once_and_receives_records(tmp_path):

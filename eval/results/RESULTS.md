@@ -108,12 +108,14 @@ reasoning, then reasoning to core-api three times), so about 2 s per hop explain
 - Never-guess guard, Marathi/Hindi hour words, new readback wording, greeting, hearing check, correction
   of a pending reminder, "उद्या काय आहे", turn-log pairing by transcript, outdated replies not spoken,
   and a direct voice-agent file log. Each has tests; none has been tried on real speech yet.
+  Stale-reply rule: only plain care and companion replies may be skipped; safety replies and replies that ask
+  a yes/no are always spoken (a test per case, plus a reasoning invariant that every pending action is flagged).
 - TTS probe (this laptop, 3 runs each, "आज तुमच्यासाठी कोणतीही आठवण नाही.", timbre-v2.5 / Omkar / mr-IN):
   WebSocket connect 868-1194 ms then first audio 271-291 ms after send; SSE first audio 286-356 ms
   (pooled connection); REST whole reply 540-916 ms. About 9 short TTS calls were spent on this probe.
 
 ## Regression suite (text only, synthetic)
 
-core-api 40, reasoning 196, voice-agent 17, scheduler 3 passed; ruff clean; web `tsc` clean; eval 42/42
+core-api 40, reasoning 207, voice-agent 20, scheduler 3 passed; ruff clean; web `tsc` clean; eval 42/42
 intent, 12/12 slot, 5/5 distress (2026-10-24, Windows, Python 3.12). These are regression checks on
 synthetic text, not accuracy on real speech.
