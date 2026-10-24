@@ -42,6 +42,15 @@ then `pytest` inside each service and `ruff check .` at the root.
 - **Parser quality is unmeasured.** The 42 eval cases were written alongside the parser, so 100% there
   says nothing about real speech. Needs real transcripts of elderly Marathi speakers.
 - Task text is the leftover words after removing time/command words (e.g. "doctor jaycha"), not a clean noun phrase.
+- **A pending yes/no is protected** (fix B, from the first hand test): while Arjun waits for an answer, anything that
+  is not yes / no / cancel / a restated reminder gets the SAME question again; chat, a "keep your story?" offer or
+  any other proposal can never replace it. A pending action expires after `PENDING_TTL_S` (default 300 s) in core-api.
+  Runaway repetition from the recognizer ("हो हो हो कर कर कर ...") is collapsed on every turn. UNVERIFIED with a
+  real voice after these fixes.
+- The voice session serves the user id carried in the token's dispatch metadata (`ARJUN_USER_ID` is only the fallback
+  for Console rooms). The dashboard refreshes every 10 s and on focus; "Create demo user" asks first. The demo uses
+  ONE synthetic user (user 1): `python scripts/clean_demo_db.py` lists what would be removed (dry run), `--apply`
+  does it after a backup.
 - **Spoken clock hours** (एक..बारा, ek..barah, साडे/सव्वा/पावणे, दीड, अडीच) are read as times only next to a clock
   word ("दहा वाजता") or a day-part ("सकाळी दहा"); other spellings Prisma may produce are untested. If a clock word is
   heard with no readable hour, Arjun asks "किती वाजता?". A bare day-part with no clock word ("सकाळी") still means the

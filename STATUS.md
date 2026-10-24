@@ -28,6 +28,16 @@
   scheduler 3 passed; ruff clean; web `tsc --noEmit` clean; eval 33/33, 7/7, 5/5 (regression only).
   NOT run: the live agent, LiveKit, Gnani (needs your machine and keys).
 
+## After the T6 hand test (2026-10-24 evening)
+- Found: the hand-test reminder was never saved. Prisma wrote the elder's "हो" as "हो हो हो" + "कर" x21; the 4-word
+  confirmation rule missed it, the long text became a "keep your story?" offer that REPLACED the pending reminder.
+- Fixed (tests first): A repetition collapse + all-yes answers at any length; B a pending question can only be
+  answered, corrected or cancelled and expires after 5 min; C filler words out of the task; D dashboard refresh;
+  E the agent serves the token's user id; F `scripts/clean_demo_db.py` (dry run by default). The F cleanup has NOT
+  been applied: it waits for the speaker to approve the printed list. Emergency vs family-alert consent is still
+  an undecided policy: nothing changed there.
+- Tests: core-api 67, reasoning 319, voice-agent 45, scheduler 3, vitest 21 passed; ruff and `tsc` clean.
+
 ## Hosted LLM for open conversation (built 2026-10-24, NOT yet run against a real provider)
 - Models, truthfully: **Gnani Prisma** (speech in) + **Gnani Timbre** (speech out) + a **hosted non-Gnani LLM** for
   open conversation, chosen by `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` / `LLM_PROVIDER_NAME` (`EVON_*` are
