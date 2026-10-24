@@ -41,6 +41,8 @@ class BridgeReply:
     mode: str
     awaiting_confirmation: bool
     round_trip_ms: float
+    screen: str = "reply"  # reply | confirm | saved | safety (decided by reasoning)
+    intent: str = ""
 
 
 def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = None) -> BridgeReply:
@@ -55,6 +57,8 @@ def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = Non
         mode=data["mode"],
         awaiting_confirmation=data["awaiting_confirmation"],
         round_trip_ms=(time.perf_counter() - t0) * 1000,
+        screen=data.get("screen", "reply"),
+        intent=data.get("intent", ""),
     )
 
 

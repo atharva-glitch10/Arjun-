@@ -39,6 +39,7 @@ class TurnOut(BaseModel):
     mode: str
     language: str
     awaiting_confirmation: bool
+    screen: str = "reply"
     source: str
     trace: dict[str, object]
 

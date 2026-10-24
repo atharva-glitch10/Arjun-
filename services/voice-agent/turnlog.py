@@ -3,6 +3,7 @@
 No audio and no secrets are logged. Timestamps are epoch seconds from the LiveKit session events:
   t_end_of_speech   user_state_changed speaking -> listening (VAD end of speech, not the exact last sound)
   t_final_transcript  first final user_input_transcribed of the turn
+  t_reasoning_start the agent handed the transcript to reasoning (after the end-of-turn decision)
   t_reasoning_done  reasoning /turn answered (measured around the HTTP call in on_user_turn_completed)
   t_agent_speaking  agent_state_changed -> speaking (playout of the first TTS audio starts)
 
@@ -66,18 +67,31 @@ class TurnLog:
         self._last_eos = None
         return int(turn["turn"])
 
-    def reasoning_started(self, transcript: str) -> int:
-        """The agent took this transcript for reasoning: claim its turn and return the turn index."""
-        cur = self._collecting()
-        if cur is None:  # no final was seen for it (should not happen); keep the text anyway
+    def reasoning_started(self, transcript: str, t: float | None = None, source: str = "voice") -> int:
+        """The agent took this transcript for reasoning: claim its turn and return the turn index.
+
+        A tapped answer ("tap") has no speech: it always gets its own turn and never claims a spoken
+        sentence that is still being collected.
+        """
+        cur = self._collecting() if source == "voice" else None
+        if cur is None:  # a tap, or no final was seen for it (should not happen)
             cur = self._new()
             cur.update(transcript=transcript.strip())
+            if source == "tap" and t is not None:
+                cur["t_final_transcript"] = t  # the tap itself is the "transcript" moment
+        cur["source"] = source
+        if t is not None:
+            cur["t_reasoning_start"] = t
         self._taken.add(int(cur["turn"]))
         return int(cur["turn"])
 
-    def reasoning_done(self, idx: int, t: float, reply: str, mode: str) -> None:
+    def reasoning_done(
+        self, idx: int, t: float, reply: str, mode: str, reasoning_ms: float | None = None
+    ) -> None:
         if idx in self._open:
             self._open[idx].update(t_reasoning_done=t, reply=reply, mode=mode)
+            if reasoning_ms is not None:  # the /turn round trip itself, apart from the end-of-turn wait
+                self._open[idx]["reasoning_ms"] = round(reasoning_ms)
 
     def speaking_for(self, idx: int) -> None:
         """The reply for turn `idx` is about to be spoken: the next playout start belongs to it."""
@@ -110,9 +124,11 @@ class TurnLog:
         self._taken.discard(idx)
         if turn is None:
             return None
-        start = turn.get("t_end_of_speech")
+        # a tapped turn has no speech: the tap itself marks its start
+        start = turn.get("t_end_of_speech") or (turn.get("t_final_transcript") if turn.get("source") == "tap" else None)
         for name, a, b in (
             ("eos_to_final_ms", "t_end_of_speech", "t_final_transcript"),
+            ("endpointing_ms", "t_final_transcript", "t_reasoning_start"),
             ("final_to_reasoning_ms", "t_final_transcript", "t_reasoning_done"),
             ("reasoning_to_audio_ms", "t_reasoning_done", "t_agent_speaking"),
             ("eos_to_audio_ms", "t_end_of_speech", "t_agent_speaking"),

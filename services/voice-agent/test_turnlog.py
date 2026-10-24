@@ -101,3 +101,30 @@ def test_close_flushes_unanswered_turns_as_incomplete(tmp_path):
     log.close()
     (row,) = _rows(tmp_path / "t.jsonl")
     assert row["complete"] is False and "eos_to_audio_ms" not in row
+
+
+def test_timing_splits_endpointing_from_reasoning_from_audio(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.end_of_speech(10.0)
+    log.final_transcript(10.7, "हो", "mr-IN")
+    idx = log.reasoning_started("हो", t=12.9)  # the end-of-turn decision came 2.2 s after the final
+    log.reasoning_done(idx, 13.3, "ठीक", "care", reasoning_ms=310.4)
+    log.speaking_for(idx)
+    log.agent_speaking(14.4)
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["endpointing_ms"] == 2200  # final transcript -> reasoning call started
+    assert row["reasoning_ms"] == 310  # the /turn round trip itself
+    assert row["reasoning_to_audio_ms"] == 1100  # TTS + playout
+
+
+def test_a_tapped_turn_gets_its_own_row_and_is_marked(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.final_transcript(1.0, "उद्या सकाळी", None)  # a spoken sentence still being collected
+    tap = log.reasoning_started("हो", t=2.0, source="tap")
+    log.reasoning_done(tap, 2.3, "ठीक", "care", reasoning_ms=250)
+    log.speaking_for(tap)
+    log.agent_speaking(3.0)
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["source"] == "tap" and row["transcript"] == "हो" and "t_end_of_speech" not in row
+    assert row["complete"] is True  # it got audio; the tap itself is its start
+    assert log._collecting()["transcript"] == "उद्या सकाळी"  # untouched

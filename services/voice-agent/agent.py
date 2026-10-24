@@ -10,15 +10,16 @@ import asyncio
 import logging
 import os
 import sys
-import time
 from pathlib import Path
 
 import applog
-from bridge import fallback_text, reply_or_fallback, should_speak
+from bridge import fallback_text, reply_or_fallback
 from dotenv import dotenv_values
 from livekit import agents
-from livekit.agents import Agent, AgentSession, StopResponse
+from livekit.agents import Agent, AgentSession, StopResponse, room_io
 from livekit.plugins import gnani, silero
+from responder import Responder
+from screenstate import publish_screen
 from turnlog import TurnLog
 
 logger = logging.getLogger("arjun.agent")
@@ -70,8 +71,9 @@ MAX_ENDPOINTING_S = float(os.environ.get("ARJUN_MAX_ENDPOINTING_S", "3.0"))
 
 
 class Arjun(Agent):
-    def __init__(self, turns: TurnLog) -> None:
+    def __init__(self, turns: TurnLog, responder: Responder) -> None:
         self.turns = turns
+        self.responder = responder
         # No LLM on the session; instructions are unused but required by the base class.
         super().__init__(instructions="Arjun is an AI voice companion. Replies come from reasoning.")
 
@@ -80,26 +82,7 @@ class Arjun(Agent):
         transcript = new_message.text_content or ""
         if not transcript.strip():
             raise StopResponse()
-        idx = self.turns.reasoning_started(transcript)
-        # Never silence: reply_or_fallback turns any reasoning failure into a fixed spoken line.
-        reply = await asyncio.to_thread(reply_or_fallback, USER_ID, transcript, STT_LANGUAGE)
-        self.turns.reasoning_done(idx, time.time(), reply.text, reply.mode)
-        if not should_speak(reply, self.turns.is_stale(idx)):
-            # Reasoning ran (so its state stays consistent) but the user has spoken again: stay quiet
-            # and let the newest sentence be answered instead of replying to an old one.
-            logger.info("dropping outdated reply for turn %s (a newer sentence arrived)", idx)
-            self.turns.skip(idx, "stale")
-            raise StopResponse()
-        self.turns.speaking_for(idx)
-        try:
-            await self.session.say(reply.text)
-        except Exception:  # noqa: BLE001 - TTS failure must be logged, not crash the session
-            logger.exception("TTS failed for reply (mode=%s)", reply.mode)
-            if reply.mode != "fallback":
-                try:
-                    await self.session.say(fallback_text(STT_LANGUAGE))
-                except Exception:  # noqa: BLE001
-                    logger.exception("TTS fallback also failed")
+        await self.responder.respond(transcript, "voice")
         raise StopResponse()  # suppress the default LLM reply
 
 
@@ -114,6 +97,23 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         max_endpointing_delay=MAX_ENDPOINTING_S,
     )
     turns = TurnLog(language_selected=STT_LANGUAGE)
+
+    async def ask(text: str):  # type: ignore[no-untyped-def]
+        return await asyncio.to_thread(reply_or_fallback, USER_ID, text, STT_LANGUAGE)
+
+    responder = Responder(
+        turns,
+        ask,
+        lambda text: session.say(text),
+        lambda reply, turn: publish_screen(ctx.room.local_participant, reply, turn),
+        lambda: fallback_text(STT_LANGUAGE),
+    )
+
+    async def on_tapped_text(sess, ev) -> None:  # type: ignore[no-untyped-def]
+        """A button tap on the elder screen arrives as text on "lk.chat": same path as a spoken turn.
+        LiveKit's default would call an LLM we do not have."""
+        await sess.interrupt()  # a tap while Arjun is talking cuts the old line off
+        await responder.respond(ev.text, "tap")
 
     @session.on("user_state_changed")
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
@@ -140,7 +140,11 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     def _on_close(ev) -> None:  # type: ignore[no-untyped-def]
         turns.close()
 
-    await session.start(room=ctx.room, agent=Arjun(turns))
+    await session.start(
+        room=ctx.room,
+        agent=Arjun(turns, responder),
+        room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
+    )
 
 
 if __name__ == "__main__":

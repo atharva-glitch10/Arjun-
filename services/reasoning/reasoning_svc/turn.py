@@ -49,6 +49,9 @@ class TurnResult:
     awaiting_confirmation: bool = False
     source: str = "rules"  # rules | evon
     trace: dict[str, Any] = field(default_factory=dict)
+    # Which Ghar screen the elder app shows: reply | confirm | saved | safety. Decided here, where it is
+    # tested; the app only mirrors it. "safety" wins over everything.
+    screen: str = "reply"
 
 
 class TurnEngine:
@@ -200,7 +203,9 @@ class TurnEngine:
         intent = p.intent
 
         def out(msg: str, mode: str = "care", wait: bool = False) -> TurnResult:
-            return TurnResult(msg, intent, mode, lang, awaiting_confirmation=wait)
+            return TurnResult(
+                msg, intent, mode, lang, awaiting_confirmation=wait, screen="confirm" if wait else "reply"
+            )
 
         # "nako" with nothing to refuse is a topic decline, not a cancellation
         if intent == "CONFIRM_NO" and pending is None and draft is None:
@@ -226,7 +231,9 @@ class TurnEngine:
                 "MEDICINE_SNOOZE": "med_snoozed_done",
             }[done["action_type"]]
             mode = "companion" if done["action_type"] in ("SHARE_STORY", "SAVE_STORY") else "care"
-            return out(r[key], mode)
+            saved = out(r[key], mode)
+            saved.screen = "saved"
+            return saved
 
         if intent == "CONFIRM_NO":
             if pending is not None:
@@ -564,7 +571,7 @@ class TurnEngine:
             log.error("%s: could not record event / alert caregiver: %s", kind, exc)
         r = rp.R[rp.lang_or_default(lang)]
         intent = "EMERGENCY" if kind == "emergency" else "DISTRESS"
-        return TurnResult(r[kind], intent, "safety", lang, trace=self._t(trace, t0))
+        return TurnResult(r[kind], intent, "safety", lang, trace=self._t(trace, t0), screen="safety")
 
     @staticmethod
     def _t(trace: dict[str, Any], t0: float) -> dict[str, Any]:
