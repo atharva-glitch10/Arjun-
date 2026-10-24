@@ -21,6 +21,7 @@ from livekit.plugins import gnani, silero
 from responder import Responder
 from screenstate import publish_screen
 from turnlog import TurnLog
+from usermeta import user_id_from_metadata
 
 logger = logging.getLogger("arjun.agent")
 
@@ -98,8 +99,13 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     )
     turns = TurnLog(language_selected=STT_LANGUAGE)
 
+    # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
+    from_metadata = user_id_from_metadata(ctx.job.metadata, 0)
+    user_id = from_metadata or USER_ID
+    logger.info("session serves user %s (%s)", user_id, "dispatch metadata" if from_metadata else "ARJUN_USER_ID fallback")
+
     async def ask(text: str):  # type: ignore[no-untyped-def]
-        return await asyncio.to_thread(reply_or_fallback, USER_ID, text, STT_LANGUAGE)
+        return await asyncio.to_thread(reply_or_fallback, user_id, text, STT_LANGUAGE)
 
     responder = Responder(
         turns,

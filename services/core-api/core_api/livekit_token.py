@@ -5,6 +5,7 @@ public URL and a signed JWT only. A fresh room name per call matters because age
 when a room is CREATED; reusing a room name would mean no agent on the second session.
 """
 
+import json
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -63,7 +64,9 @@ def livekit_token(body: TokenIn, db: Session = Depends(get_db)) -> TokenOut:
                 can_publish_sources=["microphone"],
             )
         )
-        .with_room_config(RoomConfiguration(agents=[RoomAgentDispatch(agent_name=agent_name)]))
+        .with_room_config(RoomConfiguration(
+                agents=[RoomAgentDispatch(agent_name=agent_name, metadata=json.dumps({"user_id": user.id}))]
+            ))
         .to_jwt()
     )
     return TokenOut(url=url, token=token, room=room, identity=identity, expires_in=TOKEN_TTL_S)

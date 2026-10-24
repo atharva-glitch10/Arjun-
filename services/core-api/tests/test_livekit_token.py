@@ -39,7 +39,9 @@ def test_token_joins_a_fresh_room_and_dispatches_arjun(client, uid, lk_env):
     assert video["canPublish"] is True and video["canSubscribe"] is True
     assert video["canPublishSources"] == ["microphone"]  # the elder can publish the mic, nothing else
     assert not video.get("roomAdmin") and not video.get("canUpdateOwnMetadata")
-    assert claims["roomConfig"]["agents"] == [{"agentName": "arjun"}]  # explicit dispatch
+    agents = claims["roomConfig"]["agents"]
+    assert [a["agentName"] for a in agents] == ["arjun"]  # explicit dispatch
+    assert json.loads(agents[0]["metadata"]) == {"user_id": uid}  # the agent serves THIS user, not an env default
     assert claims["sub"] == f"elder-{uid}"
 
 
@@ -62,7 +64,7 @@ def test_secret_never_appears_in_the_response(client, uid, lk_env):
 def test_agent_name_defaults_to_arjun(client, uid, lk_env, monkeypatch):
     monkeypatch.delenv("ARJUN_AGENT_NAME")
     body = client.post("/livekit/token", json={"user_id": uid}).json()
-    assert _payload(body["token"])["roomConfig"]["agents"] == [{"agentName": "arjun"}]
+    assert [a["agentName"] for a in _payload(body["token"])["roomConfig"]["agents"]] == ["arjun"]
 
 
 def test_same_auth_as_the_other_routes(client, uid, lk_env, monkeypatch):
