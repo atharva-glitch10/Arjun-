@@ -23,8 +23,8 @@ foreach ($line in Get-Content $envFile) {
 # Local-run overrides: .env may point at compose-only hosts (postgres, core-api, reasoning).
 $local = @{
     DATABASE_URL = "sqlite:///./arjun.db"
-    CORE_API_URL = "http://localhost:8000"
-    REASONING_URL = "http://localhost:8001"
+    CORE_API_URL = "http://127.0.0.1:8000"
+    REASONING_URL = "http://127.0.0.1:8001"
 }
 $local.PYTHONUNBUFFERED = "1"
 function Get-Setting([string]$name) { if ($local.ContainsKey($name)) { $local[$name] } else { $dotenv[$name] } }
@@ -66,4 +66,4 @@ foreach ($name in $services.Keys) {
         if ($name -eq "reasoning") { Wait-Health "http://127.0.0.1:8001/health" "reasoning" }
     }
 }
-Write-Host "core-api http://localhost:8000/docs | reasoning http://localhost:8001/docs | web http://localhost:5173"
+Write-Host "core-api http://127.0.0.1:8000/docs | reasoning http://127.0.0.1:8001/docs | web http://localhost:5173"

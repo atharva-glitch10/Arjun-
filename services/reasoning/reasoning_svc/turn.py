@@ -107,7 +107,9 @@ class TurnEngine:
             log.error("core-api unavailable for pending lookup: %s", exc)
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
         draft = self._drafts.get(user_id)
-        parsed, source = self._intent(text, profile, now, lang, pending is not None, draft)
+        parsed, source = self._intent(
+            text, profile, now, lang, pending is not None, draft, pending["action_type"] if pending else None
+        )
         trace["intent_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         if parsed.intent == "DISTRESS":
             return self._distress(user_id, lang, trace, t0)
@@ -141,8 +143,9 @@ class TurnEngine:
         lang: str,
         has_pending: bool,
         draft: Draft | None,
+        pending_action: str | None = None,
     ) -> tuple[Parsed, str]:
-        rules = parse(text, profile, now, lang, has_pending)
+        rules = parse(text, profile, now, lang, has_pending, pending_action)
         # A medicine question is always deflected, whatever the LLM thinks it is.
         if rules.intent == "MEDICAL_QUESTION":
             return rules, "rules"
@@ -173,10 +176,13 @@ class TurnEngine:
         # confirmations / decline always come from the deterministic parser (safer, no latency)
         if rules.intent in (
             "CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY", "MED_TAKEN", "MED_SNOOZE",
-            "TIME_QUERY", "NEXT_UP",
+            "TIME_QUERY", "NEXT_UP", "GREETING", "HEARING_CHECK",
         ):
             return rules, "rules"
-        return Parsed(intent, float(data["confidence"]), lang, rules.draft, rules.contact_hint), "evon"
+        return (
+            Parsed(intent, float(data["confidence"]), lang, rules.draft, rules.contact_hint, rules.topic),
+            "evon",
+        )
 
     # ------------------------------------------------------------------ dispatch
     def _dispatch(
@@ -200,6 +206,12 @@ class TurnEngine:
         if intent == "CONFIRM_NO" and pending is None and draft is None:
             intent = "DECLINE_TOPIC"
 
+        # Answered in place: an open reminder draft or pending yes/no is left exactly as it was.
+        if intent == "GREETING":
+            return out(r["greet"])
+        if intent == "HEARING_CHECK":
+            return out(r["hearing_ok"])
+
         if intent == "CONFIRM_YES":
             if pending is None:
                 return out(r["nothing_pending"])
@@ -220,7 +232,7 @@ class TurnEngine:
             if pending is not None:
                 self.core.reject(uid, pending["id"])
             self._drafts.pop(uid, None)
-            return out(r["cancelled"])
+            return out(r["cancelled_retry"] if p.topic == "correction" else r["cancelled"])
 
         if intent == "DECLINE_TOPIC":
             self._drafts.pop(uid, None)
@@ -237,17 +249,22 @@ class TurnEngine:
             return self._create_reminder(uid, text, p, draft, profile, now, lang, out)
 
         if intent == "LIST_TODAY":
+            if p.topic == "ambiguous":  # "उद्या आज काय आहे": never guess which day
+                return out(r["ask_date"])
+            today = now.date().isoformat()
+            on = p.topic if p.topic and p.topic != today else None  # another day, read from SQL
             rows = [
-                x for x in self.core.day(uid)["items"]
+                x for x in self.core.day(uid, on)["items"]
                 if x["kind"] in ("reminder", "appointment", "medicine")
                 and x["status"] not in ("done", "taken", "unconfirmed")
             ]
+            when = rp.say_date(on, now.date(), lang) if on else ""
             if not rows:
-                return out(r["today_none"])
+                return out(r["day_none"].format(when=when) if on else r["today_none"])
             items = "; ".join(
                 f"{rp.say_time(x['at'][11:16], lang)} {rp.item_text(x, lang)}" for x in rows
             )
-            return out(r["today_list"].format(items=items))
+            return out(r["day_list"].format(when=when, items=items) if on else r["today_list"].format(items=items))
 
         if intent in ("TIME_QUERY", "NEXT_UP"):
             return self._time_guidance(uid, intent, p, lang, out)

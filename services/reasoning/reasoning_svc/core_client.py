@@ -41,8 +41,9 @@ class CoreClient:
     def next_appointment(self, uid: int) -> dict[str, Any] | None:
         return self._req("GET", f"/users/{uid}/appointments/next")  # type: ignore[no-any-return]
 
-    def day(self, uid: int) -> dict[str, Any]:
-        return self._req("GET", f"/users/{uid}/day")  # type: ignore[no-any-return]
+    def day(self, uid: int, on: str | None = None) -> dict[str, Any]:
+        params = {"on": on} if on else None  # ISO date; omitted means today
+        return self._req("GET", f"/users/{uid}/day", params=params)  # type: ignore[no-any-return]
 
     def due_medicines(self, uid: int) -> dict[str, Any]:
         return self._req("GET", f"/users/{uid}/medicines/due")  # type: ignore[no-any-return]

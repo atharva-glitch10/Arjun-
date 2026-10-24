@@ -39,9 +39,22 @@ then `pytest` inside each service and `ruff check .` at the root.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
-- **Parser quality is unmeasured.** The 33 eval cases were written alongside the parser, so 100% there
+- **Parser quality is unmeasured.** The 42 eval cases were written alongside the parser, so 100% there
   says nothing about real speech. Needs real transcripts of elderly Marathi speakers.
 - Task text is the leftover words after removing time/command words (e.g. "doctor jaycha"), not a clean noun phrase.
+- **Spoken clock hours** (एक..बारा, ek..barah, साडे/सव्वा/पावणे, दीड, अडीच) are read as times only next to a clock
+  word ("दहा वाजता") or a day-part ("सकाळी दहा"); other spellings Prisma may produce are untested. If a clock word is
+  heard with no readable hour, Arjun asks "किती वाजता?". A bare day-part with no clock word ("सकाळी") still means the
+  family-set wake/meal time.
+- **Open conversation is canned.** Without Evon the companion rotates four fixed lines, so anything that is not a
+  care command gets an off-topic answer (seen in the first real-speech test). Greeting and "can you hear me" now have
+  fixed replies; everything else waits for a hosted LLM decision.
+- "उद्या काय आहे" reads tomorrow from SQL (medicines are computed from the family schedule, nothing is written). A
+  sentence naming two days ("उद्या आज काय आहे") asks which day; the answer "उद्या" alone is not understood yet.
+- A stale reply (the user spoke again first) is dropped, except one that asks for a yes/no, which is always spoken so a
+  later "yes" never confirms an action the user did not hear. UNVERIFIED live.
+- Gnani TTS: each spoken reply opens a new WebSocket (~0.9-1.2 s connect on this laptop, measured) before audio
+  starts; see STATUS.md. Not changed yet.
 - Only the first interest is used for openers; opener delivery to the voice session is not wired (scheduler logs it).
 - Distress check is keyword + stem-pattern rules (spelling folded: anusvara/chandrabindu, i/u length, nukta) and
   now answers even if core-api is down. The lexicon is **unverified**: written without a native speaker or real

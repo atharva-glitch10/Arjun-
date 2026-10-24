@@ -2,8 +2,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 // The API key is injected by the dev proxy so it never ships in the browser bundle.
-const coreTarget = process.env.CORE_API_URL ?? "http://localhost:8000";
-const reasoningTarget = process.env.REASONING_URL ?? "http://localhost:8001";
+const coreTarget = process.env.CORE_API_URL ?? "http://127.0.0.1:8000";
+const reasoningTarget = process.env.REASONING_URL ?? "http://127.0.0.1:8001";
 const apiKey = process.env.CORE_API_KEY ?? "";
 
 export default defineConfig({

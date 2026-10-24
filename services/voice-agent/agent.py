@@ -13,7 +13,8 @@ import sys
 import time
 from pathlib import Path
 
-from bridge import fallback_text, reply_or_fallback
+import applog
+from bridge import fallback_text, reply_or_fallback, should_speak
 from dotenv import dotenv_values
 from livekit import agents
 from livekit.agents import Agent, AgentSession, StopResponse
@@ -47,6 +48,7 @@ def load_agent_env(env_file: Path | None = None) -> None:
 
 
 load_agent_env()  # job subprocesses re-import this module; they inherit the already-set env
+applog.setup_file_log()  # logs/voice-agent.app.log, written from inside this process (see applog.py)
 
 USER_ID = int(os.environ.get("ARJUN_USER_ID", "1"))  # demo: one synthetic user per deployment
 # "mr-IN", or "en-IN,hi-IN" for the plugin's code-mixed mode. Marathi *streaming* support is still
@@ -78,9 +80,17 @@ class Arjun(Agent):
         transcript = new_message.text_content or ""
         if not transcript.strip():
             raise StopResponse()
+        idx = self.turns.reasoning_started(transcript)
         # Never silence: reply_or_fallback turns any reasoning failure into a fixed spoken line.
         reply = await asyncio.to_thread(reply_or_fallback, USER_ID, transcript, STT_LANGUAGE)
-        self.turns.reasoning_done(time.time(), reply.text, reply.mode)
+        self.turns.reasoning_done(idx, time.time(), reply.text, reply.mode)
+        if not should_speak(reply, self.turns.is_stale(idx)):
+            # Reasoning ran (so its state stays consistent) but the user has spoken again: stay quiet
+            # and let the newest sentence be answered instead of replying to an old one.
+            logger.info("dropping outdated reply for turn %s (a newer sentence arrived)", idx)
+            self.turns.skip(idx, "stale")
+            raise StopResponse()
+        self.turns.speaking_for(idx)
         try:
             await self.session.say(reply.text)
         except Exception:  # noqa: BLE001 - TTS failure must be logged, not crash the session
@@ -94,6 +104,7 @@ class Arjun(Agent):
 
 
 async def entrypoint(ctx: agents.JobContext) -> None:
+    applog.setup_file_log()  # the CLI may have reset logging after import; make sure the file handler is on
     await ctx.connect()
     session = AgentSession(
         stt=gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING),  # Prisma
@@ -118,6 +129,16 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
         if ev.new_state == "speaking":
             turns.agent_speaking(ev.created_at)
+
+    @session.on("error")
+    def _on_error(ev) -> None:  # type: ignore[no-untyped-def]
+        # STT / TTS / plugin failures: type and a short message only (never headers or keys).
+        err = getattr(ev, "error", ev)
+        logger.error("session error: %s: %s", type(err).__name__, str(err)[:300])
+
+    @session.on("close")
+    def _on_close(ev) -> None:  # type: ignore[no-untyped-def]
+        turns.close()
 
     await session.start(room=ctx.room, agent=Arjun(turns))
 

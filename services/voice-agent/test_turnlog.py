@@ -3,15 +3,24 @@ import json
 from turnlog import TurnLog
 
 
+def _rows(path):
+    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
+
+
+def _say(log, text, reply, t_reply, t_audio):
+    idx = log.reasoning_started(text)
+    log.reasoning_done(idx, t_reply, reply, "care")
+    log.speaking_for(idx)
+    log.agent_speaking(t_audio)
+    return idx
+
+
 def test_full_turn_writes_one_line_with_latencies(tmp_path):
     log = TurnLog("mr-IN", tmp_path / "t.jsonl")
     log.end_of_speech(100.0)
     log.final_transcript(100.4, "आज काय आहे", "mr-IN")
-    log.reasoning_done(100.6, "आज काही नाही", "care")
-    log.agent_speaking(101.0)
-    lines = (tmp_path / "t.jsonl").read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 1
-    t = json.loads(lines[0])
+    _say(log, "आज काय आहे", "आज काही नाही", 100.6, 101.0)
+    (t,) = _rows(tmp_path / "t.jsonl")
     assert t["transcript"] == "आज काय आहे" and t["language_selected"] == "mr-IN" and t["language_detected"] == "mr-IN"
     assert (t["eos_to_final_ms"], t["final_to_reasoning_ms"], t["reasoning_to_audio_ms"], t["eos_to_audio_ms"]) == (400, 200, 400, 1000)
     assert t["complete"] is True
@@ -23,10 +32,72 @@ def test_speech_without_a_user_turn_is_not_logged(tmp_path):
     assert not (tmp_path / "t.jsonl").exists()
 
 
-def test_turn_without_audio_is_flushed_incomplete_on_next_turn(tmp_path):
+def test_queued_turns_keep_their_own_transcript_reply_and_audio(tmp_path):
+    """Live 2026-10-24: a second utterance arrived before the first reply, and the old log paired
+    every reply with the wrong transcript. Each turn must keep its own fields."""
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.end_of_speech(0.0)
+    log.final_transcript(2.4, "हॅलो", "mr-IN")
+    a = log.reasoning_started("हॅलो")
+    log.end_of_speech(6.0)
+    log.final_transcript(6.5, "आज काय आहे", "mr-IN")
+    log.reasoning_done(a, 9.0, "reply A", "care")
+    log.speaking_for(a)
+    log.agent_speaking(11.5)
+    b = log.reasoning_started("आज काय आहे")
+    log.reasoning_done(b, 12.0, "reply B", "care")
+    log.speaking_for(b)
+    log.agent_speaking(14.8)
+    rows = _rows(tmp_path / "t.jsonl")
+    assert [(r["transcript"], r["reply"]) for r in rows] == [("हॅलो", "reply A"), ("आज काय आहे", "reply B")]
+    assert [r["t_agent_speaking"] for r in rows] == [11.5, 14.8]
+    assert [r["t_end_of_speech"] for r in rows] == [0.0, 6.0]
+    assert [r["final_to_reasoning_ms"] for r in rows] == [6600, 5500]
+
+
+def test_several_finals_before_the_turn_is_taken_become_one_transcript(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.final_transcript(1.0, "उद्या सकाळी", None)
+    log.final_transcript(2.0, "दहा वाजता", None)
+    _say(log, "उद्या सकाळी दहा वाजता", "r", 3.0, 4.0)
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["transcript"] == "उद्या सकाळी दहा वाजता" and row["t_final_transcript"] == 1.0
+
+
+def test_final_before_end_of_speech_still_gets_its_eos(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.final_transcript(10.0, "हो", None)
+    log.end_of_speech(10.1)
+    _say(log, "हो", "ठीक", 10.5, 11.0)
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["t_end_of_speech"] == 10.1
+
+
+def test_is_stale_only_when_a_newer_transcript_exists(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.final_transcript(1.0, "पहिलं", None)
+    a = log.reasoning_started("पहिलं")
+    assert not log.is_stale(a)
+    log.end_of_speech(2.0)  # VAD noise alone is not a new sentence
+    assert not log.is_stale(a)
+    log.final_transcript(3.0, "दुसरं", None)
+    assert log.is_stale(a)
+
+
+def test_skipped_stale_turn_is_logged_without_audio(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.final_transcript(1.0, "पहिलं", None)
+    a = log.reasoning_started("पहिलं")
+    log.reasoning_done(a, 2.0, "old reply", "care")
+    log.skip(a, "stale")
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["skipped"] == "stale" and row["complete"] is False and "t_agent_speaking" not in row
+
+
+def test_close_flushes_unanswered_turns_as_incomplete(tmp_path):
     log = TurnLog("mr-IN", tmp_path / "t.jsonl")
     log.end_of_speech(1.0)
     log.final_transcript(1.2, "हो", None)
-    log.end_of_speech(9.0)
-    first = json.loads((tmp_path / "t.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    assert first["complete"] is False and "eos_to_audio_ms" not in first
+    log.close()
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["complete"] is False and "eos_to_audio_ms" not in row

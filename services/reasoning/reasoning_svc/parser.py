@@ -5,6 +5,7 @@ Never guesses: ambiguous AM/PM or meal-relative times are flagged for a clarifyi
 """
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
@@ -34,7 +35,11 @@ REMIND = ("remind", "reminder", "athvan", "आठवण", "athavan", "yaad", "�
           "याद दिलाओ", "remind kar", "athvan thev", "आठवण ठेव", "रिमाइंडर", "रिमाइंड")
 LIST_TODAY = ("aaj kay", "आज काय", "aaj ke", "आज के", "today", "aajche", "आजचे", "aajcha",
               "आजचा", "aaj cha", "kay kay aahe", "क्या क्या है", "mazhe reminders",
-              "माझे रिमाइंडर", "my reminders", "reminders", "list")
+              "माझे रिमाइंडर", "my reminders", "reminders", "list",
+              # another day: the parser reads which day from the date word (see _list_day)
+              "उद्या काय", "udya kay", "कल क्या", "kal kya", "उद्याचे", "udyache", "उद्याचा",
+              "udyacha", "उद्याच्या", "परवा काय", "parva kay", "कल के", "kal ke",
+              "what is tomorrow", "what's tomorrow")
 APPOINTMENT = ("appointment", "apointment", "अपॉइंटमेंट", "bhet", "भेट", "doctor", "डॉक्टर",
                "dr", "clinic", "दवाखाना", "dawakhana")
 QUESTION = ("kadhi", "कधी", "kevha", "केव्हा", "kab", "कब", "when", "kontya", "कोणत्या", "kitila",
@@ -42,6 +47,16 @@ QUESTION = ("kadhi", "कधी", "kevha", "केव्हा", "kab", "कब"
 DONE = ("zala", "zale", "झालं", "झाले", "झाला", "keli", "kela", "केलं", "केली", "ghetli",
         "ghetla", "घेतली", "घेतला", "ho gaya", "हो गया", "kar liya", "done", "taken", "finished",
         "complete", "completed", "le li", "ले ली")
+
+GREET = ("हॅलो", "हेलो", "हैलो", "हलो", "हॅलॉ", "hello", "hallo", "hullo", "hi", "hey", "namaste",
+         "नमस्ते", "नमस्कार", "namaskar", "namaskaar", "pranam", "प्रणाम", "राम राम", "ram ram")
+# "can you hear me": Marathi / Hindi / English, roman and Devanagari
+_HEARING = re.compile(
+    r"ऐक[ूु]\s*येत|aik[uo]+\s*yet|ऐकतोस|ऐकतोयस|aikatos|aikatoyas|सुनाई\s*(?:दे|पड़)|sunai\s*(?:de|pad)|"
+    r"(?:सुन|sun)\s*(?:रहे|सकते|raha|rahe)|can you hear|hear me"
+)
+# a pending action a long "no" may cancel; SAVE_STORY and medicine actions are excluded on purpose
+CORRECTABLE = ("CREATE_REMINDER", "COMPLETE_REMINDER", "REQUEST_CAREGIVER", "SHARE_STORY")
 
 # ---- medicine (read-only vocabulary: the elder can report intake, never create/edit medicines) --
 MED_WORDS = ("goli", "golya", "gooli", "गोळी", "गोळ्या", "dawa", "dawai", "dava", "दवा", "दवाई",
@@ -94,6 +109,12 @@ STOP = set(
     "morning afternoon nantar नंतर baad बाद jevna जेवणा jevan जेवण jevnanantar remind-kar "
     "रिमाइंडर रिमाइंड जेवणानंतर".split()
 )
+# unambiguous time words ("साडे", "दीड", ...) never belong in a task; plain hour words are rewritten
+# to digits only when they are a clock time, so "दहा मिनिटं चालणे" keeps its "दहा".
+STOP |= {unicodedata.normalize("NFC", w) for w in (
+    "साडे साढ़े साढे saade sade saadhe sadhe सव्वा सवा savva sawa sava पावणे पौने पाऊण pavne paune "
+    "दीड डेढ़ डेढ deed dhed अडीच ढाई adeech dhai".split()
+)}
 
 PERIOD_AM = ("sakali", "sakal", "सकाळी", "सकाळ", "subah", "सुबह", "morning", "am", "a m")
 PERIOD_PM = ("dupari", "दुपारी", "dopahar", "दोपहर", "afternoon", "sandhyakali", "संध्याकाळी",
@@ -110,6 +131,78 @@ DATE_WORDS: dict[str, int] = {
     "aaj": 0, "आज": 0, "today": 0, "udya": 1, "उद्या": 1, "kal": 1, "कल": 1, "tomorrow": 1,
     "parva": 2, "परवा": 2, "parso": 2, "परसों": 2,
 }
+# ---- spoken hours: "दहा वाजता" -> "10 वाजता" before the digit regexes run ------------------------
+_HOUR_WORDS = {
+    "एक": 1, "ek": 1, "दोन": 2, "don": 2, "दो": 2, "do": 2, "तीन": 3, "teen": 3, "चार": 4, "char": 4,
+    "पाच": 5, "paach": 5, "pach": 5, "पाँच": 5, "पांच": 5, "paanch": 5, "सहा": 6, "saha": 6,
+    "छह": 6, "छः": 6, "chhe": 6, "chhah": 6, "सात": 7, "saat": 7, "आठ": 8, "aath": 8, "नऊ": 9,
+    "nau": 9, "नौ": 9, "नव": 9, "nav": 9, "दहा": 10, "daha": 10, "दस": 10, "das": 10, "अकरा": 11,
+    "akra": 11, "akara": 11, "ग्यारह": 11, "gyarah": 11, "बारा": 12, "bara": 12, "बारह": 12, "barah": 12,
+}
+# fraction prefix -> (minutes, hour offset): "साडे दहा" 10:30, "सव्वा दहा" 10:15, "पावणे दहा" 9:45
+_FRACTION = {
+    "साडे": (30, 0), "साढ़े": (30, 0), "साढे": (30, 0), "saade": (30, 0), "sade": (30, 0),
+    "saadhe": (30, 0), "sadhe": (30, 0), "सव्वा": (15, 0), "सवा": (15, 0), "savva": (15, 0),
+    "sawa": (15, 0), "sava": (15, 0), "पावणे": (45, -1), "पौने": (45, -1), "पाऊण": (45, -1),
+    "pavne": (45, -1), "paune": (45, -1),
+}
+# single words that already mean a clock time: "दीड वाजता" 1:30, "अडीच वाजता" 2:30
+_HALF_WORDS = {
+    "दीड": (1, 30), "डेढ़": (1, 30), "डेढ": (1, 30), "deed": (1, 30), "dhed": (1, 30),
+    "अडीच": (2, 30), "ढाई": (2, 30), "adeech": (2, 30), "dhai": (2, 30),
+}
+
+
+def _nfc(text: str) -> str:
+    return unicodedata.normalize("NFC", text)  # "साढ़े" may arrive precomposed or with a nukta
+
+
+_HOUR_WORDS = {_nfc(k): v for k, v in _HOUR_WORDS.items()}
+_FRACTION = {_nfc(k): v for k, v in _FRACTION.items()}
+_HALF_WORDS = {_nfc(k): v for k, v in _HALF_WORDS.items()}
+
+
+def _alt(words) -> str:  # type: ignore[no-untyped-def]
+    return "|".join(sorted((re.escape(w) for w in words), key=len, reverse=True))
+
+
+_CLOCK_WORDS = r"(?:vajta|vaje|vajle|वाजता|वाजले|baje|बजे|o'clock)"
+_TERM = (
+    rf"(?:(?P<frac>{_alt(_FRACTION)})\s*(?P<n1>{_alt(_HOUR_WORDS)})"
+    rf"|(?P<half>{_alt(_HALF_WORDS)})|(?P<n2>{_alt(_HOUR_WORDS)}))"
+)
+_WORD_BEFORE_CLOCK = re.compile(rf"(?<!\S){_TERM}(?=\s+{_CLOCK_WORDS}(?!\S))")
+_DAYPART_WORD_HOUR = re.compile(
+    r"(?<!\S)(?P<period>sakali|sakal|सकाळी|सकाळ|subah|सुबह|morning|dupari|दुपारी|dopahar|दोपहर|"
+    r"afternoon|sandhyakali|संध्याकाळी|shaam|शाम|evening|ratri|रात्री|raat|रात|night)\s+"
+    rf"{_TERM}(?!\S)(?!\s+(?:मिनिट|minit|minute|मिनट))"
+)
+_CLOCK_WORD = re.compile(rf"(?<!\S){_CLOCK_WORDS}(?!\S)")
+
+
+def _clock_text(m: re.Match[str]) -> str:
+    if m["half"]:
+        hour, minute = _HALF_WORDS[m["half"]]
+    else:
+        hour = _HOUR_WORDS[m["n1"] or m["n2"]]
+        minute = 0
+        if m["frac"]:
+            minute, delta = _FRACTION[m["frac"]]
+            hour = (hour + delta) or 12
+    return f"{hour}:{minute:02d}" if minute else str(hour)
+
+
+def hour_words_to_digits(norm: str) -> str:
+    """Rewrite a spoken clock hour as digits, only where it is clearly a time (never a bare number).
+
+    An hour word counts when a clock word follows it ("दहा वाजता") or a day-part precedes it
+    ("सकाळी दहा"). "दहा मिनिटं" stays as it is.
+    """
+    norm = _nfc(norm)
+    norm = _WORD_BEFORE_CLOCK.sub(_clock_text, norm)
+    return _DAYPART_WORD_HOUR.sub(lambda m: f"{m['period']} {_clock_text(m)}", norm)
+
+
 _HOUR_MARK = re.compile(
     r"(?<!\S)(\d{1,2})(?::(\d{2}))?\s*"
     r"(?:vajta|vaje|vajle|वाजता|वाजले|baje|बजे|o'clock|am|pm|a m|p m)(?!\S)"
@@ -131,6 +224,7 @@ class Draft:
     date: str | None = None
     time: str | None = None  # resolved HH:MM
     ambiguous_hour: tuple[int, int] | None = None  # (hour 1-12, minute) awaiting AM/PM
+    period: str | None = None  # day-part said earlier ("सकाळी"); kept until the hour arrives
     meal_after: bool = False  # "after the meal" - which meal not yet known
     meal_delay_min: int = 30
 
@@ -232,13 +326,15 @@ def _find_hour(norm: str) -> tuple[int, int, bool] | None:
 
 def apply_text(draft: Draft, text: str, profile: Profile, now: datetime, is_followup: bool) -> Draft:
     """Merge slots found in `text` into `draft` (returns the same object)."""
-    norm = normalize(text)
+    norm = hour_words_to_digits(normalize(text))
 
     d = _parse_date(norm, now)
     if d:
         draft.date = d
 
     period = _period(norm)
+    if period:
+        draft.period = period
     clock = _find_hour(norm)
 
     if clock is not None:
@@ -246,8 +342,8 @@ def apply_text(draft: Draft, text: str, profile: Profile, now: datetime, is_foll
         draft.meal_after = False
         if is24:
             draft.time, draft.ambiguous_hour = f"{hour:02d}:{minute:02d}", None
-        elif period:
-            draft.time, draft.ambiguous_hour = _to_24h(hour, minute, period), None
+        elif period or draft.period:
+            draft.time, draft.ambiguous_hour = _to_24h(hour, minute, period or draft.period), None
         else:
             draft.time, draft.ambiguous_hour = None, (hour, minute)
     elif draft.ambiguous_hour is not None and period:
@@ -262,8 +358,10 @@ def apply_text(draft: Draft, text: str, profile: Profile, now: datetime, is_foll
         # else: leave unresolved -> ask which meal
         if draft.time:
             draft.meal_after = False
-    elif period and not draft.time:
-        # bare day-part ("sakali", "ratri"): configured wake / meal times, never a guess
+    elif period and not draft.time and not _CLOCK_WORD.search(norm):
+        # bare day-part ("sakali", "ratri"): configured wake / meal times, never a guess.
+        # NOT when a clock word was spoken ("... वाजता") but no hour could be read: that is a
+        # clock time, so the wake time must not stand in for it - the time stays open and Arjun asks.
         if period == "am":
             draft.time = profile.wake_time
         elif period == "night":
@@ -291,7 +389,24 @@ def _extract_task(norm: str) -> str | None:
     return task or None
 
 
-def parse(text: str, profile: Profile, now: datetime, language: str, has_pending: bool) -> Parsed:
+def _list_day(norm: str, now: datetime) -> str | None:
+    """Which day a "what is on" question is about: None/today, an ISO date, or "ambiguous"."""
+    offsets = {DATE_WORDS[t] for t in tokens(norm) if t in DATE_WORDS}
+    if len(offsets) > 1:
+        return "ambiguous"  # "उद्या आज काय आहे": never guess which one
+    if offsets:
+        return (now.date() + timedelta(days=offsets.pop())).isoformat()
+    return None
+
+
+def parse(
+    text: str,
+    profile: Profile,
+    now: datetime,
+    language: str,
+    has_pending: bool,
+    pending_action: str | None = None,
+) -> Parsed:
     """Classify intent (v1 intents only) and extract reminder slots."""
     norm = normalize(text)
     toks = tokens(norm)
@@ -321,6 +436,8 @@ def parse(text: str, profile: Profile, now: datetime, language: str, has_pending
         return done("MED_SNOOZE", 0.6)  # "१५ मिनिटांनी सांग"; dispatch checks a dose is due
 
     if not has_any(norm, REMIND):
+        if _HEARING.search(norm):
+            return done("HEARING_CHECK", 0.85)
         if has_any(norm, DATE_Q):
             p = done("TIME_QUERY", 0.8)
             p.topic = "date"
@@ -336,6 +453,19 @@ def parse(text: str, profile: Profile, now: datetime, language: str, has_pending
             return done("CONFIRM_NO", 0.9)
         if has_any(norm, YES) and not has_any(norm, NO):
             return done("CONFIRM_YES", 0.9)
+
+    # A "no" inside a longer sentence while a reminder (or similar) awaits its yes/no is a correction:
+    # cancel it and ask again. Without a pending action, or for a pending story, it stays chat.
+    if (
+        has_pending
+        and pending_action in CORRECTABLE
+        and has_any(norm, NO)
+        and not has_any(norm, YES)
+        and not has_any(norm, REMIND)
+    ):
+        p = done("CONFIRM_NO", 0.7)
+        p.topic = "correction"
+        return p
 
     if has_any(norm, SHARE_VERB) and has_any(norm, FAMILY) and not has_any(norm, REMIND):
         if not has_any(norm, CALL):
@@ -356,13 +486,18 @@ def parse(text: str, profile: Profile, now: datetime, language: str, has_pending
         return done("CREATE_REMINDER", 0.8, draft)
 
     if has_any(norm, LIST_TODAY):
-        return done("LIST_TODAY", 0.8)
+        p = done("LIST_TODAY", 0.8)
+        p.topic = _list_day(norm, now)
+        return p
 
     if has_any(norm, APPOINTMENT) and has_any(norm, QUESTION):
         return done("GET_APPOINTMENT", 0.7)
 
     if has_any(norm, CAREGIVER):
         return done("REQUEST_CAREGIVER", 0.7)
+
+    if n <= 4 and has_any(norm, GREET):
+        return done("GREETING", 0.8)
 
     # bare single-word replies without pending context are not enough to act on
     if n >= 5:

@@ -31,3 +31,12 @@
 {"text": "aushadh skip kela tar chalel ka", "intent": "MEDICAL_QUESTION"}
 {"text": "औषध घ्यायला विसरले", "intent": "MEDICAL_QUESTION"}
 {"text": "goli kashasathi aahe", "intent": "MEDICAL_QUESTION"}
+{"text": "उद्या सकाळी दहा वाजता डॉक्टरकडे जायचं आहे आठवण कर", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "10:00"}
+{"text": "udya sakali daha vajta doctor la jaycha aahe athvan thev", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "10:00"}
+{"text": "कल सुबह दस बजे डॉक्टर के पास जाना है याद दिलाओ", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "10:00"}
+{"text": "udya sakali saade daha vajta doctor remind kar", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "10:30"}
+{"text": "उद्या दुपारी दोन वाजता बँकेत जायचं आठवण कर", "intent": "CREATE_REMINDER", "date_offset": 1, "time": "14:00"}
+{"text": "हॅलो", "intent": "GREETING"}
+{"text": "नमस्कार", "intent": "GREETING"}
+{"text": "ऐकू येतंय का तुला", "intent": "HEARING_CHECK"}
+{"text": "उद्या काय आहे", "intent": "LIST_TODAY"}

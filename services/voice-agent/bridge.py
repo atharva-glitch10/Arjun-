@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import httpx
 
-REASONING_URL = os.environ.get("REASONING_URL", "http://localhost:8001")
+REASONING_URL = os.environ.get("REASONING_URL", "http://127.0.0.1:8001")
 # A voice user cannot wait long: fail fast and speak the fallback instead.
 REASONING_TIMEOUT_S = float(os.environ.get("REASONING_TIMEOUT_S", "5"))
 
@@ -77,6 +77,16 @@ def reply_or_fallback(
             awaiting_confirmation=False,
             round_trip_ms=(time.perf_counter() - t0) * 1000,
         )
+
+
+def should_speak(reply: BridgeReply, stale: bool) -> bool:
+    """Speak this reply? An outdated one is dropped: the user has already said something newer, and
+    answering the old sentence is how Arjun seemed to reply to the wrong thing (2026-10-24).
+
+    The one exception is a reply that asks for a yes/no: reasoning has already stored a pending action,
+    so the user must hear what they would be agreeing to, or a later spoken "yes" would confirm blind.
+    """
+    return (not stale) or reply.awaiting_confirmation
 
 
 def endpointing_delay(mode: str) -> float:

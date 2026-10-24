@@ -4,7 +4,7 @@ The server clock (household timezone) is the single source of time. Reminders, a
 medicines and family-set meal times all come from SQL; nothing here is generated.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -14,7 +14,7 @@ from . import models as m
 from . import schemas as s
 from .db import get_db
 from .deps import get_now, require_key
-from .medicines import ensure_doses
+from .medicines import due_at_for, ensure_doses
 
 router = APIRouter(dependencies=[Depends(require_key)])
 
@@ -38,12 +38,17 @@ def _at(day: datetime, hhmm: str) -> datetime:
 
 @router.get("/users/{user_id}/day", response_model=s.DayOut)
 def day_view(
-    user_id: int, db: Session = Depends(get_db), now: datetime = Depends(get_now)
+    user_id: int,
+    on: date | None = None,
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
 ) -> s.DayOut:
+    """Today by default; `on` reads another date. A future day is read-only: no dose rows are created."""
     user = db.get(m.User, user_id)
     if user is None:
         raise HTTPException(404, "user not found")
-    start = datetime.combine(now.date(), time.min)
+    day = on or now.date()
+    start = datetime.combine(day, time.min)
     end = start + timedelta(days=1)
     items: list[s.DayItem] = []
 
@@ -72,8 +77,9 @@ def day_view(
                 ref_id=a.id,
             )
         )
-    ensure_doses(db, user, now)
-    db.commit()
+    if day == now.date():
+        ensure_doses(db, user, now)
+        db.commit()
     dose_rows = db.execute(
         select(m.MedicineDose, m.Medicine)
         .join(m.Medicine, m.Medicine.id == m.MedicineDose.medicine_id)
@@ -94,9 +100,22 @@ def day_view(
                 ref_id=dose.id,
             )
         )
-    items.append(s.DayItem(kind="wake", at=_at(now, user.wake_time), label="wake", status="scheduled"))
-    items.append(s.DayItem(kind="meal", at=_at(now, user.lunch_time), label="lunch", status="scheduled"))
-    items.append(s.DayItem(kind="meal", at=_at(now, user.dinner_time), label="dinner", status="scheduled"))
+    if day > now.date():  # not generated yet: computed from the family-set schedule, nothing is written
+        for med in db.scalars(
+            select(m.Medicine).where(m.Medicine.user_id == user_id, m.Medicine.active.is_(True))
+        ):
+            items.append(
+                s.DayItem(
+                    kind="medicine",
+                    at=due_at_for(user, med, day),
+                    label=med.name,
+                    detail=med.dose,
+                    status="scheduled",
+                )
+            )
+    items.append(s.DayItem(kind="wake", at=_at(start, user.wake_time), label="wake", status="scheduled"))
+    items.append(s.DayItem(kind="meal", at=_at(start, user.lunch_time), label="lunch", status="scheduled"))
+    items.append(s.DayItem(kind="meal", at=_at(start, user.dinner_time), label="dinner", status="scheduled"))
 
     items.sort(key=lambda i: (i.at, i.kind))
     open_now = [
