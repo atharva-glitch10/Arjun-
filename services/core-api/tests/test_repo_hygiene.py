@@ -10,7 +10,7 @@ def _vars(service: str) -> list[str]:
     text = (ROOT / "scripts" / "dev-up.ps1").read_text(encoding="utf-8")
     block = re.search(rf'"{re.escape(service)}"\s*=\s*@\{{.*?\n(?=\s*"[a-z-]+"\s*=|\}})', text, re.S)
     assert block, f"service {service} not found in dev-up.ps1"
-    m = re.search(r"Vars\s*=\s*(.+)", block.group(0))
+    m = re.search(r"Vars\s*=\s*(.+?)\}", block.group(0), re.S)
     assert m, f"no Vars for {service}"
     return re.findall(r'"([A-Z_]+)"', m.group(1))
 
@@ -42,3 +42,19 @@ def test_the_web_app_never_calls_reasoning_directly():
     for f in (ROOT / "web" / "src").rglob("*.ts*"):
         text = f.read_text(encoding="utf-8", errors="ignore")
         assert "/reasoning" not in text, f"{f.name} calls reasoning"
+
+
+def test_llm_settings_reach_reasoning_and_the_llm_key_reaches_nothing_else():
+    names = {"LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
+             "LLM_TIMEOUT_S", "LLM_MAX_TOKENS", "LLM_HISTORY_EXCHANGES"}
+    assert names <= set(_vars("reasoning"))
+    for other in ("core-api", "voice-agent", "web"):
+        assert not [v for v in _vars(other) if v.startswith(("LLM_", "EVON_"))], other
+
+
+def test_env_example_lists_every_llm_name():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    for name in ("LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
+                 "LLM_TIMEOUT_S", "LLM_MAX_TOKENS", "LLM_HISTORY_EXCHANGES"):
+        assert re.search(rf"^{name}=", text, re.M), name
+    assert not re.search(r"^LLM_API_KEY=\S", text, re.M)  # the example never holds a value

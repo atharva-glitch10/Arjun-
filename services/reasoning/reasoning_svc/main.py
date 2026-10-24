@@ -14,17 +14,21 @@ _engine: TurnEngine | None = None
 def get_engine() -> TurnEngine:
     global _engine
     if _engine is None:
-        evon = (
+        s = config.llm_settings()
+        llm = (
             EvonClient(
-                config.EVON_BASE_URL,
-                config.EVON_MODEL,
-                api_key=config.EVON_API_KEY,
-                send_template_kwargs=config.EVON_SEND_TEMPLATE_KWARGS,
+                s.base_url,
+                s.model,
+                api_key=s.api_key,
+                send_template_kwargs=s.send_template_kwargs,
+                provider=s.provider,
+                max_tokens=s.max_tokens,
+                timeout_s=s.timeout_s,
             )
-            if config.EVON_BASE_URL
+            if s.configured
             else None
         )
-        _engine = TurnEngine(CoreClient(), evon)
+        _engine = TurnEngine(CoreClient(), llm)
     return _engine
 
 
@@ -46,7 +50,13 @@ class TurnOut(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, object]:
-    return {"status": "ok", "evon_configured": bool(config.EVON_BASE_URL)}
+    s = config.llm_settings()
+    return {
+        "status": "ok",
+        "llm_configured": s.configured,
+        "llm_provider": s.provider if s.configured else "none",
+        "evon_configured": s.configured and s.provider == "evon",  # old name, kept for the scripts that read it
+    }
 
 
 @app.post("/turn", response_model=TurnOut)

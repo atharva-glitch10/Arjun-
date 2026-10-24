@@ -5,6 +5,8 @@ failure -> retry once -> caller falls back to the rule-based parser. The LLM nev
 """
 
 import json
+import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,8 @@ import httpx
 import jsonschema
 
 from . import config
+
+log = logging.getLogger("arjun.llm")
 
 _LANG_NAMES = {"mr": ("Marathi", "Devanagari"), "hi": ("Hindi", "Devanagari"), "en": ("English", "Latin")}
 
@@ -30,15 +34,27 @@ class EvonClient:
         schema: dict[str, Any] | None = None,
         api_key: str = "",
         send_template_kwargs: bool = True,
+        provider: str = "evon",
+        max_tokens: int = 120,
+        timeout_s: float = 4.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.provider = provider
+        self.max_tokens = max_tokens
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        self.http = http or httpx.Client(timeout=20.0, headers=headers)
+        self.http = http or httpx.Client(timeout=timeout_s, headers=headers)
         self.schema = schema or load_intent_schema()
         self.send_template_kwargs = send_template_kwargs
 
-    def _chat(self, messages: list[dict[str, str]], temperature: float, **extra: Any) -> str:
+    def _chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        purpose: str = "chat",
+        timeout: float | None = None,
+        **extra: Any,
+    ) -> str:
         body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -48,12 +64,41 @@ class EvonClient:
         if self.send_template_kwargs:
             # reasoning traces add latency in the live voice path
             body["chat_template_kwargs"] = {"enable_thinking": False}
-        r = self.http.post(f"{self.base_url}/chat/completions", json=body)
-        r.raise_for_status()
-        return str(r.json()["choices"][0]["message"]["content"])
+        t0 = time.perf_counter()
+        record: dict[str, Any] = {"provider": self.provider, "model": self.model, "purpose": purpose}
+        try:
+            r = self.http.post(
+                f"{self.base_url}/chat/completions",
+                json=body,
+                **({"timeout": timeout} if timeout is not None else {}),
+            )
+            r.raise_for_status()
+            data = r.json()
+            content = str(data["choices"][0]["message"]["content"])
+        except Exception as exc:
+            # one line per call, never the transcript or the reply: provider, model, latency, tokens
+            record.update(ok=False, error=type(exc).__name__, latency_ms=round((time.perf_counter() - t0) * 1000))
+            log.info(json.dumps(record))
+            raise
+        usage = data.get("usage") or {}
+        record.update(
+            ok=True,
+            latency_ms=round((time.perf_counter() - t0) * 1000),
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+        )
+        log.info(json.dumps(record))
+        return content
 
     def extract_intent(
-        self, text: str, language: str, now: datetime, wake: str, lunch: str, dinner: str
+        self,
+        text: str,
+        language: str,
+        now: datetime,
+        wake: str,
+        lunch: str,
+        dinner: str,
+        timeout: float | None = None,
     ) -> dict[str, Any] | None:
         lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
         system = (
@@ -72,6 +117,9 @@ class EvonClient:
                 raw = self._chat(
                     messages,
                     config.EXTRACTION_TEMPERATURE,
+                    purpose="intent",
+                    timeout=timeout,
+                    max_tokens=250,
                     response_format={"type": "json_object"},
                 )
                 data = json.loads(raw)
@@ -88,6 +136,7 @@ class EvonClient:
         now: datetime | None = None,
         history: list[tuple[str, str]] | None = None,
         interests: list[str] | None = None,
+        timeout: float | None = None,
     ) -> str | None:
         """`history` is this conversation's earlier (role, text) turns, oldest first; never older."""
         lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
@@ -120,8 +169,10 @@ class EvonClient:
             out = self._chat(
                 messages,
                 config.COMPANION_TEMPERATURE,
+                purpose="companion",
+                timeout=timeout,
                 top_p=config.COMPANION_TOP_P,
-                max_tokens=120,
+                max_tokens=self.max_tokens,
             )
         except (httpx.HTTPError, ValueError, KeyError):
             return None
