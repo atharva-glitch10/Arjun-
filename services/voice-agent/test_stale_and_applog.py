@@ -33,3 +33,22 @@ def test_file_log_is_added_once_and_receives_records(tmp_path):
             if h not in before:
                 root.removeHandler(h)
                 h.close()
+
+
+def test_structured_fields_are_written_too(tmp_path):
+    path = tmp_path / "agent.log"
+    root = logging.getLogger()
+    before = list(root.handlers)
+    try:
+        applog.setup_file_log(path)
+        root.setLevel(logging.INFO)
+        logging.getLogger("livekit.agents").info("registered worker", extra={"agent_name": "arjun", "id": "AW_x"})
+        for h in root.handlers:
+            h.flush()
+        text = path.read_text(encoding="utf-8")
+        assert '"agent_name": "arjun"' in text and '"id": "AW_x"' in text
+    finally:
+        for h in list(root.handlers):
+            if h not in before:
+                root.removeHandler(h)
+                h.close()
