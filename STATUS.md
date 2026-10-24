@@ -28,6 +28,23 @@
   scheduler 3 passed; ruff clean; web `tsc --noEmit` clean; eval 33/33, 7/7, 5/5 (regression only).
   NOT run: the live agent, LiveKit, Gnani (needs your machine and keys).
 
+## Hosted LLM for open conversation (built 2026-10-24, NOT yet run against a real provider)
+- Models, truthfully: **Gnani Prisma** (speech in) + **Gnani Timbre** (speech out) + a **hosted non-Gnani LLM** for
+  open conversation, chosen by `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` / `LLM_PROVIDER_NAME` (`EVON_*` are
+  aliases). **Evon is not used.** No key or provider is in `.env` yet, so reasoning runs rules-only and the
+  canned companion lines are still what Arjun says.
+- Used ONLY for companion/chat replies and for turns the rules return UNKNOWN; care commands, times, medicines,
+  confirmations and safety never wait for it, and emergency/distress run before any call. For UNKNOWN turns it may
+  only suggest a short list of intents, still behind the pending action + spoken yes. The elder's words in those
+  turns go to the provider (synthetic data only for the demo).
+- Limits: 4 s budget per turn for all calls, `max_tokens` 120, last four exchanges, fixed temperature, no name or
+  contacts sent; one log line per call (provider, model, latency, tokens; no text). Replies are cut to two sentences
+  and replaced by the fixed line if they claim to be human, say "I missed you", give medical advice, recite
+  recipes/facts, or use the wrong script (a heuristic safety net, not a proof).
+- `eval/llm_compare.py` (20 sentences + 10 companion prompts) is written and tested against a fake client; it has
+  NOT been run on a real provider. Open question 5 (is a non-Gnani LLM allowed in the entry) is still open.
+- Tests: reasoning 281, core-api 56 passed; ruff clean; eval 42/42, 12/12, 5/5.
+
 ## T6 built (2026-10-24): elder app through LiveKit + Gnani
 - `POST /livekit/token` (core-api, same auth): 600 s token, fresh room per call, explicit "arjun" dispatch,
   mic-only publish, secret server-side. The Vite proxy injects the API key; the browser never reaches reasoning.
@@ -65,5 +82,5 @@
 1b. TTS: per-reply WebSocket connect costs ~1 s; SSE through a pooled session looks faster. Needs an OK (see report).
 2. T6 elder app via LiveKit + Gnani: BUILT 2026-10-24, awaiting the speaker's hand verification in a browser
    (token endpoint, agent attributes + tap path, web hook and screens, browser speech removed). See the T6 section.
-3. T8 spoken delivery of reminders/medicines. 4. ~~T9 Evon decision~~ DECIDED 2026-10-24: no Evon for the demo (rules-only; EVON_BASE_URL stays empty). OPENER_USER_IDS / BRIEFING_USER_IDS stay empty until T8 makes openers/briefings actually spoken.
+3. T8 spoken delivery of reminders/medicines. 4. ~~T9 Evon decision~~ DECIDED 2026-10-24: Evon is not used. Open conversation will use a HOSTED NON-GNANI LLM (built, tested with mocks, NOT configured or run live yet: no key in .env, see `eval/llm_compare.py`). Gnani = Prisma + Timbre. OPENER_USER_IDS / BRIEFING_USER_IDS stay empty until T8 makes openers/briefings actually spoken.
 5. T12 native-speaker review of distress + emergency lexicons. 6. T14 production proxy + auth.

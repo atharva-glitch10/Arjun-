@@ -9,7 +9,7 @@ Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Mar
 | Piece | State |
 |---|---|
 | `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 38 pytest tests (incl. API-key checks; core-api refuses to start without `CORE_API_KEY`). |
-| `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent (Evon if `EVON_BASE_URL`, else rule-based parser) -> dispatch. 130 pytest tests incl. distress and physical-emergency test sets (both lexicons unverified by a native speaker), core-api-outage handling, and dedicated medicine-path tests (intake with spoken yes, deflected medicine questions, no voice-created medicines). |
+| `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent (rule-based parser; the hosted LLM only for chat and for turns the rules cannot read) -> dispatch. 281 pytest tests incl. distress and physical-emergency test sets (both lexicons unverified by a native speaker), core-api-outage handling, and dedicated medicine-path tests (intake with spoken yes, deflected medicine questions, no voice-created medicines). |
 | `services/scheduler` | Polls core-api to mark due reminders, tick medicines, and fetch briefing/opener text. **Logs only: nothing is spoken on the elder device yet (T8).** 3 pytest tests. |
 | `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `design/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. `npm run build` passes; the screens were rendered in headless Edge (`/?preview` gallery, dashboard, elder home) but not tested on a real device or with real speech. |
 | `eval/` | `python eval/run_eval.py` - intent / slot / distress on 33 synthetic text cases. |
@@ -17,7 +17,7 @@ Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Mar
 
 ## Run
 ```
-cp .env.example .env            # set CORE_API_KEY; leave EVON_BASE_URL empty for rule-based mode
+cp .env.example .env            # set CORE_API_KEY; leave LLM_BASE_URL empty for rules-only mode
 docker compose up --build       # postgres, core-api :8000, reasoning :8001, scheduler, web :5173
 ```
 Local without Docker: `scripts\dev-up.ps1` starts core-api (SQLite), reasoning, voice-agent and web, in that order, one window
@@ -46,9 +46,10 @@ then `pytest` inside each service and `ruff check .` at the root.
   word ("दहा वाजता") or a day-part ("सकाळी दहा"); other spellings Prisma may produce are untested. If a clock word is
   heard with no readable hour, Arjun asks "किती वाजता?". A bare day-part with no clock word ("सकाळी") still means the
   family-set wake/meal time.
-- **Open conversation is canned.** Without Evon the companion rotates four fixed lines, so anything that is not a
-  care command gets an off-topic answer (seen in the first real-speech test). Greeting and "can you hear me" now have
-  fixed replies; everything else waits for a hosted LLM decision.
+- **Open conversation needs the hosted LLM.** Without `LLM_BASE_URL` the companion rotates four fixed lines, so
+  anything that is not a care command gets an off-topic answer (seen in the first real-speech test). With it set,
+  only companion/chat replies and turns the rules cannot read go to the provider; care commands, times, medicines,
+  confirmations and safety never do. See the next bullets for what is and is not verified.
 - "उद्या काय आहे" reads tomorrow from SQL (medicines are computed from the family schedule, nothing is written). A
   sentence naming two days ("उद्या आज काय आहे") asks which day; the answer "उद्या" alone is not understood yet.
 - A stale reply (the user spoke again first) is dropped only if it is a plain care or companion reply. Safety replies
@@ -72,18 +73,23 @@ then `pytest` inside each service and `ruff check .` at the root.
   Discord first. Until then, report results for Arjun as a system (e.g. reminders completed correctly), not WER for
   Prisma. Also unanswered: credit cost per call, what happens when credits run out, and whether a teammate may use
   the primary registrant's key (credits and the key belong to the primary registrant).
-- A non-Gnani LLM can be used for development only (`EVON_BASE_URL` + `EVON_API_KEY` + `EVON_MODEL`, and
-  `EVON_SEND_TEMPLATE_KWARGS=0` if the provider rejects vLLM fields). CLAUDE.md open question 5 (is a backup LLM
-  allowed?) is unanswered, so do not use it in the demo video or the submission until it is. Its reply quality
-  in Marathi is unmeasured. The intent path also uses it, so care-mode intent extraction would depend on it.
+- **The conversation LLM is a hosted, non-Gnani provider** (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`,
+  `LLM_PROVIDER_NAME`; `EVON_*` still work as aliases; `LLM_SEND_TEMPLATE_KWARGS=0` for non-vLLM). Gnani = Prisma
+  (hearing) + Timbre (voice); Evon is not used. **Whatever the elder says in an open-conversation turn is sent to
+  that provider**, so the demo uses synthetic data only. CLAUDE.md open question 5 (is a non-Gnani LLM allowed in
+  the entry?) is still unanswered on Discord: say plainly in the posts which model does what. No provider is
+  configured yet, so nothing has run through it live. Reply quality in Marathi is unmeasured (`eval/llm_compare.py`
+  measures it once a provider is set). Limits: one ~4 s budget per turn, 120 tokens, last four exchanges, no name
+  or contact details sent; replies that claim to be human, say "I missed you", give medical advice, or recite
+  recipes/facts are replaced by a fixed line.
 - Companion conversation: the elder screen now keeps listening after a CHAT reply (ends on silence, "nako", or the
-  back button), and reasoning sends Evon the last four exchanges of this conversation plus the user's interests
-  (in memory only, dropped after 30 min idle or on distress, never stored). Covered by mock-Evon tests only:
-  **no real Evon reply and no real speech has run through it**, so reply quality, Marathi fluency and the
-  hands-free loop on a real device are unverified. Without `EVON_BASE_URL` the replies are still the 4 canned lines.
-- Companion CHAT replies are rotating templates unless Evon is configured. `COMPANION_TEMPERATURE=0.6`
-  is Gnani's recommendation, **not yet chosen by our testing**. Evon was never run by us; the client is only
-  tested against a mock transport.
+  back button), and reasoning sends the LLM the last four exchanges of this conversation plus the user's interests
+  (in memory only, dropped after 30 min idle or on distress, never stored). Covered by mock-provider tests only:
+  **no real LLM reply and no real speech has run through it**, so reply quality, Marathi fluency and the
+  hands-free loop on a real device are unverified. Without `LLM_BASE_URL` the replies are still the 4 canned lines.
+- Companion CHAT replies are rotating templates unless an LLM is configured. `COMPANION_TEMPERATURE=0.6`
+  is Gnani's recommendation for Evon, **not yet chosen by our testing**. The client is only tested against a mock
+  transport.
 
 - **Medicines (new):** family creates/edits them on the dashboard; Arjun can only record "taken" / "snooze"
   after a spoken yes (or a tap) and deflects every medicine question to "ask the doctor". Verified by tests
@@ -120,7 +126,7 @@ then `pytest` inside each service and `ruff check .` at the root.
   is the single SQL-backed view of today (items, what is due now, what is next). Arjun answers "kiti vajle",
   "aaj konta divas" and "ata kay karaycha" from that clock + SQL through fixed templates, `/briefing/{id}`
   gives a once-a-day greeting + plan (the scheduler logs it; delivery to a voice session is not wired), and
-  Evon prompts receive the current time. The elder screen shows the clock using server time (corrects a
+  LLM prompts receive the current time. The elder screen shows the clock using server time (corrects a
   phone with a wrong clock). Verified by tests and a local run; not yet verified in a container.
 - Time guidance only reads what the family set (reminders, appointments, medicines, wake/lunch/dinner
   times). It does not suggest activities. "Next" can be a meal time, which is a family-set marker, not a

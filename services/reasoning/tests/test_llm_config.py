@@ -114,3 +114,14 @@ def test_limits_go_into_the_request():
     body, timeout = seen[0]
     assert body["max_tokens"] == 90 and body["temperature"] == config.COMPANION_TEMPERATURE
     assert timeout["read"] == 2.0
+
+
+def test_running_token_totals_are_kept_for_the_compare_script():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ठीक आहे"}}],
+                                         "usage": {"prompt_tokens": 50, "completion_tokens": 7}})
+
+    c = _client(handler)
+    c.companion_reply("नमस्कार", "mr")
+    c.companion_reply("नमस्कार", "mr")
+    assert c.usage == {"calls": 2, "prompt_tokens": 100, "completion_tokens": 14}

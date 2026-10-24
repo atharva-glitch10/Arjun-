@@ -102,6 +102,7 @@ class EvonClient:
         self.model = model
         self.provider = provider
         self.max_tokens = max_tokens
+        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}  # running totals for this client
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.http = http or httpx.Client(timeout=timeout_s, headers=headers)
         self.schema = schema or load_intent_schema()
@@ -149,6 +150,9 @@ class EvonClient:
             log.info(json.dumps(record))
             raise
         usage = data.get("usage") or {}
+        self.usage["calls"] += 1
+        self.usage["prompt_tokens"] += usage.get("prompt_tokens") or 0
+        self.usage["completion_tokens"] += usage.get("completion_tokens") or 0
         record.update(
             ok=True,
             latency_ms=round((time.perf_counter() - t0) * 1000),

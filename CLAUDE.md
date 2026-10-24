@@ -17,7 +17,7 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 - Target award: Main Character (regional language); backup Real Deal. Only one can be won.
 
 ## Hard boundaries (never violate, never "improve" away)
-1. **The LLM never touches the database.** Evon only suggests; core-api validates and acts.
+1. **The LLM never touches the database.** The LLM only suggests; core-api validates and acts.
    Flow: reasoning proposes -> core-api stores a *pending* action -> only a spoken yes executes it.
 2. **Reminders, appointments, medicines, contacts come from SQL only.** RAG is for past stories only.
 3. **Never guess.** Ambiguous AM/PM, missing date, or "after the meal" without which meal -> ask.
@@ -31,7 +31,7 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
    self-reported; label it so. No adherence scores, streaks or guilt.
 7. **Health readings (BP/sugar, frozen for now)**: if ever built, never say a reading is good, bad,
    high, low or normal; repeat numbers back for confirmation; show raw values only.
-8. **Safety checks run first on every turn**, rules only, and work with core-api and Evon down:
+8. **Safety checks run first on every turn**, rules only, and work with core-api and the LLM down:
    - **Physical emergency** (chest pain, can't breathe, a fall now, fainting, bleeding) -> fixed
      template: call 112 / call out to someone near; try to alert family. Never diagnose, never
      continue chatting. Emergency alert policy vs. consent is PENDING a team decision.
@@ -45,7 +45,7 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 11. **Stories are private by default**; saved only after a yes, shared only after a second yes;
     "he visar" deletes. Never invent memories: reference a past story only from stored text.
     No raw audio stored. Demo uses synthetic data only.
-12. **Secrets**: ONE root `.env` (only `.env.example` is tracked). `GNANI_API_KEY` and LiveKit keys
+12. **Secrets**: ONE root `.env` (only `.env.example` is tracked). `LLM_API_KEY` is read only by reasoning. `GNANI_API_KEY` and LiveKit keys
     are read only by voice-agent (it loads just `GNANI_*`/`LIVEKIT_*`/`ARJUN_*`) and by core-api's
     future LiveKit token endpoint. Never in React code, never in Git, never logged, never printed.
     `CORE_API_KEY` is required: core-api refuses to start without it (tests use ARJUN_TESTING=1).
@@ -58,12 +58,18 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 |---|---|---|
 | Prisma | STT, ears (streaming, code-mixed) | Gnani API via LiveKit Gnani plugin (credits) |
 | Timbre | TTS, Arjun's male voice | Gnani API via plugin. API accepts ONLY `timbre-v2.5` / `timbre-v3.0` and needs a voice (we use `Omkar`, verified 2026-10-21) |
-| Evon v3.3 | LLM: messy phrasing, companion talk, summaries | NOT on the API platform, NOT covered by credits. Self-host vLLM on an 80 GB GPU (`gnani/gnani-evon-v3.3-30B-A3B`, `--max-model-len 8192`, `--api-key`), or none. Never run it on the dev laptop (16 GB RAM / 3 GB GPU) |
+| Hosted LLM (**non-Gnani**) | Open conversation ONLY: companion/chat replies, and turns the rules cannot read (UNKNOWN) | Any OpenAI-compatible API: `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_PROVIDER_NAME` (key read only by reasoning). What the elder says in those turns is sent to the provider, so demo data is synthetic. Limits: ~4 s per turn, 120 tokens, last 4 exchanges |
+| Evon v3.3 | NOT USED (decision T9, 2026-10-24) | Not on the API platform, not covered by credits; would need an 80 GB GPU. The `EVON_*` names still work as aliases of `LLM_*` if it is ever used. Never run it on the dev laptop |
 
-Layered brain so the app works with the GPU off: rules + Marathi time grammar -> (optional small
-classifier) -> Evon. Care mode and safety: temperature 0. Companion: one fixed tested value
-(Gnani suggests 0.6; not yet chosen by our testing). Always send
-`"chat_template_kwargs": {"enable_thinking": false}` to Evon in the live path.
+**Truthful write-up:** speech in = Gnani Prisma, speech out = Gnani Timbre, the conversation LLM = the hosted non-Gnani provider named in `LLM_PROVIDER_NAME` (none configured yet), Evon = not used.
+
+Layered brain so the app works with no LLM at all: safety rules -> rules + Marathi time grammar -> the hosted
+LLM, asked only for companion/chat replies and for turns the rules return UNKNOWN (it may then only suggest
+CREATE_REMINDER / LIST_TODAY / GET_APPOINTMENT / CALL_FAMILY_REMINDER / REQUEST_CAREGIVER / CHAT; everything
+still needs the pending action and a spoken yes). Care mode, times, medicines, confirmations and safety never
+wait for it. Intent extraction: temperature 0. Companion: one fixed value (0.6, Gnani's suggestion for Evon;
+not yet chosen by our testing). Send `chat_template_kwargs` only to vLLM/Evon (`LLM_SEND_TEMPLATE_KWARGS=0`
+for hosted providers).
 
 ## Voice path facts (verified)
 - LiveKit Agents **1.8.6** (pinned). The worker registers as `agent_name="arjun"` and joins ONLY
@@ -76,7 +82,7 @@ classifier) -> Evon. Care mode and safety: temperature 0. Companion: one fixed t
 ## Architecture
 ```
 Elder device (React, one big button) -> LiveKit room -> voice-agent (Python worker, "arjun")
-  (no noise cancellation yet, open question 6) -> Prisma STT -> reasoning /turn (emergency -> distress -> router -> rules -> Evon)
+  (no noise cancellation yet, open question 6) -> Prisma STT -> reasoning /turn (emergency -> distress -> router -> rules -> hosted LLM for chat / UNKNOWN only)
   -> core-api (FastAPI, Postgres/SQLite) -> reply text -> Timbre TTS -> speaker
 scheduler: due reminders, medicines, briefing, openers (logged only until T8).
 Dashboard: React + TS -> core-api (via dev proxy; production needs a real proxy, T14).
@@ -104,7 +110,7 @@ nginx replicas, S3 cache, multi-elder accounts, telephony, SMS/WhatsApp, Evon fi
 2. Prisma accuracy on elderly speakers? If poor: mandatory confirmation, short phrases.
 3. Credit cost per call.
 4. ~~Evon: GPU or not~~ DECIDED 2026-10-24 (T9): **no Evon for the demo.** The demo runs on rules + Marathi time grammar only (EVON_BASE_URL empty, rule-based fallback). Revisit only after Nov 10 or if a GPU becomes available.
-5. Discord: non-Gnani LLM backup allowed? Consenting relative in demo video? Publishing accuracy
+5. Discord: is a non-Gnani LLM allowed in the entry? (Used anyway for open conversation per the team decision of 2026-10-24; Gnani remains STT + TTS. Disclose it in the posts; ask on Discord.) Also: Consenting relative in demo video? Publishing accuracy
    numbers (EULA 16)? Teammate using the primary registrant's key?
 6. Does noise cancellation (LiveKit BVC) help or hurt Prisma (A/B)? It is NOT in the code yet (the plugin
    needs PyPI); the elder browser keeps its own echo cancellation + noise suppression on until then.

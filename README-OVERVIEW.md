@@ -53,7 +53,7 @@ Text or a transcript goes in, and a templated reply comes out, in Marathi, Hindi
    │
    ├── /reasoning ──────────▶ reasoning  (FastAPI :8001)
    │                            ├─ distress rules  (first, every turn)
-   │                            ├─ Evon LLM (optional) → schema-validated JSON
+   │                            ├─ hosted LLM (optional; chat + unreadable turns only) → schema-validated JSON
    │                            ├─ rule-based parser (fallback / confirmations)
    │                            └─ templated replies
    │                                   │ HTTP (propose / read)
@@ -91,7 +91,7 @@ FastAPI + httpx + jsonschema.
 | `turn.py` | Orchestrates a turn and dispatches intents. |
 | `distress.py` | Recall-biased keyword net in mr / hi / en (Devanagari and roman). |
 | `parser.py` | Rule-based intent and slot extraction, with draft slot-filling across turns. |
-| `evon.py` | OpenAI-compatible client for self-hosted Evon, with JSON-schema validation and one retry. |
+| `evon.py` | OpenAI-compatible client for the hosted LLM (name kept from the Evon days): JSON-schema validation, one retry, per-call log, companion reply guard. |
 | `replies.py` | Fixed templates in mr / hi / en and rotating companion prompts. |
 | `core_client.py` | Thin HTTP client for core-api. |
 | `textutil.py` | Normalisation, Devanagari digits, whole-token matching, language detection. |
@@ -131,11 +131,11 @@ Order is fixed in `turn.py`:
 2. **AI disclosure:** "are you human?" gets a fixed answer.
 3. **Intent:**
    - Open reminder draft → short answers fill the slots.
-   - Evon configured → schema-validated JSON at temperature 0, one retry, then fall back.
+   - Rules return UNKNOWN and an LLM is configured → schema-validated JSON at temperature 0, one retry, then fall back. Known intents never wait for it.
    - Otherwise → rule-based parser.
    - Confirm / decline / forget always come from the deterministic parser.
 4. **Dispatch:** care intents are answered from SQL via core-api. Anything that writes is proposed, then confirmed by a spoken yes.
-5. **Companion chat:** Evon at temperature 0.6 if configured, with a script and length check. Otherwise rotating "tell me more" templates.
+5. **Companion chat:** the hosted LLM at temperature 0.6 if configured, with a script, length and boundary check. Otherwise rotating "tell me more" templates.
 
 ---
 
@@ -149,7 +149,7 @@ Order is fixed in `turn.py`:
 | **Pydantic v2** | core-api, reasoning | Request/response validation and field constraints. |
 | **httpx** | all Python services | Service-to-service calls and Evon calls. Mock transports in tests. |
 | **jsonschema** | reasoning | Validates LLM output against `shared/schemas/intent.json` before it is trusted. |
-| **Gnani Evon** | reasoning | Optional intent extractor and companion chat via an OpenAI-compatible endpoint. Cannot write to the DB. |
+| **Hosted LLM (non-Gnani)** | reasoning | Optional: companion chat and unreadable turns via an OpenAI-compatible endpoint. Cannot write to the DB. Evon is not used. |
 | **Gnani Prisma / Timbre + LiveKit** | voice-agent | Real-time STT/TTS. Skeleton only. |
 | **React 18 + Vite 5 + TypeScript** | web | Elder and caregiver UIs in one SPA. |
 | **Docker Compose** | root | postgres, core-api, reasoning, scheduler, web. |
@@ -188,7 +188,7 @@ These counts come from the README and the test file sizes. Run the suites to con
 ## Running it
 
 ```bash
-cp .env.example .env          # set CORE_API_KEY; leave EVON_BASE_URL empty for rule-based mode
+cp .env.example .env          # set CORE_API_KEY; leave LLM_BASE_URL empty for rule-based mode
 docker compose up --build     # postgres, core-api :8000, reasoning :8001, scheduler, web :5173
 ```
 
@@ -208,7 +208,7 @@ python eval/run_eval.py
 |---|---|---|
 | `CORE_API_KEY` | all | Shared API key. |
 | `DATABASE_URL` | core-api | Postgres URL (SQLite fallback if unset). |
-| `EVON_BASE_URL` / `EVON_MODEL` | reasoning | Self-hosted Evon. Empty means rule-based mode. |
+| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` / `LLM_PROVIDER_NAME` | reasoning | The hosted LLM (`EVON_*` are aliases). Empty means rule-based mode. |
 | `OPENER_USER_IDS` | scheduler | Users who receive daily openers. |
 | `GNANI_API_KEY`, `LIVEKIT_*` | voice-agent | Voice credentials. |
 | `MONGO_URL` | none | Listed in `.env.example` but unused. |
