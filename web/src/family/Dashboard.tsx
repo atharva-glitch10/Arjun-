@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api";
+import { confirmThen } from "./guard";
+import { startPolling } from "./polling";
 import type {
   Anchor,
   Appointment,
@@ -105,7 +107,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   const [error, setError] = useState("");
   const [updated, setUpdated] = useState(() => new Date());
 
-  const load = useCallback(async () => {
+  // quiet = a background refresh: a hiccup must never blank the dashboard (and so never show "Create demo
+  // user"); keep the last data and say so in a small banner.
+  const load = useCallback(async (quiet = false) => {
     try {
       const [user, reminders, appointments, contacts, book, requests, notes, medicines, doses] =
         await Promise.all([
@@ -123,7 +127,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
       setUpdated(new Date());
       setError("");
     } catch (e) {
-      setData(null);
+      if (!quiet) setData(null);
       setError(e instanceof Error ? e.message : "Failed to load");
     }
   }, [userId]);
@@ -131,6 +135,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Refresh every 10 s while visible, and the moment the tab or window comes back.
+  useEffect(() => startPolling(() => load(true), 10_000, document, window), [load]);
 
   const run = async (fn: () => Promise<unknown>) => {
     try {
@@ -149,7 +156,16 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             <h2>Aaji's day</h2>
             <p role="status">{error || "Loading..."}</p>
             <div>
-              <button className="fbtn solid" onClick={() => void api.createUser("Demo Aaji (synthetic)").then((u) => onUser(u.id))}>
+              <button
+                className="fbtn solid"
+                onClick={() =>
+                  void confirmThen(
+                    (m) => window.confirm(m),
+                    "The demo uses ONE synthetic user (user 1). Creating another splits the data between users. Create anyway?",
+                    () => api.createUser("Demo Aaji (synthetic)").then((u) => onUser(u.id)),
+                  )
+                }
+              >
                 Create demo user
               </button>
             </div>
@@ -214,6 +230,11 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </h1>
             <span className="t-muted" style={{ fontSize: 17 }}>
               {now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })} · updated {clock(updated)}
+              {error && (
+                <strong role="status" style={{ marginLeft: 8, color: "var(--ghar-kumkum)" }}>
+                  · could not refresh, showing the last data
+                </strong>
+              )}
             </span>
           </div>
           <span className="grow" />
