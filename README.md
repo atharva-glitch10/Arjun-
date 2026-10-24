@@ -1,7 +1,7 @@
 # Arjun - voice care companion for elderly Indians (MVP)
 
 Spec and hard boundaries: [CLAUDE.md](CLAUDE.md). Arjun is an AI, a bridge to people - not a
-replacement for them. No medical advice, no emergency detection, stories private by default.
+replacement for them. No medical advice; physical-emergency and distress phrases get a fixed safety reply (lexicons unverified); stories private by default.
 
 ## What works today (verified by tests / smoke run)
 Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Marathi / Hindi / English.
@@ -42,6 +42,11 @@ then `pytest` inside each service and `ruff check .` at the root.
 - **Parser quality is unmeasured.** The 42 eval cases were written alongside the parser, so 100% there
   says nothing about real speech. Needs real transcripts of elderly Marathi speakers.
 - Task text is the leftover words after removing time/command words (e.g. "doctor jaycha"), not a clean noun phrase.
+- **Emergency vs consent (decided 2026-10-24):** a physical emergency (chest pain, can't breathe, a fall, fainting,
+  bleeding) ALWAYS creates a family alert on the dashboard, even with distress-alert consent off; emotional distress
+  still alerts only with consent. The alert is a red dashboard banner that names the configured family contacts and
+  states that **no call or message was sent**: there is no SMS / phone delivery yet (telephony is frozen). Both
+  lexicons are still unverified by a native speaker.
 - **A pending yes/no is protected** (fix B, from the first hand test): while Arjun waits for an answer, anything that
   is not yes / no / cancel / a restated reminder gets the SAME question again; chat, a "keep your story?" offer or
   any other proposal can never replace it. A pending action expires after `PENDING_TTL_S` (default 300 s) in core-api.

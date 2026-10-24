@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api";
+import { recentEmergencies } from "./alerts";
 import { confirmThen } from "./guard";
 import { startPolling } from "./polling";
 import type {
@@ -218,10 +219,29 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   const days = Array.from({ length: 7 }, (_, i) => new Date(now.getTime() - (6 - i) * DAY));
   const requestsToday = data.requests.filter((n) => sameDay(parse(n.created_at), now)).length;
   const name = user.name.replace(/\s*\(synthetic\)\s*$/i, "");
+  const emergencies = recentEmergencies(data.notes, now);
 
   return (
     <div className="family">
       <div className="family-inner">
+        {emergencies.map((n) => (
+          <div
+            key={`alert${n.id}`}
+            role="alert"
+            style={{
+              background: "var(--ghar-kumkum)",
+              color: "#fff",
+              padding: "14px 18px",
+              borderRadius: 12,
+              fontSize: 20,
+              lineHeight: 1.45,
+              fontWeight: 700,
+            }}
+          >
+            {n.body}
+            <div style={{ fontSize: 16, fontWeight: 400, marginTop: 4 }}>{parse(n.created_at).toLocaleString("en-IN")}</div>
+          </div>
+        ))}
         <div className="fam-topbar">
           <Diya size={44} />
           <div style={{ display: "flex", flexDirection: "column" }}>

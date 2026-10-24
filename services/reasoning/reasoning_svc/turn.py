@@ -638,7 +638,8 @@ class TurnEngine:
         except (CoreError, httpx.HTTPError) as exc:
             log.error("%s: could not clear pending action: %s", kind, exc)
         try:
-            self.core.distress(uid)  # core-api alerts caregiver ONLY if consent is configured
+            # emergency: core-api ALWAYS alerts the family (dashboard); distress: only with consent
+            self.core.distress(uid, kind)
         except (CoreError, httpx.HTTPError) as exc:
             log.error("%s: could not record event / alert caregiver: %s", kind, exc)
         r = rp.R[rp.lang_or_default(lang)]

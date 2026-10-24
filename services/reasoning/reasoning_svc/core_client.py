@@ -61,8 +61,9 @@ class CoreClient:
     def reject(self, uid: int, action_id: int) -> dict[str, Any]:
         return self._req("POST", f"/users/{uid}/actions/{action_id}/reject")  # type: ignore[no-any-return]
 
-    def distress(self, uid: int) -> dict[str, Any]:
-        return self._req("POST", f"/users/{uid}/distress")  # type: ignore[no-any-return]
+    def distress(self, uid: int, kind: str = "distress") -> dict[str, Any]:
+        """kind="emergency" ALWAYS alerts the family; "distress" only with the user's consent."""
+        return self._req("POST", f"/users/{uid}/distress", params={"kind": kind})  # type: ignore[no-any-return]
 
     def decline(self, uid: int) -> None:
         self._req("POST", f"/users/{uid}/declines")

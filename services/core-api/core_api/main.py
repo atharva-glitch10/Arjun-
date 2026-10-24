@@ -1,6 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from sqlalchemy import select
@@ -387,13 +388,39 @@ def caregiver_requests(user_id: int, db: Session = Depends(get_db)) -> list[dict
 
 
 # ---- safety / companion state -----------------------------------------------------------------
+def _emergency_body(user: m.User, contacts: list[m.Contact], now: datetime) -> str:
+    """The dashboard alert text. Honest about delivery: it is a dashboard alert only (CLAUDE.md boundary 14)."""
+    who = "; ".join(f"{c.name} ({c.relation}) {c.phone}".strip() for c in contacts) or ""
+    family = f"Family contacts on file: {who}." if who else "No family contact is set up."
+    head = (
+        f"EMERGENCY {now:%H:%M}: {user.name} reported a physical emergency (e.g. chest pain, a fall). "
+        f"Arjun told her to call 112. Please call her now. "
+    )
+    tail = " Dashboard alert only; no call or message was sent."
+    return (head + family)[: 300 - len(tail)] + tail
+
+
 @router.post("/users/{user_id}/distress", response_model=s.DistressOut, status_code=201)
-def record_distress(user_id: int, db: Session = Depends(get_db)) -> s.DistressOut:
-    """Record a distress event. Caregiver is notified ONLY if the user configured consent."""
+def record_distress(
+    user_id: int,
+    kind: Literal["distress", "emergency"] = "distress",
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> s.DistressOut:
+    """Record a safety event and decide whether the family is alerted.
+
+    - emergency (chest pain, can't breathe, a fall, fainting, bleeding): ALWAYS alerts, whatever the consent
+      flag says (team decision 2026-10-24). The alert names the configured family contacts.
+    - distress (emotional): the caregiver is notified ONLY if the user configured consent. Unchanged.
+    """
     user = _user(db, user_id)
-    alerted = bool(user.consent_distress_alert)
+    emergency = kind == "emergency"
+    alerted = emergency or bool(user.consent_distress_alert)
     db.add(m.DistressEvent(user_id=user_id, caregiver_alerted=alerted))
-    if alerted:
+    if emergency:
+        contacts = list(db.scalars(select(m.Contact).where(m.Contact.user_id == user_id).order_by(m.Contact.id)))
+        db.add(m.Notification(user_id=user_id, kind="emergency", body=_emergency_body(user, contacts, now)))
+    elif alerted:
         db.add(
             m.Notification(
                 user_id=user_id,

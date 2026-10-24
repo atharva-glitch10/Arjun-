@@ -34,9 +34,12 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 8. **Safety checks run first on every turn**, rules only, and work with core-api and the LLM down:
    - **Physical emergency** (chest pain, can't breathe, a fall now, fainting, bleeding) -> fixed
      template: call 112 / call out to someone near; try to alert family. Never diagnose, never
-     continue chatting. Emergency alert policy vs. consent is PENDING a team decision.
+     continue chatting. **DECIDED 2026-10-24: an emergency ALWAYS alerts the family, even when
+     distress-alert consent is off.** The alert is a prominent dashboard banner (a notification of kind
+     "emergency") that names the configured family contacts. It is a dashboard alert ONLY: no call, SMS or
+     WhatsApp is sent (telephony is frozen), and the alert text says so (boundary 14).
    - **Emotional distress** -> stop the story, respond gently, offer a family call, mention
-     Elderline 14567 (8 AM-8 PM), alert caregiver only per consent.
+     Elderline 14567 (8 AM-8 PM), alert caregiver ONLY per consent (unchanged).
    - Both lexicons are UNVERIFIED until a native speaker reviews them. The external distress test
      set (T12) must pass before any public demo.
 9. **No engagement tricks**: no streaks, no "I missed you", nothing discouraging human contact.
@@ -115,7 +118,8 @@ nginx replicas, S3 cache, multi-elder accounts, telephony, SMS/WhatsApp, Evon fi
 6. Does noise cancellation (LiveKit BVC) help or hurt Prisma (A/B)? It is NOT in the code yet (the plugin
    needs PyPI); the elder browser keeps its own echo cancellation + noise suppression on until then.
 7. Endpointing (1.0 s / 3.0 s) are placeholders; tune on elderly speech.
-8. Emergency alert: should it override the family-alert consent setting?
+8. ~~Emergency alert: should it override the family-alert consent setting?~~ DECIDED 2026-10-24: yes for a
+   physical emergency (always alerts); no for emotional distress (consent only). See boundary 8.
 
 ## Working rules for Claude
 - Follow `CLAUDE_CODE_TASKS.md` (if present): one task at a time, feature freeze, verify, commit.
