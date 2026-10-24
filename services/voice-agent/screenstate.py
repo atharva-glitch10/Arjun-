@@ -11,14 +11,16 @@ from bridge import BridgeReply
 
 logger = logging.getLogger("arjun.screen")
 
-SCREEN = "arjun.screen"  # reply | confirm | saved | safety
+SCREEN = "arjun.screen"  # reply | story | confirm | saved | safety
 TURN = "arjun.turn"  # increases with every spoken reply, so the app can tell a new reply from the same screen
+REPLY = "arjun.reply"  # the exact line being spoken, for the reply / story / safety screens
+MAX_REPLY_CHARS = 600
 
 
 def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
     # Safety wins over every other screen: whatever reasoning labelled it, a safety-mode reply is "safety".
     screen = "safety" if reply.mode == "safety" else reply.screen
-    return {SCREEN: screen, TURN: str(turn)}
+    return {SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS]}
 
 
 async def publish_screen(participant, reply: BridgeReply, turn: int) -> None:  # type: ignore[no-untyped-def]

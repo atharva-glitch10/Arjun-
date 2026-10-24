@@ -60,7 +60,7 @@ export function Gallery() {
         <ListenScreen heard="उद्या सकाळी १० वाजता डॉक्टरकडे जायचं आहे, आठवण कर" onDone={noop} onStop={noop} />
       </Frame>
       <Frame title="Confirm">
-        <ConfirmScreen dayLabel="उद्या · बुधवार" timeLabel="सकाळी १०:००" task="डॉक्टरकडे जायचं" onYes={noop} onNo={noop} onReplay={noop} />
+        <ConfirmScreen dayLabel="उद्या · बुधवार" timeLabel="सकाळी १०:००" task="डॉक्टरकडे जायचं" onYes={noop} onNo={noop} />
       </Frame>
       <Frame title="Saved">
         <DoneScreen title="आठवण ठेवली!" line="उद्या सकाळी मी तुम्हाला सांगेन" onOk={noop} />

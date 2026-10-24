@@ -49,7 +49,7 @@ class TurnResult:
     awaiting_confirmation: bool = False
     source: str = "rules"  # rules | evon
     trace: dict[str, Any] = field(default_factory=dict)
-    # Which Ghar screen the elder app shows: reply | confirm | saved | safety. Decided here, where it is
+    # Which Ghar screen the elder app shows: reply | story | confirm | saved | safety. Decided here, where it is
     # tested; the app only mirrors it. "safety" wins over everything.
     screen: str = "reply"
 
@@ -204,7 +204,8 @@ class TurnEngine:
 
         def out(msg: str, mode: str = "care", wait: bool = False) -> TurnResult:
             return TurnResult(
-                msg, intent, mode, lang, awaiting_confirmation=wait, screen="confirm" if wait else "reply"
+                msg, intent, mode, lang, awaiting_confirmation=wait,
+                screen="confirm" if wait else ("story" if mode == "companion" else "reply"),
             )
 
         # "nako" with nothing to refuse is a topic decline, not a cancellation

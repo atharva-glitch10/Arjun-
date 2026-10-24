@@ -12,7 +12,6 @@ import {
   MoonIcon,
   PhoneIcon,
   PillIcon,
-  SpeakerIcon,
   SunriseIcon,
   ThaliIcon,
   Toran,
@@ -164,9 +163,10 @@ export function HomeScreen(p: HomeProps) {
 
 export function ListenScreen(p: {
   heard: string;
-  onDone: () => void;
+  /** Only for the design gallery: in the live app Arjun decides when the sentence is finished. */
+  onDone?: () => void;
   onStop: () => void;
-  /** Shown only when the browser has no speech recognition (dev fallback). */
+  /** Typed fallback (dev / gallery). */
   onType?: { value: string; set: (v: string) => void; send: () => void };
 }) {
   return (
@@ -219,9 +219,11 @@ export function ListenScreen(p: {
         </form>
       )}
       <div className="stack-end">
-        <button className="btn haldi" onClick={p.onDone} disabled={!p.heard.trim()}>
-          झालं, पुढे
-        </button>
+        {p.onDone && (
+          <button className="btn haldi" onClick={p.onDone} disabled={!p.heard.trim()}>
+            झालं, पुढे
+          </button>
+        )}
         <button className="btn outline-white" onClick={p.onStop}>
           थांबा
         </button>
@@ -237,20 +239,14 @@ export interface ConfirmProps {
   busy?: boolean;
   onYes: () => void;
   onNo: () => void;
-  onReplay: () => void;
 }
 
 export function ConfirmScreen(p: ConfirmProps) {
   return (
     <div className="screen" style={{ paddingTop: 48, paddingBottom: 26, gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <h1 className="h-display" style={{ fontSize: 34 }}>
-          मी असं समजलो
-        </h1>
-        <button className="round-btn" aria-label="पुन्हा ऐका" onClick={p.onReplay} style={{ color: "var(--ghar-indigo)" }}>
-          <SpeakerIcon />
-        </button>
-      </div>
+      <h1 className="h-display" style={{ fontSize: 34 }}>
+        मी असं समजलो
+      </h1>
       <div className="big-card">
         <div className="band">{p.dayLabel}</div>
         <div className="body">
@@ -304,20 +300,14 @@ export function ReplyScreen(p: {
   onNo: () => void;
   onSpeak: () => void;
   onOk: () => void;
-  onReplay: () => void;
 }) {
   return (
     <div className="screen" style={{ gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Diya size={44} />
-          <h1 className="h-display" style={{ fontSize: 32 }}>
-            अर्जुन
-          </h1>
-        </div>
-        <button className="round-btn" aria-label="पुन्हा ऐका" onClick={p.onReplay} style={{ color: "var(--ghar-indigo)" }}>
-          <SpeakerIcon />
-        </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Diya size={44} />
+        <h1 className="h-display" style={{ fontSize: 32 }}>
+          अर्जुन
+        </h1>
       </div>
       <div className="big-card">
         <div className="body" style={{ padding: "22px 22px 26px" }} aria-live="polite">
@@ -365,6 +355,8 @@ export interface MedicineProps {
   photoUrl?: string;
   nextLine?: string;
   snoozeUntil?: string;
+  /** True until T8: the prompt is only on the screen, Arjun did not say it (CLAUDE.md boundary 14). */
+  notSpoken?: boolean;
   onTaken: () => void;
   onSnooze: () => void;
   onOk: () => void;
@@ -405,6 +397,11 @@ export function MedicineScreen(p: MedicineProps) {
           </span>
         </div>
       </div>
+      {p.notSpoken && (
+        <p className="footnote" role="note" style={{ textAlign: "left" }}>
+          हे फक्त स्क्रीनवर आहे, अर्जुनने आवाजात सांगितलं नाही
+        </p>
+      )}
       {p.mealNote && (
         <div className="pill">
           <ThaliIcon />
@@ -596,6 +593,76 @@ export function KahaniScreen(p: KahaniProps) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+
+/* ---- Voice session states (T6) ------------------------------------------------------------- */
+/** Joining the room / waiting for the agent. Plain words, never a blank screen. */
+export function ConnectingScreen(p: { onStop: () => void }) {
+  return (
+    <div className="screen listen">
+      <h1 className="h-display" style={{ fontSize: 38, textAlign: "center" }}>
+        अर्जुन तयार होतोय…
+      </h1>
+      <div className="center-block" style={{ minHeight: 250 }}>
+        <Diya size={150} detailed label="अर्जुन तयार होत आहे" />
+      </div>
+      <p style={{ fontSize: 24, lineHeight: 1.5, textAlign: "center" }} aria-live="polite">
+        थोडं थांबा
+      </p>
+      <div className="stack-end">
+        <button className="btn outline-white" onClick={p.onStop}>
+          थांबा
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The connection failed or dropped: say so plainly and offer one big retry. */
+export function FailedScreen(p: { message: string; onRetry: () => void; onStop: () => void }) {
+  return (
+    <div className="screen centered-end" style={{ gap: 22 }}>
+      <div className="center-block">
+        <h1 className="h-display" style={{ fontSize: 38, lineHeight: 1.4 }} role="alert">
+          {p.message}
+        </h1>
+      </div>
+      <button className="btn primary" style={{ minHeight: 100, fontSize: 34 }} onClick={p.onRetry}>
+        <MicIcon size={38} />
+        बोला
+      </button>
+      <button className="btn secondary" onClick={p.onStop}>
+        मागे
+      </button>
+    </div>
+  );
+}
+
+/** Emergency / distress: the fixed template, shown the moment Arjun says it, whatever else is on screen. */
+export function SafetyScreen(p: { text: string; onOk: () => void }) {
+  return (
+    <div className="screen" style={{ gap: 22, paddingTop: 56 }}>
+      <h1 className="h-display" style={{ fontSize: 38, color: "var(--ghar-kumkum)" }}>
+        मदत
+      </h1>
+      <div className="big-card" style={{ borderColor: "var(--ghar-kumkum)" }}>
+        <div className="body" style={{ padding: "22px 22px 26px" }} aria-live="assertive">
+          <p style={{ fontSize: 30, lineHeight: 1.5, fontWeight: 700 }}>{p.text}</p>
+        </div>
+      </div>
+      <div className="stack-end">
+        <a className="btn help" href="tel:112" style={{ minHeight: 92, fontSize: 30, textDecoration: "none" }}>
+          <PhoneIcon />
+          112 ला फोन करा
+        </a>
+        <button className="btn secondary" onClick={p.onOk}>
+          ठीक आहे
+        </button>
+      </div>
+      <p className="footnote">{AI_DISCLOSURE}</p>
     </div>
   );
 }

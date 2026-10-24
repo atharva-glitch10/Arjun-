@@ -110,8 +110,17 @@ def test_tts_failure_speaks_the_fixed_fallback_once(tmp_path):
 
 
 # ---- screen attributes ----------------------------------------------------------------------------
-def test_attributes_carry_screen_and_turn():
-    assert attributes_for(_reply(screen="confirm"), 3) == {"arjun.screen": "confirm", "arjun.turn": "3"}
+def test_attributes_carry_screen_turn_and_the_spoken_text():
+    assert attributes_for(_reply("ठीक आहे", screen="confirm"), 3) == {
+        "arjun.screen": "confirm",
+        "arjun.turn": "3",
+        "arjun.reply": "ठीक आहे",
+    }
+
+
+def test_a_very_long_reply_is_cut_for_the_attribute_only():
+    attrs = attributes_for(_reply("अ" * 2000), 1)
+    assert len(attrs["arjun.reply"]) == 600  # attributes are for short state, not for stories
 
 
 def test_safety_mode_always_wins_over_the_screen_field():
@@ -128,4 +137,4 @@ def test_publish_screen_sets_attributes_on_the_participant():
 
     p = P()
     _run(publish_screen(p, _reply(screen="saved"), 2))
-    assert p.got == {"arjun.screen": "saved", "arjun.turn": "2"}
+    assert p.got == {"arjun.screen": "saved", "arjun.turn": "2", "arjun.reply": "ठीक आहे"}

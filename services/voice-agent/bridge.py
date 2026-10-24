@@ -41,7 +41,7 @@ class BridgeReply:
     mode: str
     awaiting_confirmation: bool
     round_trip_ms: float
-    screen: str = "reply"  # reply | confirm | saved | safety (decided by reasoning)
+    screen: str = "reply"  # reply | story | confirm | saved | safety (decided by reasoning)
     intent: str = ""
 
 

@@ -18,7 +18,8 @@ def _vars(service: str) -> list[str]:
 def test_web_dev_server_gets_the_variables_its_proxy_needs():
     """vite.config.ts injects X-API-Key from CORE_API_KEY; without it every /core/... call was a 401."""
     got = _vars("web")
-    assert {"CORE_API_KEY", "CORE_API_URL", "REASONING_URL"} <= set(got)
+    assert {"CORE_API_KEY", "CORE_API_URL"} <= set(got)
+    assert "REASONING_URL" not in got  # the elder app no longer calls reasoning (it has no auth)
 
 
 def test_core_api_gets_the_livekit_settings_for_the_token_endpoint():

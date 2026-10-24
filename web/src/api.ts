@@ -110,12 +110,12 @@ export interface Day {
   next: DayItem | null;
 }
 
-export interface TurnReply {
-  reply: string;
-  intent: string;
-  mode: string;
-  language: string;
-  awaiting_confirmation: boolean;
+export interface LivekitToken {
+  url: string;
+  token: string;
+  room: string;
+  identity: string;
+  expires_in: number;
 }
 
 async function call<T>(base: string, path: string, init?: RequestInit): Promise<T> {
@@ -174,6 +174,6 @@ export const api = {
   day: (id: number) => core<Day>(`/users/${id}/day`),
   pendingAction: (id: number) => core<PendingAction | null>(`/users/${id}/actions/pending`),
   nextAppointment: (id: number) => core<Appointment | null>(`/users/${id}/appointments/next`),
-  turn: (userId: number, text: string) =>
-    call<TurnReply>("/reasoning", "/turn", post({ user_id: userId, text })),
+  // A short-lived join token for one voice session (a fresh room each time; the secret stays server-side).
+  livekitToken: (userId: number) => core<LivekitToken>("/livekit/token", post({ user_id: userId })),
 };

@@ -27,6 +27,7 @@ def test_turn_out_carries_the_screen(engine, uid):
         ("आज काय आहे", "reply"),
         ("हॅलो", "reply"),
         ("ऐकू येतंय का", "reply"),
+        ("आज मी बागेत फिरायला गेलो होतो खूप छान वाटलं", "story"),  # companion chat -> आजीची वही
         ("मला छातीत दुखतंय", "safety"),  # emergency
         ("mala jagaychi iccha nahi", "safety"),  # distress
     ],
