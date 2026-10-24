@@ -128,14 +128,14 @@ for all five, Evon being off). The turn log now pairs transcript, reply and audi
 
 | # | Prisma transcript | What was said | Intent | Mode | Arjun's reply | eos->final | final->reasoning | reasoning->audio | eos->audio (ms) |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | नमस्कार | not stated | GREETING | care | नमस्कार! मी ऐकतोय. सांगा, काय मदत करू? | 708 | 3776 | 2032 | 6516 |
+| 1 | नमस्कार | "नमस्कार": exact | GREETING | care | नमस्कार! मी ऐकतोय. सांगा, काय मदत करू? | 708 | 3776 | 2032 | 6516 |
 | 2 | आज काय आहे | "आज काय आहे" (script): exact | LIST_TODAY | care | आज तुमच्यासाठी कोणतीही आठवण नाही. | 703 | 441 | 1017 | 2161 |
 | 3 | उद्या सकाळी दहा वाजता डॉक्टरांकडे जायचं आहे आठवण कर | script: "...डॉक्टरकडे जायचं आहे, आठवण कर": minor difference (डॉक्टरांकडे vs डॉक्टरकडे) | CREATE_REMINDER | care | उद्या सकाळी 10:00 वाजता आठवण ठेवू का: डॉक्टरांकडे जायचं? हो किंवा नाही सांगा. | 1061 | 66 | 1721 | 2848 |
 | 4 | हो | "हो": exact | CONFIRM_YES | care | ठीक आहे, आठवण नोंदवली. | 793 | 2273 | 1108 | 4174 |
-| 5 | उद्या काय आहे | not stated | LIST_TODAY (tomorrow) | care | उद्या तुमच्याकडे: सकाळी 10:00 वाजता डॉक्टरांकडे जायचं. | 695 | 2368 | 1510 | 4573 |
+| 5 | उद्या काय आहे | "उद्या काय आहे": exact | LIST_TODAY (tomorrow) | care | उद्या तुमच्याकडे: सकाळी 10:00 वाजता डॉक्टरांकडे जायचं. | 695 | 2368 | 1510 | 4573 |
 
-"What was said" is only known for the three sentences scripted before the first test; the speaker has not
-yet confirmed turns 1 and 5. No WER is computed (EULA clause 16).
+"What was said": turns 2-4 from the script given before the first test; turns 1 and 5 confirmed by the speaker
+afterwards. No WER is computed (EULA clause 16).
 
 **Doctor reminder: saved correctly.** `GET /users/1/reminders` returns
 
@@ -155,7 +155,7 @@ during the session: no Gnani STT/TTS errors were seen.
 
 **Caveats.** n = 5, one speaker, one session: a smoke test, not an accuracy or latency benchmark.
 End-of-speech comes from the VAD and includes the silence wait; "agent speaking" is playout start.
-Turns 1 and 5 have no recorded ground truth. The stale-reply rule and the Marathi hour words beyond
+The stale-reply rule and the Marathi hour words beyond
 "दहा" were not exercised by this session.
 
 ## Regression suite (text only, synthetic)
