@@ -109,7 +109,7 @@ def test_ai_disclosure(engine, uid):
 
 
 def test_story_private_until_user_shares(engine, core_http, uid):
-    long_story = " ".join(["mi", "lahanpani", "gavat", "khup", "khelayche"] * 4)
+    long_story = "mi lahanpani gavat khup khelayche ani amhi roj nadivar jaycho mag aaji amhala bhakri dayachi ani goshti sangaychi"
     res = engine.handle(uid, long_story)
     assert res.intent == "CHAT" and res.awaiting_confirmation
     engine.handle(uid, "ho")  # consent to keep it privately

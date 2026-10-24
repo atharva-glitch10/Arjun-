@@ -35,6 +35,9 @@ _LLM_INTENTS = frozenset(
     {"CREATE_REMINDER", "LIST_TODAY", "GET_APPOINTMENT", "CALL_FAMILY_REMINDER", "REQUEST_CAREGIVER", "CHAT",
      "DISTRESS"}
 )
+# Intents that may follow a pending question: answer it, or cancel it. A restated reminder is a correction of
+# a pending reminder (see _answers_pending). Nothing else may touch, replace or sit on top of the question.
+_ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY"})
 _HISTORY_IDLE = timedelta(minutes=30)  # a longer silence starts a fresh conversation
 
 _AI_QUESTIONS = (
@@ -135,6 +138,8 @@ class TurnEngine:
         trace["intent_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         if parsed.intent == "DISTRESS":
             return self._distress(user_id, lang, trace, t0)
+        if pending is not None and not self._answers_pending(parsed.intent, pending):
+            return self._repeat_pending(pending, lang, now, trace, t0)
 
         # 4. dispatch
         try:
@@ -146,6 +151,36 @@ class TurnEngine:
         result.trace = self._t({**trace, "intent": parsed.intent}, t0)
         log.info(json.dumps({"user": user_id, "intent": parsed.intent, **result.trace}))
         return result
+
+    @staticmethod
+    def _answers_pending(intent: str, pending: dict[str, Any]) -> bool:
+        if intent in _ANSWERS:
+            return True
+        return intent == "CREATE_REMINDER" and pending["action_type"] == "CREATE_REMINDER"  # a correction
+
+    def _repeat_pending(
+        self, pending: dict[str, Any], lang: str, now: datetime, trace: dict[str, Any], t0: float
+    ) -> TurnResult:
+        """Anything that is not an answer, a cancel or a correction gets the SAME question again. The pending
+        action is untouched: chat, a story offer or any new proposal never replaces it."""
+        r = rp.R[rp.lang_or_default(lang)]
+        payload = pending["payload"]
+        kind = pending["action_type"]
+        if kind == "CREATE_REMINDER" and payload.get("date") and payload.get("time"):
+            when = f"{rp.say_date(payload['date'], now.date(), lang)} {rp.say_time(payload['time'], lang)}"
+            question = r["confirm_reminder"].format(task=payload.get("task", ""), when=when)
+        else:
+            question = {
+                "REQUEST_CAREGIVER": r["confirm_caregiver"],
+                "SHARE_STORY": r["confirm_share"],
+                "SAVE_STORY": r["ask_save_story"],
+            }.get(kind, "")
+        if r["yes_or_no"] not in question:
+            question = f"{question} {r['yes_or_no']}".strip()
+        return TurnResult(
+            question, "PENDING_REPEAT", "care", lang, awaiting_confirmation=True, screen="confirm",
+            trace=self._t(trace, t0),
+        )
 
     def opener(self, user_id: int) -> str | None:
         """Proactive 'Shikva na' opener - scheduler-triggered, gated by caregiver-set hours."""
@@ -176,8 +211,14 @@ class TurnEngine:
             rules.intent = "CREATE_REMINDER"
             return rules, "rules"
         # The LLM is asked ONLY about turns the rules cannot read. Care commands, times, medicines,
-        # confirmations and safety were decided above/before and never wait for it.
-        if self.evon is None or rules.intent != "UNKNOWN" or self._llm_remaining() < _MIN_LLM_BUDGET_S:
+        # confirmations and safety were decided above/before and never wait for it. Nor does it hear
+        # anything while a yes/no is pending: the only valid turns then are an answer or a correction.
+        if (
+            self.evon is None
+            or has_pending
+            or rules.intent != "UNKNOWN"
+            or self._llm_remaining() < _MIN_LLM_BUDGET_S
+        ):
             return rules, "rules"
         data = self.evon.extract_intent(
             text, lang, now, profile.wake_time, profile.lunch_time, profile.dinner_time,
@@ -367,7 +408,11 @@ class TurnEngine:
             return out(r["forgotten"], "companion")
 
         if intent == "CHAT":
-            if len(text.split()) >= config.LONG_STORY_WORDS:
+            # "keep your story?" is a companion-mode offer only: never over a pending question or an open
+            # reminder draft, and never for recognizer junk (very few distinct words).
+            words = text.split()
+            real_story = len(words) >= config.LONG_STORY_WORDS and len({normalize(w) for w in words}) / len(words) >= 0.4
+            if real_story and pending is None and draft is None:
                 self.core.propose(uid, "SAVE_STORY", {"summary": text.strip()[:2000]})
                 return out(r["ask_save_story"], "companion", wait=True)
             return out(self._chat_reply(uid, text, lang, now), "companion")

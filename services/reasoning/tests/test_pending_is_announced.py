@@ -9,7 +9,7 @@ user never heard (CLAUDE.md boundary 1).
 import pytest
 
 DOCTOR = "उद्या सकाळी दहा वाजता डॉक्टरकडे जायचं आहे आठवण कर मला"
-LONG_STORY = " ".join(["mi", "lahanpani", "gavat", "khup", "khelayche"] * 4)
+LONG_STORY = "mi lahanpani gavat khup khelayche ani amhi roj nadivar jaycho mag aaji amhala bhakri dayachi ani goshti sangaychi"
 
 
 def _pending(core_http, uid):

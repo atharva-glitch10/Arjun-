@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
 
@@ -284,19 +285,40 @@ def propose(
     return action
 
 
+# A yes/no question is answered within seconds. After this long it expires: it must not block the elder
+# behind an old question, and a "हो" minutes later must not confirm something asked long ago.
+PENDING_TTL = timedelta(seconds=int(os.environ.get("PENDING_TTL_S", "300")))
+
+
+def _is_stale(action: m.PendingAction, now: datetime) -> bool:
+    return now - action.created_at > PENDING_TTL
+
+
 @router.get("/users/{user_id}/actions/pending", response_model=s.PendingOut | None)
-def latest_pending(user_id: int, db: Session = Depends(get_db)) -> m.PendingAction | None:
+def latest_pending(
+    user_id: int, db: Session = Depends(get_db), now: datetime = Depends(get_now)
+) -> m.PendingAction | None:
     _user(db, user_id)
     q = select(m.PendingAction).where(
         m.PendingAction.user_id == user_id, m.PendingAction.status == "pending"
     )
-    return db.scalars(q.order_by(m.PendingAction.id.desc()).limit(1)).first()
+    live = None
+    for a in db.scalars(q.order_by(m.PendingAction.id.desc())):
+        if _is_stale(a, now):
+            a.status = "expired"
+        elif live is None:
+            live = a
+    db.commit()
+    return live
 
 
-def _get_pending(db: Session, user_id: int, action_id: int) -> m.PendingAction:
+def _get_pending(db: Session, user_id: int, action_id: int, now: datetime) -> m.PendingAction:
     action = db.get(m.PendingAction, action_id)
     if action is None or action.user_id != user_id:
         raise HTTPException(404, "action not found")
+    if action.status == "pending" and _is_stale(action, now):
+        action.status = "expired"
+        db.commit()
     if action.status != "pending":
         raise HTTPException(409, f"action already {action.status}")
     return action
@@ -309,7 +331,7 @@ def confirm(
     db: Session = Depends(get_db),
     now: datetime = Depends(get_now),
 ) -> m.PendingAction:
-    action = _get_pending(db, user_id, action_id)
+    action = _get_pending(db, user_id, action_id, now)
     p = action.payload
     if action.action_type == "CREATE_REMINDER":
         due = _check_reminder(
@@ -344,8 +366,13 @@ def confirm(
 
 
 @router.post("/users/{user_id}/actions/{action_id}/reject", response_model=s.PendingOut)
-def reject(user_id: int, action_id: int, db: Session = Depends(get_db)) -> m.PendingAction:
-    action = _get_pending(db, user_id, action_id)
+def reject(
+    user_id: int,
+    action_id: int,
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> m.PendingAction:
+    action = _get_pending(db, user_id, action_id, now)
     action.status = "rejected"
     db.commit()
     return action
