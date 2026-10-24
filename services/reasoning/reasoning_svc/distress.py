@@ -82,3 +82,50 @@ _PHRASES = tuple(fold(p) for p in DISTRESS_PHRASES)
 def is_distress(text: str) -> bool:
     folded = fold(text)
     return has_any(folded, _PHRASES) or any(p.search(folded) for p in _PATTERNS)
+
+
+# ---- Physical emergency (checked BEFORE emotional distress) -------------------------------------
+# Body/danger words: chest pain, breathing, a fall right now, fainting, heavy bleeding.
+# UNVERIFIED lexicon (same status as above): needs native-speaker review and real ASR output.
+# Recall-biased, but past-tense story phrasing ("मी लहानपणी पडले होते" / "padle hote") is excluded
+# so childhood stories don't trigger an emergency.
+EMERGENCY_PHRASES: tuple[str, ...] = (
+    # English
+    "chest pain", "my chest hurts", "pain in my chest", "can't breathe", "cannot breathe",
+    "cant breathe", "i can't breathe", "unable to breathe", "i have fallen", "i fell down",
+    "can't get up", "cannot get up", "heart attack", "stroke", "i am bleeding", "i'm bleeding",
+    "i fainted", "i am fainting", "call ambulance", "ambulance",
+    # Marathi (Devanagari)
+    "छातीत दुखतंय", "छातीत दुखत आहे", "छातीत दुखते", "छातीत कळ", "श्वास घेता येत नाही",
+    "श्वास लागतोय", "दम लागतोय", "दम लागला", "उठता येत नाही", "चक्कर येतेय", "चक्कर येत आहे",
+    "बेशुद्ध", "रक्त येतंय", "खूप रक्त", "हृदयविकार", "रुग्णवाहिका",
+    # Marathi (roman)
+    "chhatit dukhtay", "chatit dukhtay", "chhatit dukhat aahe", "shwas gheta yet nahi",
+    "swas gheta yet nahi", "dam lagtoy", "uthta yet nahi", "chakkar yetey", "chakkar yet aahe",
+    "rakta yetay", "khup rakta",
+    # Hindi (Devanagari)
+    "सीने में दर्द", "छाती में दर्द", "सांस नहीं ले पा", "साँस नहीं ले पा", "सांस नहीं आ रही",
+    "उठ नहीं पा", "चक्कर आ रहा", "बेहोश", "खून बह रहा",
+    # Hindi (roman)
+    "seene mein dard", "seene me dard", "chhati mein dard", "saans nahi le pa", "sans nahi aa rahi",
+    "uth nahi pa", "chakkar aa raha", "behosh", "khoon beh raha",
+)
+
+_EMERGENCY_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p)
+    for p in (
+        # "मी पडले / पडलो / पडले आहे" now - but not "पडले होते" (a story)
+        r"(?<!\S)(?:मी\s+)?पडल(?:े|ो|ी)(?:\s+आहे)?(?!\s*(?:होत|होतं))(?:\s|$)",
+        r"\bmi\s+padl(?:e|o|i)\b(?!\s+hot)",
+        # written in fold()ed spelling (ि -> ी), because patterns run on folded text
+        r"(?<!\S)(?:मैं\s+)?गीर\s+ग(?:या|ई|यी)(?!\s+था|\s+थी)",
+        r"\b(?:main\s+)?gir\s+ga(?:ya|yi|i)\b(?!\s+th)",
+        r"\bi\s+(?:just\s+)?fell\b",
+    )
+)
+_EMERGENCY_FOLDED = tuple(fold(p) for p in EMERGENCY_PHRASES)
+
+
+def is_emergency(text: str) -> bool:
+    folded = fold(text)
+    return has_any(folded, _EMERGENCY_FOLDED) or any(p.search(folded) for p in _EMERGENCY_PATTERNS)

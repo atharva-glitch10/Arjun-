@@ -2,72 +2,119 @@
 
 Arjun is a voice companion that helps elderly Indians (Marathi / code-mixed / Hindi / English) manage
 their day and share life stories by talking. Two halves: a **reliable assistant** (reminders, schedule,
-help) and a **warm listener** (stories, interests, Memory Book).
+medicines, help) and a **warm listener** (stories, interests, Memory Book).
 Principle: **Arjun is a bridge to people, not a replacement for them.**
 
-Built for the Gnani AI contest. Target award: Main Character (regional language); backup: Real Deal.
-Submit by Nov 8; main public demo posted by ~Nov 1.
+## Contest (Gnani AI "Great Indian AI Internship Challenge")
+- Deadline 2026-11-10 23:59 IST, no extensions. **We submit by Nov 8; main demo post ~Nov 1.**
+- Must genuinely use Gnani models/APIs. A demo whose voice is NOT Gnani's (browser speech) is a
+  misleading demo, which the rules forbid. The elder app must speak through LiveKit + Gnani (T6).
+- Shortlist = verified engagement on public LinkedIn/X posts (#GnaniAI #GreatIndianAIInternshipChallenge);
+  offers = individual interviews. No bought engagement, engagement swaps, plagiarism.
+- No real phone numbers, Aadhaar, PAN or recorded calls. Synthetic demo data only.
+- Gnani EULA clause 16 may forbid publishing benchmark results: report **system** results
+  ("8/10 reminders set correctly"), not Prisma WER, until Gnani confirms.
+- Target award: Main Character (regional language); backup Real Deal. Only one can be won.
 
 ## Hard boundaries (never violate, never "improve" away)
 1. **The LLM never touches the database.** Evon only suggests; core-api validates and acts.
    Flow: reasoning proposes -> core-api stores a *pending* action -> only a spoken yes executes it.
-2. **Reminders, appointments, contacts come from SQL only.** RAG is for past stories only.
+2. **Reminders, appointments, medicines, contacts come from SQL only.** RAG is for past stories only.
 3. **Never guess.** Ambiguous AM/PM, missing date, or "after the meal" without which meal -> ask.
 4. **Arjun is an AI.** Say so whenever asked. Never claim to be human, to have feelings or family.
 5. **No medical advice**, diagnosis or medicine decisions. Only read back reminders the caregiver set.
-6. **Distress check runs first on every turn** and overrides everything: stop the story, respond
-   gently, offer a family call, mention Elderline 14567 (8 AM-8 PM), alert caregiver only per consent.
-   Distress test set must pass before any public demo.
-7. **No engagement tricks**: no streaks, no "I missed you", nothing discouraging human contact.
-8. **Companion never recites recipes/facts from model memory.** It asks the user to teach it.
-   At most one opener per day window; "nako" means no more that day.
-9. **Stories are private by default**; saved only after a yes, shared only after a second yes;
-   "he visar" deletes. No raw audio stored. Demo uses synthetic data only.
-10. **Secrets**: the project uses ONE root `.env` (only `.env.example` is tracked). `GNANI_API_KEY` and LiveKit keys
-    are read only by voice-agent (it loads just `GNANI_*`/`LIVEKIT_*`; `scripts/dev-up.ps1` passes them to no one else). Never in React
-    code, never in Git, never logged.
-11. **Never invent numbers.** Report only what was measured (WER, latency, accuracy).
+6. **Medicines**: only the family creates/edits them (dashboard), never by voice, never the LLM.
+   Name + dose + timing are read EXACTLY as entered, via a fixed template from SQL (never
+   LLM-paraphrased or translated). Never answer skip / double / late / purpose / side-effect /
+   missed-dose questions -> "हे डॉक्टरांना विचारा. <family name>ला कळवू का?" Never say "take the
+   missed dose" or "take two". Not confirmed after N reminders -> notify family only. "Taken" is
+   self-reported; label it so. No adherence scores, streaks or guilt.
+7. **Health readings (BP/sugar, frozen for now)**: if ever built, never say a reading is good, bad,
+   high, low or normal; repeat numbers back for confirmation; show raw values only.
+8. **Safety checks run first on every turn**, rules only, and work with core-api and Evon down:
+   - **Physical emergency** (chest pain, can't breathe, a fall now, fainting, bleeding) -> fixed
+     template: call 112 / call out to someone near; try to alert family. Never diagnose, never
+     continue chatting. Emergency alert policy vs. consent is PENDING a team decision.
+   - **Emotional distress** -> stop the story, respond gently, offer a family call, mention
+     Elderline 14567 (8 AM-8 PM), alert caregiver only per consent.
+   - Both lexicons are UNVERIFIED until a native speaker reviews them. The external distress test
+     set (T12) must pass before any public demo.
+9. **No engagement tricks**: no streaks, no "I missed you", nothing discouraging human contact.
+10. **Companion never recites recipes/facts from model memory.** It asks the user to teach it.
+    At most one opener per day window; "nako" means no more that day.
+11. **Stories are private by default**; saved only after a yes, shared only after a second yes;
+    "he visar" deletes. Never invent memories: reference a past story only from stored text.
+    No raw audio stored. Demo uses synthetic data only.
+12. **Secrets**: ONE root `.env` (only `.env.example` is tracked). `GNANI_API_KEY` and LiveKit keys
+    are read only by voice-agent (it loads just `GNANI_*`/`LIVEKIT_*`/`ARJUN_*`) and by core-api's
+    future LiveKit token endpoint. Never in React code, never in Git, never logged, never printed.
+    `CORE_API_KEY` is required: core-api refuses to start without it (tests use ARJUN_TESTING=1).
+13. **Never invent numbers.** Report only what was measured, in `eval/results/RESULTS.md`.
+14. **Never claim delivery that didn't happen.** Until T8, reminders/medicine prompts/openers are
+    only logged by the scheduler, not spoken. "fired" means "due time passed".
 
 ## Models (Gnani)
 | Model | Role | Access |
 |---|---|---|
 | Prisma | STT, ears (streaming, code-mixed) | Gnani API via LiveKit Gnani plugin (credits) |
-| Timbre | TTS, Arjun's male voice | Gnani API via LiveKit Gnani plugin (credits) |
-| Evon v3.3 | LLM: messy phrasing, companion talk, summaries | Self-hosted vLLM / Friendli (not covered by credits) |
+| Timbre | TTS, Arjun's male voice | Gnani API via plugin. API accepts ONLY `timbre-v2.5` / `timbre-v3.0` and needs a voice (we use `Omkar`, verified 2026-10-21) |
+| Evon v3.3 | LLM: messy phrasing, companion talk, summaries | NOT on the API platform, NOT covered by credits. Self-host vLLM on an 80 GB GPU (`gnani/gnani-evon-v3.3-30B-A3B`, `--max-model-len 8192`, `--api-key`), or none. Never run it on the dev laptop (16 GB RAM / 3 GB GPU) |
 
 Layered brain so the app works with the GPU off: rules + Marathi time grammar -> (optional small
-classifier) -> Evon. Care mode and distress: temperature 0. Companion: one fixed tested value
-(Gnani suggests 0.6; not yet chosen by our testing). Evon thinking off in the live path.
+classifier) -> Evon. Care mode and safety: temperature 0. Companion: one fixed tested value
+(Gnani suggests 0.6; not yet chosen by our testing). Always send
+`"chat_template_kwargs": {"enable_thinking": false}` to Evon in the live path.
+
+## Voice path facts (verified)
+- LiveKit Agents **1.8.6** (pinned). The worker registers as `agent_name="arjun"` and joins ONLY
+  rooms that dispatch it explicitly. `scripts/make_token.py` adds that dispatch to the token's room
+  config; dispatch happens when the room is created, so each test uses a fresh room name.
+  The LiveKit Console with "No agent selected" never dispatches our agent.
+- A reasoning failure must never mean silence: `bridge.reply_or_fallback` speaks a fixed line.
+- Browsers block audio until a tap: proactive speech needs a dedicated, always-open elder device.
 
 ## Architecture
 ```
-Elder device (React, one big button) -> LiveKit room -> voice-agent (Python worker)
-  BVC noise filter -> Prisma STT -> reasoning /turn (distress -> router -> rules -> Evon)
-  -> core-api (FastAPI, Postgres) -> reply text -> Timbre TTS -> speaker
-scheduler: due reminders, briefing, openers, alerts.  Dashboard: React + TS -> core-api.
+Elder device (React, one big button) -> LiveKit room -> voice-agent (Python worker, "arjun")
+  BVC noise filter -> Prisma STT -> reasoning /turn (emergency -> distress -> router -> rules -> Evon)
+  -> core-api (FastAPI, Postgres/SQLite) -> reply text -> Timbre TTS -> speaker
+scheduler: due reminders, medicines, briefing, openers (logged only until T8).
+Dashboard: React + TS -> core-api (via dev proxy; production needs a real proxy, T14).
 ```
-Services in this repo: `services/core-api`, `services/reasoning`, `services/scheduler`,
-`services/voice-agent`, `web/`, `shared/schemas`, `eval/`. Stack: Python/FastAPI, React+TS,
-PostgreSQL (+pgvector planned), MongoDB for logs only, S3 for one bucket only.
+Services: `services/core-api`, `services/reasoning`, `services/scheduler`, `services/voice-agent`,
+`web/`, `shared/schemas`, `eval/`, `design/` (UI reference only). Start locally with
+`scripts/dev-up.ps1`.
+
+## Elder UI: "Ghar" design system
+Tokens: `web/src/styles/tokens.css` (source of truth). Khadi ground, indigo primary, haldi accent
+(dark text only), kumkum = help only, leaf = success. Tiro Devanagari Marathi headings + Mukta body.
+Rules: tap targets >= 14 mm (80-92 px buttons), elder text >= 24 px, contrast >= 4.5:1, icon + word
+always, one decision per screen, no swipes/timeouts, everything also spoken, yes/no by voice always
+works, motion off under prefers-reduced-motion.
 
 ## Scope
-MVP: voice reminders, "aaj kay aahe", mark done, family-call reminders, help request, morning
-briefing, story listening, interest openers, Memory Book, safety, caregiver dashboard.
-Not in MVP: real telephony, news feeds, rescheduling, multi-elder accounts, SMS/WhatsApp,
-Evon fine-tuning, more languages.
+MVP: voice reminders, "aaj kay aahe", mark done, family-call reminders, help request, medicine
+reminders (meal-anchored), story listening, interest openers, Memory Book, safety, family dashboard.
+**Frozen until after Nov 10** (do not build without asking): BP/sugar readings, meal/walk check-ins,
+Export for doctor, medicine-strip photos, RSS news, full pgvector RAG, login/roles, migrations,
+nginx replicas, S3 cache, multi-elder accounts, telephony, SMS/WhatsApp, Evon fine-tuning.
 
 ## Open questions (unresolved; do not assume answers)
-1. Does Prisma support Marathi in *streaming*? If not, push-to-talk.
+1. Does Prisma support Marathi in *streaming*? If not, push-to-talk (T5).
 2. Prisma accuracy on elderly speakers? If poor: mandatory confirmation, short phrases.
 3. Credit cost per call.
-4. Evon hosting cost; HF access approval time.
-5. Is a non-Gnani LLM backup allowed? Can a consenting relative appear in the demo video?
+4. ~~Evon: GPU or not~~ DECIDED 2026-10-24 (T9): **no Evon for the demo.** The demo runs on rules + Marathi time grammar only (EVON_BASE_URL empty, rule-based fallback). Revisit only after Nov 10 or if a GPU becomes available.
+5. Discord: non-Gnani LLM backup allowed? Consenting relative in demo video? Publishing accuracy
+   numbers (EULA 16)? Teammate using the primary registrant's key?
 6. Does BVC noise cancellation help or hurt Prisma (A/B)?
-7. Can LiveKit turn-detection change mid-session? Endpointing 0.7s/1.2s in `bridge.py` are placeholders.
+7. Endpointing (1.0 s / 3.0 s) are placeholders; tune on elderly speech.
+8. Emergency alert: should it override the family-alert consent setting?
 
 ## Working rules for Claude
-- Tests: `pytest` inside `services/core-api` and `services/reasoning`; `ruff check .` at root;
+- Follow `CLAUDE_CODE_TASKS.md` (if present): one task at a time, feature freeze, verify, commit.
+- Tests: `pytest` in `services/core-api`, `services/reasoning`, `services/voice-agent`,
+  `services/scheduler`; `ruff check .` at root; `npx tsc --noEmit` in `web`;
   `python eval/run_eval.py`. Run them after changes.
 - Don't claim something works unless it was run. Mark unverified code as unverified.
-- Keep care-mode replies as fixed templates; don't route them through a free-form LLM.
-- Update README "Known limitations" when behaviour or verification status changes.
+- Keep care-mode and safety replies as fixed templates; never route them through a free-form LLM.
+- Update README "Known limitations" and STATUS.md when behaviour or verification status changes.

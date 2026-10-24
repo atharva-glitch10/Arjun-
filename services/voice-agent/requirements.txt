@@ -1,5 +1,9 @@
-livekit-agents>=1.8
-livekit-plugins-gnani>=1.8
-livekit-plugins-silero>=1.8
+# Pinned: 1.8.6 is the version checked against the live Gnani + LiveKit APIs (2026-10-21).
+# Do not upgrade before the demo without re-running T4.
+livekit-agents==1.8.6
+livekit-plugins-gnani==1.8.6
+livekit-plugins-silero==1.8.6
+livekit-api==1.2.1
 httpx>=0.27
 python-dotenv>=1.0
+pytest>=8.0

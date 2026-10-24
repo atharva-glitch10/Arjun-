@@ -9,13 +9,14 @@ from . import models as m
 from . import schemas as s
 from .day import router as day_router
 from .db import Base, engine, get_db
-from .deps import get_now, require_key
+from .deps import check_api_key_configured, get_now, require_key
 from .medicines import mark_snoozed, mark_taken, open_dose
 from .medicines import router as medicines_router
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
+    check_api_key_configured()  # refuse to start with auth silently disabled
     Base.metadata.create_all(engine)
     yield
 

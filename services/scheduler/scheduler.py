@@ -1,6 +1,10 @@
 """Fires due reminders via core-api and (optionally) asks reasoning for a proactive opener.
 
 All state is in core-api (SQL). This process only polls and triggers.
+
+NOT YET DELIVERED TO VOICE (T8): reminders, medicine prompts, briefings and openers are only
+logged here. Nothing is spoken on the elder device yet. "fired" in core-api means "due time
+passed", not "Aaji heard it". Do not claim spoken delivery until T8 is built and verified.
 """
 
 import logging
@@ -23,6 +27,8 @@ BRIEFING_USER_IDS = [
 ]
 
 log = logging.getLogger("scheduler")
+# In-memory only: a scheduler RESTART forgets these, so a second opener/briefing can happen the same
+# day. Known limitation; core-api's decline gate still blocks openers after "nako".
 _opened_today: dict[int, str] = {}  # user_id -> ISO date; at most one opener per day
 _briefed_today: dict[int, str] = {}  # user_id -> ISO date; one day briefing per day
 
@@ -40,11 +46,11 @@ def today_local() -> str:
 def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
     fired = http.post(f"{CORE}/internal/reminders/fire-due").json()
     for item in fired:
-        log.info("reminder fired user=%s task=%s", item["user_id"], item["task"])
+        log.info("reminder due (not spoken, T8) user=%s task=%s", item["user_id"], item["task"])
     meds = http.post(f"{CORE}/internal/medicines/tick").json()
     for item in meds.get("reminded", []):
-        # Delivery to the elder device/voice session is wired with LiveKit; the elder screen also
-        # polls core-api for due doses. Name/dose are SQL text, logged verbatim.
+        # NOT spoken yet (T8). The elder screen polls core-api for due doses and shows them.
+        # Name/dose are SQL text, logged verbatim.
         log.info(
             "medicine due user=%s %s %s (reminder %s)",
             item["user_id"], item["name"], item["dose"], item["reminder_no"],
@@ -57,14 +63,14 @@ def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
         text = http.get(f"{REASONING}/briefing/{uid}").json().get("text")  # None before wake time
         if text:
             _briefed_today[uid] = today
-            log.info("briefing user=%s: %s", uid, text)  # delivery: wired with LiveKit
+            log.info("briefing user=%s: %s", uid, text)  # logged only; voice delivery is T8
     for uid in OPENER_USER_IDS:
         if _opened_today.get(uid) == today:
             continue
         text = http.post(f"{REASONING}/opener/{uid}").json().get("text")
         if text:
             _opened_today[uid] = today
-            log.info("opener user=%s: %s", uid, text)  # delivery to voice-agent: wired with LiveKit
+            log.info("opener user=%s: %s", uid, text)  # logged only; voice delivery is T8
     return fired  # type: ignore[no-any-return]
 
 

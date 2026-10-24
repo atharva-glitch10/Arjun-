@@ -168,7 +168,8 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         at: parse(r.due_at),
         label: r.task,
         detail: "Reminder",
-        status: r.status === "done" ? "Done" : r.status === "fired" ? "Reminded" : "Upcoming",
+        // "fired" = due time passed; it is NOT spoken on the elder device until voice delivery (T8) exists.
+        status: r.status === "done" ? "Done" : r.status === "fired" ? "Due · not spoken yet" : "Upcoming",
         ok: r.status === "done",
       })),
     ...data.appointments

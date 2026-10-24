@@ -1,0 +1,45 @@
+import httpx
+from bridge import ask_reasoning, fallback_text, reply_or_fallback
+
+
+def _client(handler):
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_ask_reasoning_parses_reply():
+    def ok(request):
+        assert request.url.path == "/turn"
+        return httpx.Response(200, json={"reply": "ठीक आहे", "mode": "care", "awaiting_confirmation": True})
+
+    r = ask_reasoning(1, "aaj kay aahe", _client(ok))
+    assert r.text == "ठीक आहे" and r.mode == "care" and r.awaiting_confirmation
+
+
+def test_fallback_on_server_error():
+    r = reply_or_fallback(1, "x", "mr-IN", _client(lambda req: httpx.Response(502, json={})))
+    assert r.mode == "fallback" and r.text == fallback_text("mr")
+
+
+def test_fallback_on_network_error():
+    def down(request):
+        raise httpx.ConnectError("reasoning down", request=request)
+
+    r = reply_or_fallback(1, "x", "mr-IN", _client(down))
+    assert r.mode == "fallback" and "पुन्हा" in r.text
+
+
+def test_fallback_on_timeout():
+    def slow(request):
+        raise httpx.ReadTimeout("too slow", request=request)
+
+    assert reply_or_fallback(1, "x", "hi-IN", _client(slow)).text == fallback_text("hi")
+
+
+def test_fallback_on_malformed_json():
+    r = reply_or_fallback(1, "x", "en-IN", _client(lambda req: httpx.Response(200, json={"oops": 1})))
+    assert r.mode == "fallback" and r.text == fallback_text("en")
+
+
+def test_unknown_language_falls_back_to_marathi():
+    assert fallback_text("en-IN,hi-IN") == fallback_text("en")
+    assert fallback_text("ta-IN") == fallback_text("mr")

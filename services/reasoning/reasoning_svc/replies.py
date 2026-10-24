@@ -9,6 +9,7 @@ from .config import ELDERLINE_NUMBER
 R: dict[str, dict[str, str]] = {
     "mr": {
         "ai_disclosure": "मी अर्जुन आहे, एक एआय सहाय्यक. मी माणूस नाही. पण तुमच्या माणसांशी तुमचं बोलणं व्हावं यासाठी मी मदत करतो.",
+        "emergency": "हे गंभीर असू शकतं. लगेच ११२ ला फोन करा, किंवा जवळ असलेल्या कोणाला मोठ्याने हाक मारा. मी तुमच्या कुटुंबाला कळवण्याचा प्रयत्न करतो.",
         "distress": f"तुम्ही खूप त्रासात आहात असं वाटतंय. मी इथे ऐकायला आहे. तुम्ही म्हणाल तर मी तुमच्या कुटुंबातील कोणाला फोन लावायला मदत करू का? तसंच सकाळी ८ ते रात्री ८ या वेळेत एल्डरलाइन {ELDERLINE_NUMBER} वर तुम्ही बोलू शकता.",
         "ask_task": "कशाची आठवण ठेवू?",
         "ask_date": "कोणत्या दिवशी? आज की उद्या?",
@@ -54,6 +55,7 @@ R: dict[str, dict[str, str]] = {
     },
     "hi": {
         "ai_disclosure": "मैं अर्जुन हूँ, एक एआई सहायक। मैं इंसान नहीं हूँ। मैं बस इसलिए हूँ कि आपकी अपनों से बात होती रहे।",
+        "emergency": "यह गंभीर हो सकता है। तुरंत 112 पर फोन कीजिए, या पास में जो हो उसे ज़ोर से बुलाइए। मैं आपके परिवार को बताने की कोशिश करता हूँ।",
         "distress": f"लग रहा है आप बहुत परेशान हैं। मैं यहाँ सुनने के लिए हूँ। आप कहें तो मैं आपके परिवार में किसी को फोन लगाने में मदद करूँ? सुबह 8 से रात 8 बजे तक आप एल्डरलाइन {ELDERLINE_NUMBER} पर भी बात कर सकते हैं।",
         "ask_task": "किस चीज़ की याद दिलाऊँ?",
         "ask_date": "किस दिन? आज या कल?",
@@ -99,6 +101,7 @@ R: dict[str, dict[str, str]] = {
     },
     "en": {
         "ai_disclosure": "I am Arjun, an AI assistant. I am not a person. I am here to help you stay connected with the people who matter to you.",
+        "emergency": "This could be serious. Call 112 right now, or call out loudly to someone near you. I will try to let your family know.",
         "distress": f"It sounds like you are going through a very hard time. I am here to listen. If you like, I can help you call someone in your family. You can also talk to Elderline on {ELDERLINE_NUMBER}, between 8 AM and 8 PM.",
         "ask_task": "What should I remind you about?",
         "ask_date": "On which day? Today or tomorrow?",

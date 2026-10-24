@@ -1,6 +1,7 @@
 """Turn orchestration. Order is fixed:
 
-  1. distress check (every turn, overrides everything)
+  0. physical emergency check (chest pain, breathing, a fall): overrides everything, rules only
+  1. distress check (every turn, overrides everything below)
   2. "are you human?" -> AI disclosure
   3. intent: Evon (if configured, schema-validated) -> rule-based fallback
   4. dispatch: care intents are answered from SQL via core-api; the LLM only proposes, core-api
@@ -20,7 +21,7 @@ from . import config
 from . import replies as rp
 from .clock import local_now
 from .core_client import CoreClient, CoreError
-from .distress import is_distress
+from .distress import is_distress, is_emergency
 from .evon import EvonClient
 from .parser import MED_TAKEN_WORDS, Draft, Parsed, Profile, apply_text, has_med_word, parse
 from .textutil import detect_language, has_any, has_devanagari, normalize
@@ -69,16 +70,27 @@ class TurnEngine:
     def handle(self, user_id: int, text: str) -> TurnResult:
         t0 = time.perf_counter()
         trace: dict[str, Any] = {}
-        # 1. distress overrides everything, and must not depend on core-api being reachable:
-        # the safety reply is a fixed template, so a failed lookup only costs the language default.
-        if is_distress(text):
+        # 0/1. emergency, then distress: both override everything and must not depend on
+        # core-api being reachable. The replies are fixed templates, so a failed lookup only
+        # costs the language default.
+        if is_emergency(text) or is_distress(text):
             try:
                 default_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
                 default_lang = "mr"
-            return self._distress(user_id, detect_language(text, default_lang), trace, t0)
+            lang = detect_language(text, default_lang)
+            if is_emergency(text):
+                return self._safety(user_id, lang, trace, t0, kind="emergency")
+            return self._distress(user_id, lang, trace, t0)
 
-        user = self.core.user(user_id)
+        # core-api down must never mean silence: answer with the fixed error template instead.
+        try:
+            user = self.core.user(user_id)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.error("core-api unavailable for user lookup: %s", exc)
+            lang = detect_language(text, "mr")
+            r = rp.R[rp.lang_or_default(lang)]
+            return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
         lang = detect_language(text, user["language"])
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
@@ -89,7 +101,11 @@ class TurnEngine:
 
         # 3. intent
         profile = Profile(user["wake_time"], user["lunch_time"], user["dinner_time"], lang)
-        pending = self.core.pending(user_id)
+        try:
+            pending = self.core.pending(user_id)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.error("core-api unavailable for pending lookup: %s", exc)
+            return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
         draft = self._drafts.get(user_id)
         parsed, source = self._intent(text, profile, now, lang, pending is not None, draft)
         trace["intent_ms"] = round((time.perf_counter() - t0) * 1000, 1)
@@ -508,6 +524,14 @@ class TurnEngine:
         return list(turns)
 
     def _distress(self, uid: int, lang: str, trace: dict[str, Any], t0: float) -> TurnResult:
+        return self._safety(uid, lang, trace, t0, kind="distress")
+
+    def _safety(
+        self, uid: int, lang: str, trace: dict[str, Any], t0: float, kind: str
+    ) -> TurnResult:
+        """Shared path for distress and physical emergency: stop everything, clear pending actions,
+        record the event (core-api alerts family only per consent - emergency policy is PENDING a
+        decision by the team), and speak the fixed template."""
         self._drafts.pop(uid, None)
         self._history.pop(uid, None)  # the story stops; nothing resumes after a crisis
         # Every core call is best-effort: the spoken safety reply below is returned regardless.
@@ -516,15 +540,14 @@ class TurnEngine:
             if pending is not None:  # a stray "yes" must not execute anything after distress
                 self.core.reject(uid, pending["id"])
         except (CoreError, httpx.HTTPError) as exc:
-            log.error("distress: could not clear pending action: %s", exc)
+            log.error("%s: could not clear pending action: %s", kind, exc)
         try:
             self.core.distress(uid)  # core-api alerts caregiver ONLY if consent is configured
         except (CoreError, httpx.HTTPError) as exc:
-            log.error("distress: could not record event / alert caregiver: %s", exc)
+            log.error("%s: could not record event / alert caregiver: %s", kind, exc)
         r = rp.R[rp.lang_or_default(lang)]
-        return TurnResult(
-            r["distress"], "DISTRESS", "safety", lang, trace=self._t(trace, t0)
-        )
+        intent = "EMERGENCY" if kind == "emergency" else "DISTRESS"
+        return TurnResult(r[kind], intent, "safety", lang, trace=self._t(trace, t0))
 
     @staticmethod
     def _t(trace: dict[str, Any], t0: float) -> dict[str, Any]:

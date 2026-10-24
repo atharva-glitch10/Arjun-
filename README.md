@@ -8,12 +8,12 @@ Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Mar
 
 | Piece | State |
 |---|---|
-| `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 36 pytest tests. |
-| `services/reasoning` | `POST /turn`: distress check first on every turn -> AI disclosure -> intent (Evon if `EVON_BASE_URL`, else rule-based parser) -> dispatch. 96 pytest tests incl. a distress test set and dedicated medicine-path tests (intake with spoken yes, deflected medicine questions, no voice-created medicines). |
-| `services/scheduler` | Polls core-api to fire due reminders; optional once-a-day opener per user. Not covered by tests. |
-| `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `arjun-ui/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. `npm run build` passes; the screens were rendered in headless Edge (`/?preview` gallery, dashboard, elder home) but not tested on a real device or with real speech. |
+| `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 38 pytest tests (incl. API-key checks; core-api refuses to start without `CORE_API_KEY`). |
+| `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent (Evon if `EVON_BASE_URL`, else rule-based parser) -> dispatch. 130 pytest tests incl. distress and physical-emergency test sets (both lexicons unverified by a native speaker), core-api-outage handling, and dedicated medicine-path tests (intake with spoken yes, deflected medicine questions, no voice-created medicines). |
+| `services/scheduler` | Polls core-api to mark due reminders, tick medicines, and fetch briefing/opener text. **Logs only: nothing is spoken on the elder device yet (T8).** 3 pytest tests. |
+| `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `design/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. `npm run build` passes; the screens were rendered in headless Edge (`/?preview` gallery, dashboard, elder home) but not tested on a real device or with real speech. |
 | `eval/` | `python eval/run_eval.py` - intent / slot / distress on 33 synthetic text cases. |
-| `services/voice-agent` | `agent.py` imports and its plugin arguments match livekit-plugins-gnani 1.8.6 (STT `mr-IN`, TTS, silero VAD, `StopResponse`). Verified 2026-10-21: the worker starts and registers with LiveKit Cloud. **No speech turn has been run yet** (Gnani STT/TTS untested). `bridge.py` is tested. |
+| `services/voice-agent` | `agent.py` imports and its plugin arguments match livekit-plugins-gnani 1.8.6 (STT `mr-IN`, TTS, silero VAD, `StopResponse`). Verified 2026-10-21: the worker starts and registers with LiveKit Cloud. Gnani TTS returned audio through the plugin (2026-10-21). **No full spoken turn has run yet (T4).** The worker registers as `agent_name="arjun"`; `scripts/make_token.py` dispatches it explicitly. Reasoning failures become a spoken fallback line. 9 pytest tests (`test_bridge.py`, `test_turnlog.py`). Elder web app still uses **browser** speech, not Gnani (T6). |
 
 ## Run
 ```
@@ -111,5 +111,5 @@ WER and latency measurement.
 ## Open questions (need a human / credentials - not guessed)
 Prisma streaming support for the target language; credit cost per Gnani call; whether noise
 cancellation helps or hurts Prisma; whether LiveKit turn-detection can change mid-session (the
-0.7s / 1.2s endpointing values in `voice-agent/bridge.py` are placeholders); which embedding model
+1.0s / 3.0s endpointing values (`ARJUN_MIN/MAX_ENDPOINTING_S`) are placeholders); which embedding model
 works for the target language. Target language was assumed to be Marathi from the spec's examples.

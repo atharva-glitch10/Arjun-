@@ -1,5 +1,6 @@
 """Shared FastAPI dependencies (kept apart from main.py so routers can import them)."""
 
+import hmac
 import os
 from datetime import datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -31,7 +32,26 @@ def get_now() -> datetime:
     return local_now()
 
 
+def testing() -> bool:
+    """Only the test suites set ARJUN_TESTING=1; it is the one way to run without CORE_API_KEY."""
+    return os.environ.get("ARJUN_TESTING") == "1"
+
+
+def check_api_key_configured() -> None:
+    """Fail closed: an empty CORE_API_KEY used to silently disable auth. Called at startup."""
+    if not os.environ.get("CORE_API_KEY") and not testing():
+        raise SystemExit(
+            "core-api: CORE_API_KEY is empty. Set it in the root .env (any long random string). "
+            "Only the test suites may run without it (ARJUN_TESTING=1)."
+        )
+
+
 def require_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = os.environ.get("CORE_API_KEY")
-    if expected and x_api_key != expected:
+    if not expected:
+        if testing():
+            return
+        raise HTTPException(503, "CORE_API_KEY not configured")
+    # constant-time comparison so the key can't be guessed byte by byte from response timing
+    if not hmac.compare_digest((x_api_key or "").encode(), expected.encode()):
         raise HTTPException(401, "invalid api key")

@@ -1,30 +1,35 @@
 """LiveKit Agents worker: Gnani Prisma (STT) + Gnani Timbre (TTS), reasoning over HTTP.
 
-STATUS: names and constructor arguments checked against livekit-plugins-gnani 1.8.6 / livekit-agents
-1.8.6 (imports and signatures only). NOT yet run against the live Gnani or LiveKit services - that
-needs GNANI_API_KEY and LIVEKIT_* in the root .env. No LLM is configured: every reply is the templated text
-returned by reasoning /turn. The tested logic is in bridge.py.
+STATUS: TTS verified live through the plugin (2026-10-21). A full spoken turn has NOT yet run
+end to end (T4). No LLM is configured: every reply is the templated text returned by reasoning
+/turn. Dispatch is EXPLICIT: the worker registers as AGENT_NAME ("arjun") and only joins rooms whose
+token/room config dispatches that name (see scripts/make_token.py). The tested logic is in bridge.py.
 """
 
 import asyncio
+import logging
 import os
 import sys
 import time
 from pathlib import Path
 
-from bridge import ask_reasoning
+from bridge import fallback_text, reply_or_fallback
 from dotenv import dotenv_values
 from livekit import agents
 from livekit.agents import Agent, AgentSession, StopResponse
 from livekit.plugins import gnani, silero
 from turnlog import TurnLog
 
+logger = logging.getLogger("arjun.agent")
+
 REQUIRED_ENV = ("GNANI_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
-ENV_PREFIXES = ("GNANI_", "LIVEKIT_")
+# ARJUN_* are non-secret settings (agent name, user id, endpointing). REASONING_URL is NOT loaded
+# from .env on purpose: dev-up.ps1 sets the local value and .env may hold the compose hostname.
+ENV_PREFIXES = ("GNANI_", "LIVEKIT_", "ARJUN_")
 
 
 def load_agent_env(env_file: Path | None = None) -> None:
-    """Copy only GNANI_* / LIVEKIT_* from the root .env into os.environ; .env wins over inherited values.
+    """Copy only GNANI_* / LIVEKIT_* / ARJUN_* from the root .env into os.environ; .env wins over inherited values.
 
     .env must win: a shell started before a key rotation still carries the old keys, and using those
     gives 403 API_KEY_INACTIVE (seen 2026-10-21). Variables absent from .env keep their environment value.
@@ -54,6 +59,12 @@ USE_STREAMING = os.environ.get("GNANI_USE_STREAMING", "1") == "1"
 TTS_MODEL = os.environ.get("GNANI_TTS_MODEL", "timbre-v2.5")
 TTS_VOICE = os.environ.get("GNANI_TTS_VOICE", "Omkar")
 TTS_LANGUAGE = os.environ.get("GNANI_TTS_LANGUAGE", "mr-IN")
+# Explicit dispatch name. An unnamed worker was never sent into Console/Playground rooms (2026-10-21).
+AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
+# Seconds of silence before end of turn. PLACEHOLDERS: elderly speakers pause mid-sentence, so start
+# longer than the library default and tune on real recordings (CLAUDE.md: measure, don't guess).
+MIN_ENDPOINTING_S = float(os.environ.get("ARJUN_MIN_ENDPOINTING_S", "1.0"))
+MAX_ENDPOINTING_S = float(os.environ.get("ARJUN_MAX_ENDPOINTING_S", "3.0"))
 
 
 class Arjun(Agent):
@@ -67,9 +78,18 @@ class Arjun(Agent):
         transcript = new_message.text_content or ""
         if not transcript.strip():
             raise StopResponse()
-        reply = await asyncio.to_thread(ask_reasoning, USER_ID, transcript)
+        # Never silence: reply_or_fallback turns any reasoning failure into a fixed spoken line.
+        reply = await asyncio.to_thread(reply_or_fallback, USER_ID, transcript, STT_LANGUAGE)
         self.turns.reasoning_done(time.time(), reply.text, reply.mode)
-        await self.session.say(reply.text)
+        try:
+            await self.session.say(reply.text)
+        except Exception:  # noqa: BLE001 - TTS failure must be logged, not crash the session
+            logger.exception("TTS failed for reply (mode=%s)", reply.mode)
+            if reply.mode != "fallback":
+                try:
+                    await self.session.say(fallback_text(STT_LANGUAGE))
+                except Exception:  # noqa: BLE001
+                    logger.exception("TTS fallback also failed")
         raise StopResponse()  # suppress the default LLM reply
 
 
@@ -79,8 +99,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         stt=gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING),  # Prisma
         tts=gnani.TTS(model=TTS_MODEL, voice=TTS_VOICE, language=TTS_LANGUAGE),  # Timbre; key from GNANI_API_KEY
         vad=silero.VAD.load(),
-        min_endpointing_delay=0.7,  # placeholder, see bridge.endpointing_delay
-        max_endpointing_delay=3.0,
+        min_endpointing_delay=MIN_ENDPOINTING_S,
+        max_endpointing_delay=MAX_ENDPOINTING_S,
     )
     turns = TurnLog(language_selected=STT_LANGUAGE)
 
@@ -103,4 +123,4 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint, agent_name=AGENT_NAME))

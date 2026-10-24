@@ -2,7 +2,10 @@
 
 > A voice care companion for elderly Indians (Marathi / Hindi / English).
 > Arjun is an AI and a bridge to people, not a replacement for them.
-> It gives no medical advice, does no emergency detection, and keeps stories private by default.
+> It gives no medical advice and keeps stories private by default. A rule-based physical-emergency
+> check (unverified lexicon) tells the user to call 112; it does not detect emergencies by itself.
+>
+> **Partly stale (last full update 2026-10-18).** README.md and STATUS.md are current.
 
 This document describes what is implemented, how the tech stack is used, and what is still open.
 For run instructions and the short status table, see [README.md](README.md).

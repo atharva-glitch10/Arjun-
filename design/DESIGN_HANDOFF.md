@@ -1,5 +1,8 @@
 # Arjun UI — Design Handoff ("Ghar" direction)
 
+> **Source of truth for tokens is `web/src/styles/tokens.css`** (the built app). `design/tokens.css` is
+> the original handoff copy and may be out of date. Project rules live only in the root `CLAUDE.md`.
+
 Read `CLAUDE.md` first (product rules, safety boundaries). This file covers the UI only.
 
 ## What's in this folder

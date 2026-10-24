@@ -35,7 +35,7 @@ $services = [ordered]@{
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS" }
     "voice-agent" = @{ Dir = "services\voice-agent"; Cmd = "& '$py' agent.py dev"
-                       Vars = "REASONING_URL", "ARJUN_USER_ID", "ARJUN_TZ" }
+                       Vars = "REASONING_URL", "REASONING_TIMEOUT_S", "ARJUN_USER_ID", "ARJUN_TZ" }
     "web"         = @{ Dir = "web"; Cmd = "npm run dev"; Vars = @() }
 }
 

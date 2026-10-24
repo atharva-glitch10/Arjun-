@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 # or .env may point DATABASE_URL at the compose-only 'postgres' host or set CORE_API_KEY.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.pop("CORE_API_KEY", None)
+os.environ["ARJUN_TESTING"] = "1"  # the only way core-api runs without CORE_API_KEY
 
 # Integration tests run reasoning against the real core-api app (in-memory SQLite).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core-api"))

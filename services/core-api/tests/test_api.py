@@ -141,3 +141,21 @@ def test_api_key_enforced(client, uid, monkeypatch):
     monkeypatch.setenv("CORE_API_KEY", "secret")
     assert client.get(f"/users/{uid}").status_code == 401
     assert client.get(f"/users/{uid}", headers={"X-API-Key": "secret"}).status_code == 200
+
+
+def test_empty_key_refused_outside_tests(monkeypatch):
+    import pytest
+    from core_api.deps import check_api_key_configured
+
+    monkeypatch.delenv("CORE_API_KEY", raising=False)
+    monkeypatch.setenv("ARJUN_TESTING", "0")
+    with pytest.raises(SystemExit):
+        check_api_key_configured()
+
+
+def test_wrong_key_rejected_right_key_accepted(client, monkeypatch):
+    monkeypatch.setenv("CORE_API_KEY", "a-long-test-key")
+    assert client.post("/users", json={"name": "x"}).status_code == 401
+    assert client.post("/users", json={"name": "x"}, headers={"X-API-Key": "nope"}).status_code == 401
+    r = client.post("/users", json={"name": "x"}, headers={"X-API-Key": "a-long-test-key"})
+    assert r.status_code == 201

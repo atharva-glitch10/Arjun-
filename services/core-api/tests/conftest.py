@@ -5,6 +5,7 @@ from datetime import datetime
 # or .env may point DATABASE_URL at the compose-only 'postgres' host or set CORE_API_KEY.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.pop("CORE_API_KEY", None)
+os.environ["ARJUN_TESTING"] = "1"  # the only way core-api runs without CORE_API_KEY
 
 import pytest  # noqa: E402
 from core_api.db import Base, get_db, make_engine  # noqa: E402
