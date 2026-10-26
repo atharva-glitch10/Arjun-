@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api";
 import { recentEmergencies } from "./alerts";
+import { deliveryRows } from "./deliveries";
 import { confirmThen } from "./guard";
 import { startPolling } from "./polling";
 import type {
   Anchor,
   Appointment,
   Contact,
+  Delivery,
   Dose,
   Medicine,
   MedicineInput,
@@ -28,6 +30,7 @@ interface Data {
   notes: Note[];
   medicines: Medicine[];
   doses: Dose[];
+  deliveries: Delivery[];
 }
 
 const DAY = 86_400_000;
@@ -112,7 +115,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, contacts, book, requests, notes, medicines, doses] =
+      const [user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -123,8 +126,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         api.notifications(userId),
         api.medicines(userId),
         api.medicineDoses(userId, 7),
+        api.deliveries(userId, 1),
       ]);
-      setData({ user, reminders, appointments, contacts, book, requests, notes, medicines, doses });
+      setData({ user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -344,6 +348,26 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             <p className="fam-note">
               Everything here is what Aaji told Arjun. "Done" and "Taken" are self-reported. "On time" is within the window set for each medicine (default 30 min). Meals and walks will appear
               here once they are set up.
+            </p>
+          </section>
+
+          <section className="fam-card" style={{ flex: "1 1 480px" }}>
+            <h2>Spoken reminders and medicines</h2>
+            {deliveryRows(data.deliveries).length === 0 && <p className="fam-note">Nothing was due today.</p>}
+            {deliveryRows(data.deliveries).map((r) => (
+              <div className="timeline-row" key={r.id}>
+                <span className="time">{clock(parse(r.dueAt))}</span>
+                <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                  <span className="label">{r.title}</span>
+                  <span className="detail">{r.kind}</span>
+                </div>
+                <span className={`status${r.tone === "ok" ? " ok" : ""}`}>{r.text}</span>
+              </div>
+            ))}
+            <p className="fam-note">
+              "Spoken" means Arjun finished saying it, not that Aaji heard it. "Taken" is what Aaji told Arjun. "Not
+              delivered" means it did not reach Aaji by voice (no open session, or the speech was interrupted or failed
+              3 times); it stays on her screen until she taps OK.
             </p>
           </section>
 
