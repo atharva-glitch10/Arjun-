@@ -95,3 +95,20 @@ def test_the_log_never_claims_a_reminder_was_spoken(monkeypatch, caplog):
     scheduler.tick(_http([]), "2026-10-24")
     text = " ".join(r.getMessage() for r in caplog.records).lower()
     assert "queued for delivery" in text and "spoken" not in text.replace("not spoken", "")
+
+
+def test_dev_up_starts_the_scheduler_without_giving_it_secrets_it_does_not_need():
+    """T8: without the scheduler nothing is ever queued, so the hand test would silently never speak."""
+    import re
+    from pathlib import Path
+
+    script = (Path(__file__).resolve().parents[2] / "scripts" / "dev-up.ps1").read_text(encoding="utf-8")
+    block = re.search(r'"scheduler"\s*=\s*@\{(.*?)"voice-agent"\s*=', script, re.S)
+    assert block, "scripts/dev-up.ps1 has no scheduler entry"
+    entry = "\n".join(line for line in block.group(1).splitlines() if not line.strip().startswith("#"))
+    assert "scheduler.py" in entry
+    for needed in ("CORE_API_URL", "CORE_API_KEY", "REASONING_URL", "ARJUN_TZ", "SCHEDULER_INTERVAL_SECONDS"):
+        assert needed in entry
+    for forbidden in ("LLM_API_KEY", "GNANI_API_KEY", "LIVEKIT_API_SECRET", "OPENER_USER_IDS", "BRIEFING_USER_IDS"):
+        assert forbidden not in entry  # openers / briefings are not T8 and stay off
+    assert '"scheduler"' in script.split("ValidateSet(")[1].split(")")[0]

@@ -1,9 +1,9 @@
-# Start the local dev stack (no Docker), in order: core-api :8000, reasoning :8001, voice-agent, web :5173.
+# Start the local dev stack (no Docker), in order: core-api :8000, reasoning :8001, scheduler, voice-agent, web :5173.
 # Reads the ONE root .env. Each service gets its own window and ONLY the variables it needs;
 # values are never printed or put on a command line (they travel in the child's environment).
 # voice-agent loads its own GNANI_*/LIVEKIT_* from .env (see agent.py), so they are not passed here.
 # Usage: scripts\dev-up.ps1 [-Only core-api|reasoning|voice-agent|web]
-param([ValidateSet("core-api", "reasoning", "voice-agent", "web")][string]$Only)
+param([ValidateSet("core-api", "reasoning", "scheduler", "voice-agent", "web")][string]$Only)
 
 $root = Split-Path $PSScriptRoot -Parent
 $py = Join-Path $root ".venv\Scripts\python.exe"
@@ -36,6 +36,9 @@ $services = [ordered]@{
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
                        "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
                        "LLM_TIMEOUT_S", "LLM_MAX_TOKENS", "LLM_HISTORY_EXCHANGES" }
+    "scheduler"   = @{ Dir = "services\scheduler"; Cmd = "& '$py' scheduler.py"
+                       # queues due reminders / medicines for the voice session. No OPENER_/BRIEFING_USER_IDS: those are not T8.
+                       Vars = "CORE_API_URL", "CORE_API_KEY", "REASONING_URL", "ARJUN_TZ", "SCHEDULER_INTERVAL_SECONDS" }
     "voice-agent" = @{ Dir = "services\voice-agent"; Cmd = "& '$py' agent.py dev"
                        Vars = "REASONING_URL", "REASONING_TIMEOUT_S", "ARJUN_USER_ID", "ARJUN_TZ" }
     "web"         = @{ Dir = "web"; Cmd = "npm run dev"; Vars = "CORE_API_KEY", "CORE_API_URL" }  # the Vite proxy injects the key; the browser never talks to reasoning
