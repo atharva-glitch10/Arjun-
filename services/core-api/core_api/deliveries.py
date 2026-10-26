@@ -5,7 +5,9 @@ dashboard with an honest status.
 
   queued -> speaking (claimed) -> spoken -> acknowledged
   queued -> shown_only    not spoken on purpose (medicine waited past its window; over the backlog cap)
-  speaking -> queued      released (interrupted, or TTS failed; 3 TTS failures -> undelivered)
+  speaking -> queued      released (interrupted, TTS failed or the session vanished)
+  speaking -> undelivered the 3rd release: one try + at most 2 retries in total, never an endless repeat;
+                          it stays on the elder screen and the family is told once
   queued -> superseded    the reminder was done / the dose handled / a newer reminder replaced it
 
 "fired" on a reminder still only means "the due time passed". Only `spoken_at` means Aaji heard it.
@@ -28,7 +30,7 @@ router = APIRouter(dependencies=[Depends(require_key)])
 LATE_AFTER = timedelta(seconds=120)  # a queued item older than this is "not delivered on time"
 BACKLOG_CAP = 3  # at most this many LATE items are offered for speech; the rest stay on screen
 STALE_CLAIM = timedelta(seconds=90)  # a session that claimed and never finished (crashed)
-MAX_TTS_FAILS = 3
+MAX_TRIES = 3  # the first try plus at most 2 retries; interruptions, speech failures and vanished sessions all count
 OPEN_DOSE = ("due", "reminded")
 LIVE = ("queued", "speaking", "spoken", "shown_only", "undelivered")  # not finished, not acknowledged
 
@@ -143,12 +145,23 @@ def _notify(db: Session, d: m.Delivery, kind: str, body: str) -> None:
     d.notified = True
 
 
+def _count_try(db: Session, d: m.Delivery, why: str) -> None:
+    """One try ended without being heard to the end. The MAX_TRIES-th ends the item as undelivered (family told once)."""
+    d.fail_count += 1
+    if d.fail_count < MAX_TRIES:
+        d.status = "queued"
+        return
+    d.status = "undelivered"
+    if not d.notified:
+        label, _ = _item(db, d)
+        _notify(db, d, "undelivered", f"'{label}' due {d.due_at:%H:%M} was NOT delivered by voice after {d.fail_count} tries ({why}). It stays on the screen.")
+
+
 def sweep(db: Session, now: datetime) -> dict[str, int]:
     stats = {"released": 0, "superseded": 0, "shown_only": 0, "notified": 0}
     # 1. a session that claimed an item and vanished: put it back (it counts as a failed attempt)
     for d in db.scalars(select(m.Delivery).where(m.Delivery.status == "speaking", m.Delivery.claimed_at < now - STALE_CLAIM)):
-        d.fail_count += 1
-        d.status = "undelivered" if d.fail_count >= MAX_TTS_FAILS else "queued"
+        _count_try(db, d, "the voice session stopped before it finished")
         stats["released"] += 1
     queued = list(db.scalars(select(m.Delivery).where(m.Delivery.status == "queued").order_by(m.Delivery.due_at, m.Delivery.id)))
     # 2. no longer needed
@@ -297,19 +310,13 @@ def spoken(user_id: int, delivery_id: int, body: SessionIn, db: Session = Depend
 
 @router.post("/users/{user_id}/deliveries/{delivery_id}/release", response_model=DeliveryOut)
 def release(user_id: int, delivery_id: int, body: ReleaseIn, db: Session = Depends(get_db), now: datetime = Depends(get_now)) -> DeliveryOut:
-    """The session could not finish: put the item back. A speech failure counts (3 in a row = undelivered and the
-    family is told); being interrupted by the elder does not."""
+    """The session could not finish. Every release is one try; the 3rd (the first try plus 2 retries) makes the item
+    undelivered and tells the family. Until then it goes back to the queue."""
     _user(db, user_id)
     d = _mine(db, user_id, delivery_id)
     if d.status != "speaking" or d.claimed_by != body.session:
         raise HTTPException(409, "not claimed by this session")
-    d.status = "queued"
-    if body.reason == "tts":
-        d.fail_count += 1
-        if d.fail_count >= MAX_TTS_FAILS:
-            d.status = "undelivered"
-            label, _ = _item(db, d)
-            _notify(db, d, "undelivered", f"'{label}' due {d.due_at:%H:%M} could not be spoken: speech failed {d.fail_count} times.")
+    _count_try(db, d, "speech failed" if body.reason == "tts" else "it was interrupted")
     db.commit()
     return _out(db, d, now)
 

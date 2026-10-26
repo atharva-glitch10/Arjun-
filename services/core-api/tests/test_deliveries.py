@@ -164,14 +164,58 @@ def test_a_failed_tts_leaves_it_undelivered_and_the_dashboard_can_say_so(client,
     assert "undelivered" in kinds
 
 
-def test_an_interrupted_delivery_goes_back_to_the_queue_without_counting_as_a_failure(client, uid):
+def test_an_interrupted_delivery_is_retried_but_only_twice(client, uid):
+    """One try plus at most 2 retries in total, then "undelivered": never an endless repeat."""
     box = _clock(NOW)
     d = _queued(client, uid, box)
     base = f"/users/{uid}/deliveries/{d['id']}"
-    for _ in range(5):
-        client.post(f"{base}/claim", json={"session": "A"})
+    for n in (1, 2):
+        assert client.post(f"{base}/claim", json={"session": "A"}).status_code == 200
         r = client.post(f"{base}/release", json={"session": "A", "reason": "interrupted"})
-        assert r.json()["status"] == "queued" and r.json()["fail_count"] == 0
+        assert r.json()["status"] == "queued" and r.json()["fail_count"] == n
+    assert client.post(f"{base}/claim", json={"session": "A"}).status_code == 200  # the third (last) try
+    last = client.post(f"{base}/release", json={"session": "A", "reason": "interrupted"}).json()
+    assert last["status"] == "undelivered" and last["spoken_at"] is None and last["fail_count"] == 3
+    assert client.get(f"/users/{uid}/deliveries/next").json() is None  # no fourth try
+    assert client.post(f"{base}/claim", json={"session": "A"}).status_code == 409
+    _sweep(client, box, box["now"] + timedelta(minutes=10))
+    assert _all(client, uid)[0]["status"] in ("undelivered", "shown_only")  # the sweep never re-queues it
+
+
+def test_interruptions_and_speech_failures_share_the_same_two_retries(client, uid):
+    box = _clock(NOW)
+    d = _queued(client, uid, box)
+    base = f"/users/{uid}/deliveries/{d['id']}"
+    for reason in ("interrupted", "tts", "interrupted"):
+        client.post(f"{base}/claim", json={"session": "A"})
+        out = client.post(f"{base}/release", json={"session": "A", "reason": reason}).json()
+    assert out["status"] == "undelivered"
+
+
+def test_an_undelivered_item_stays_on_the_elder_screen_and_the_family_is_told_once(client, uid):
+    box = _clock(NOW)
+    d = _queued(client, uid, box)
+    base = f"/users/{uid}/deliveries/{d['id']}"
+    for _ in range(3):
+        client.post(f"{base}/claim", json={"session": "A"})
+        client.post(f"{base}/release", json={"session": "A", "reason": "interrupted"})
+    _sweep(client, box, box["now"] + timedelta(minutes=10))
+    _sweep(client, box, box["now"] + timedelta(minutes=11))
+    assert [x["status"] for x in client.get(f"/users/{uid}/deliveries/open").json()] == ["undelivered"]
+    told = [n for n in client.get(f"/users/{uid}/notifications").json() if n["kind"] == "undelivered"]
+    assert len(told) == 1
+    assert "3" in told[0]["body"] and "not" in told[0]["body"].lower()
+    assert client.post(f"{base}/ack", json={"outcome": "ok"}).json()["status"] == "acknowledged"  # the elder can clear it
+
+
+def test_a_crashed_session_counts_as_a_try_too(client, uid):
+    box = _clock(NOW)
+    d = _queued(client, uid, box)
+    base = f"/users/{uid}/deliveries/{d['id']}"
+    for _ in range(3):
+        client.post(f"{base}/claim", json={"session": "crashed"})
+        _sweep(client, box, box["now"] + timedelta(minutes=5))
+    assert _all(client, uid)[0]["status"] == "undelivered"
 
 
 def test_a_crashed_session_does_not_hold_an_item_forever(client, uid):
