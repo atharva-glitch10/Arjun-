@@ -168,6 +168,23 @@ Token request to agent listening: 7.3 s, 3.5 s, then 1.8 s (the first two on a f
 Tapped turns log `source: tap`, reasoning round trips of 83-933 ms, reasoning -> audio 1.3-1.6 s.
 n = a handful of taps: a plumbing check, not a speech test. Gnani credits: a few short TTS replies, not read from the dashboard.
 
+## T6 hand test in a browser (2026-10-24 evening), reported by the speaker
+
+System-level observations only, no accuracy numbers. Setup: elder page in a browser on the laptop, Gnani Prisma and
+Timbre over LiveKit, one synthetic user.
+
+| Item | Result | Evidence |
+|---|---|---|
+| 10:00 confirm card for the doctor reminder | showed (speaker, browser) | the 17:15:30 turn read back "उद्या सकाळी 10:00 वाजता आठवण ठेवू का: ..." |
+| A spoken "हो" saved the reminder | reported yes by the speaker | **NOT corroborated**: see below |
+| Tap हो/नाही, 10 s dashboard refresh, red emergency banner, 112 button, Wi-Fi retry screen, live transcript, Omkar voice quality | not verified | none yet (T8 hand-test checklist) |
+
+What the logs show for that session: the "हो" at 17:15:45 came back from Prisma as a 24-word repetition artifact, was
+read as a story, and the pending reminder was REJECTED (not saved). That failure led to fixes A to F. The only saved
+doctor reminder (id 2) came from the 14:00 Console session. After the 21:14 database cleanup there is no action row,
+no new reminder and no voice turn in `turns.jsonl` from a later browser session, so the post-fix "spoken हो saved it"
+is recorded here as the speaker's report and is to be re-checked with log evidence in the T8 session.
+
 ## Regression suite (text only, synthetic)
 
 core-api 54, reasoning 221, voice-agent 32, scheduler 3, vitest 13 passed; ruff clean; web `tsc` clean; eval 42/42

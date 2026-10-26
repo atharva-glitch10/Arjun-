@@ -122,6 +122,30 @@ not be used anywhere in the elder app.
 - Briefings and openers: NOT in this task.
 - **Accept:** a reminder set 2 minutes ahead is spoken on the elder device; a medicine prompt
   is spoken, "घेतली" marks it taken on the dashboard. Tests pass (paste output).
+- **T8 hand-test checklist (ONE session; tick each and note the log line or screenshot that proves it).**
+  Carried over from the 2026-10-24 hand test (NOT yet verified):
+  - [ ] Tap **हो** / **नाही** on the confirm card works and gives the same result as saying it.
+  - [ ] The family dashboard refreshes by itself within about 10 s (create a reminder by voice, watch the dashboard
+        without reloading) and again when you come back to the tab.
+  - [ ] The red **emergency banner** appears on the dashboard after an emergency phrase (consent off), names the
+        two contacts, and says no call or message was sent.
+  - [ ] The **112** button on the safety screen opens the dialler (phone) or does nothing harmful (laptop).
+  - [ ] **Wi-Fi off** mid-session shows "जोडणी तुटली, पुन्हा बोला दाबा" with a big retry, never a blank screen;
+        the retry reconnects.
+  - [ ] The **live transcript** ("तुम्ही म्हणालात") shows what you said while you speak.
+  - [ ] **Omkar voice quality** is acceptable for the demo (your judgement; note any mispronounced Marathi words).
+  - [ ] A **spoken "हो" saves the reminder**, confirmed in the logs: a `confirmed` row in the actions table, a new
+        reminder on the dashboard, and the "हो" turn in `eval/results/turns.jsonl`. (Reported verified on 24 Oct, but
+        the logs do not show it; see RESULTS.md.)
+  New for T8:
+  - [ ] A reminder set 2 minutes ahead is SPOKEN on the open elder page and the Reminder screen appears.
+  - [ ] A medicine prompt is spoken exactly as the family entered it; "घेतली" (voice and tap) marks it taken on the
+        dashboard, labelled self-reported; "नंतर" snoozes.
+  - [ ] With NO elder page open, a due reminder is queued and the dashboard says it was not delivered on time; it is
+        spoken when the page is opened and Start is tapped.
+  - [ ] After 60 s of silence Arjun says a short closing line and the session ends; it never ends during a safety
+        reply or while a yes/no is pending.
+  - [ ] Opening the elder page pre-warms the room so the first tap is fast (note the measured seconds).
 
 ### T9. Evon decision support 🛑 (by Oct 24)
 - I will decide: (a) rented GPU running vLLM, or (b) no Evon for the demo.

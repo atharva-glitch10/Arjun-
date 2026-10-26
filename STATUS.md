@@ -1,4 +1,4 @@
-# STATUS (2026-10-24, end of day)
+# STATUS (2026-10-26)
 
 Arjun talks through **Gnani Prisma (hearing) + Gnani Timbre (voice) over LiveKit**; the elder app and the family
 dashboard run on the laptop. Rules do the care work (reminders, times, medicines, safety); an optional **hosted,
@@ -37,13 +37,20 @@ non-Gnani LLM** is built for open conversation but is **not configured or run ye
   boundary-checked replies, per-call log without text. `eval/llm_compare.py` is tested on a fake provider.
 
 ## Verified vs NOT verified
+- **Verified by the speaker in the browser (2026-10-24, self-reported):** the 10:00 confirm card showed. The logs
+  match for the card (the 17:15:30 turn read back "उद्या सकाळी 10:00 वाजता आठवण ठेवू का: ...").
+- **Reported by the speaker but NOT corroborated by the logs:** "a spoken हो saved the reminder". At 17:15:45 the
+  recognizer returned junk and that reminder was rejected (fixed afterwards by A and B); the only saved doctor
+  reminder (id 2) came from the 14:00 Console session, and `turns.jsonl` has no voice turn after 17:17 on 24 Oct.
+  To be re-checked WITH log evidence in the T8 hand-test session.
 - Verified by tests (core-api 76, reasoning 327, voice-agent 45, scheduler 3, vitest 24; ruff and `tsc` clean;
   eval 42/42 intent, 12/12 slot, 5/5 distress; all synthetic regression checks, not accuracy on real speech).
 - Verified live without a browser: token through the proxy, agent dispatch, tapped text -> confirm / saved /
   safety / story / reply screens with the agent speaking.
-- **NOT verified**: anything in a real browser after the fixes (mic permission, playback, live transcript, the
-  screens), a spoken "हो" saving the reminder after fix A/B, the emergency banner on the dashboard, the Wi-Fi retry
-  screen, the 10 s dashboard refresh, and **any real LLM reply** (no provider is configured).
+- **STILL NOT verified** (all on the T8 hand-test checklist in `CLAUDE_CODE_TASKS.md`): tap हो/नाही, the 10 s
+  dashboard refresh, the red emergency banner, the 112 button, the Wi-Fi retry screen, the live transcript, Omkar
+  voice quality, a spoken हो saving a reminder after fixes A/B (with log evidence), and **any real LLM reply**
+  (no provider is configured).
 - Not delivered, by design: reminders / medicine prompts / openers are NOT spoken yet (T8); an emergency alert is a
   dashboard banner only.
 - Emergency and distress lexicons are unverified by a native speaker (T12).
@@ -54,7 +61,8 @@ non-Gnani LLM** is built for open conversation but is **not configured or run ye
    3.0 s are placeholders. Credits used so far: not read from the dashboard yet.
 
 ## Next (in order)
-1. **Your retest of T6 steps 3-5** in a fresh session, answers reported as you go.
+1. **T8** (spoken reminders and medicines, scheduler in dev-up, idle close, room pre-warm): plan written, waiting
+   for the speaker's OK; then ONE hand-test session for the whole checklist.
 2. **LLM**: add `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_PROVIDER_NAME` to a SEPARATE env file and run
    `python eval/llm_compare.py --env-file <that file>`; review the numbers before putting them in the live `.env`
    (the live path reads the same names and turns on at the next restart).
