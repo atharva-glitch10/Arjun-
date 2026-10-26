@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
-import type { Contact, DueNow, Dose, PendingAction } from "../api";
+import type { Contact, Delivery, DueNow, Dose, PendingAction } from "../api";
 import {
   ConfirmScreen,
   ConnectingScreen,
@@ -11,11 +11,15 @@ import {
   KahaniScreen,
   ListenScreen,
   MedicineScreen,
+  ReminderCardScreen,
   ReplyScreen,
   SafetyScreen,
+  StartScreen,
+  TouchToHearScreen,
 } from "../ghar/Screens";
 import type { UpcomingItem } from "../ghar/Screens";
 import { FAILURE_TEXT, shownFor } from "../voice/state";
+import { cardFor, shouldAutoStart } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
 import {
   dateLine,
@@ -68,9 +72,65 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const lastCard = useRef<ReturnType<typeof pendingToCard> | null>(null);
   const queuedText = useRef<string | null>(null);
 
+  // T8: delivered reminders / medicines. The SQL list is the truth; the card stays until it is acknowledged there.
+  const [armed, setArmed] = useState(false); // the one-time Start tap on this page load
+  const [open, setOpen] = useState<Delivery[]>([]);
+  const [queued, setQueued] = useState(0);
+  // After "घेतली" / "१५ मिनिटांनी सांग" on a delivered medicine the SQL card is gone; this keeps the answer screen up.
+  const [cardDone, setCardDone] = useState<{
+    status: "taken" | "snoozed";
+    time: string;
+    name: string;
+    dose: string;
+  } | null>(null);
+  const lastAutoStart = useRef<number | null>(null);
+
   const voice = useArjunVoice(userId);
-  const shown = shownFor(voice.snapshot);
+  const deliveredCard = cardFor(open, voice.item);
+  const snapshot = { ...voice.snapshot, armed, hasCard: deliveredCard !== undefined };
+  const shown = shownFor(snapshot);
   const { phase } = voice.snapshot;
+
+  const loadDeliveries = useCallback(async () => {
+    try {
+      const all = await api.openDeliveries(userId);
+      setOpen(all);
+      setQueued(all.filter((d) => d.status === "queued").length);
+    } catch {
+      // keep what is on screen; the next poll tries again
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    void loadDeliveries();
+    const id = window.setInterval(() => void loadDeliveries(), 5_000);
+    const onFocus = () => void loadDeliveries();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadDeliveries]);
+
+  // The agent just spoke a delivery: read the card from SQL now instead of waiting for the next poll.
+  useEffect(() => {
+    if (voice.item) void loadDeliveries();
+  }, [voice.item, voice.snapshot.turn, loadDeliveries]);
+
+  // Pre-warm: join a quiet room as the page opens so the first tap (or the first reminder) is fast.
+  const prewarm = voice.prewarm;
+  useEffect(() => {
+    void prewarm();
+  }, [prewarm]);
+
+  // A reminder is waiting and no session is open: after the Start tap the page opens one by itself.
+  useEffect(() => {
+    const since = lastAutoStart.current === null ? null : Date.now() - lastAutoStart.current;
+    if (shouldAutoStart({ armed, phase, queued, sinceLastMs: since })) {
+      lastAutoStart.current = Date.now();
+      void voice.start();
+    }
+  }, [armed, phase, queued, voice]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(clockNow()), 15_000);
@@ -230,6 +290,28 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     void loadHome();
   };
 
+  const ackReminder = async (d: Delivery) => {
+    try {
+      await api.ackDelivery(userId, d.id, "ok");
+      await loadDeliveries();
+    } catch {
+      setError("काहीतरी चुकलं. परत प्रयत्न करा.");
+    }
+  };
+
+  const answerMedicineCard = async (d: Delivery, status: "taken" | "snoozed") => {
+    try {
+      // core-api acknowledges the delivery itself when the dose is marked (self-reported) or snoozed
+      if (status === "taken") await api.doseTaken(userId, d.ref_id);
+      else await api.doseSnooze(userId, d.ref_id);
+      setCardDone({ status, time: timeLabel(hhmmOf(d.due_at)), name: d.label, dose: d.detail });
+      void loadDeliveries();
+      void pollMedicines();
+    } catch {
+      setError("काहीतरी चुकलं. परत प्रयत्न करा.");
+    }
+  };
+
   const yes = () => void voice.sendText("हो");
   const no = () => void voice.sendText("नाही");
 
@@ -241,7 +323,62 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const tapOpen = phase === "live";
 
   const body = () => {
+    if (cardDone && (shown === "home" || shown === "card"))
+      return (
+        <MedicineScreen
+          status={cardDone.status}
+          timeLabel={cardDone.time}
+          name={cardDone.name}
+          dose={cardDone.dose}
+          nextLine={due.next ? `पुढचं औषध ${timeLabel(hhmmOf(due.next.due_at))}` : "आज आणखी औषध नाही"}
+          onTaken={() => undefined}
+          onSnooze={() => undefined}
+          onOk={() => setCardDone(null)}
+        />
+      );
     switch (shown) {
+      case "start":
+        return (
+          <StartScreen
+            onStart={() => {
+              setArmed(true);
+              void voice.arm();
+            }}
+          />
+        );
+      case "touch":
+        return <TouchToHearScreen onTouch={() => void voice.unlockAudio()} />;
+      case "card": {
+        if (!deliveredCard) return <ListenScreen heard={voice.heard} onStop={toHome} />;
+        const dl = deliveredCard.delivery;
+        if (dl.kind === "medicine") {
+          const dose = due.current.find((x) => x.id === dl.ref_id);
+          return (
+            <MedicineScreen
+              status="due"
+              timeLabel={timeLabel(hhmmOf(dl.due_at))}
+              name={dl.label}
+              dose={dl.detail}
+              mealNote={dose && (dose.anchor === "lunch" || dose.anchor === "dinner") ? "जेवण झालं ना? मग आता" : undefined}
+              photoUrl={dose?.photo_url || undefined}
+              nextLine={due.next ? `पुढचं औषध ${timeLabel(hhmmOf(due.next.due_at))}` : "आज आणखी औषध नाही"}
+              notSpoken={!deliveredCard.spoken}
+              onTaken={() => void answerMedicineCard(dl, "taken")}
+              onSnooze={() => void answerMedicineCard(dl, "snoozed")}
+              onOk={() => void loadDeliveries()}
+            />
+          );
+        }
+        return (
+          <ReminderCardScreen
+            task={dl.label}
+            timeLabel={timeLabel(hhmmOf(dl.due_at))}
+            spoken={deliveredCard.spoken}
+            late={dl.late}
+            onOk={() => void ackReminder(dl)}
+          />
+        );
+      }
       case "connecting":
         return <ConnectingScreen onStop={toHome} />;
       case "failed":

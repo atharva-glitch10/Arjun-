@@ -19,8 +19,16 @@ export interface ArjunVoice {
   heard: string;
   /** Milliseconds from the tap to the agent listening, for the last session (console + here). */
   readyMs: number | null;
-  /** Tap बोला: fetch a token, join a fresh room, publish the mic. Must be called from a click. */
+  /** The SQL item the agent last delivered ("reminder:<id>" | "dose:<id>"), else "". */
+  item: string;
+  /** The one-time Start tap: unlocks sound and asks for the mic once. Must be called from a click. */
+  arm: () => Promise<void>;
+  /** Join a room quietly (no mic) when the page opens, so the first tap is fast. Best effort, never an error. */
+  prewarm: () => Promise<void>;
+  /** Tap बोला, or (after the Start tap) an automatic start for a waiting reminder: join a room and open the mic. */
   start: () => Promise<void>;
+  /** A tap on "touch to hear": lets the browser play Arjun's audio. */
+  unlockAudio: () => Promise<void>;
   /** Leave the room (OK / back). */
   stop: () => void;
   /** A tapped answer ("हो", "नाही"): goes to the agent as text and takes the same path as speech. */
@@ -40,12 +48,16 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [reply, setReply] = useState("");
   const [heard, setHeard] = useState("");
   const [readyMs, setReadyMs] = useState<number | null>(null);
+  const [item, setItem] = useState("");
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   const room = useRef<Room | null>(null);
   const stopping = useRef(false);
   const timers = useRef<number[]>([]);
   const phaseRef = useRef<Phase>("idle");
   const turnRef = useRef(0);
+  const warm = useRef(false); // a room joined without the mic, waiting for the first tap
+  const joining = useRef(false);
 
   const setPhaseBoth = (p: Phase) => {
     phaseRef.current = p;
@@ -60,10 +72,24 @@ export function useArjunVoice(userId: number): ArjunVoice {
     clearTimers();
     const r = room.current;
     room.current = null;
+    warm.current = false;
     if (r) {
       stopping.current = true;
       void r.disconnect();
     }
+  }, []);
+
+  const resetSession = useCallback(() => {
+    setPhaseBoth("idle");
+    setFailure(undefined);
+    setAgentState(undefined);
+    setScreen(undefined);
+    setTurn(0);
+    turnRef.current = 0;
+    setReply("");
+    setHeard("");
+    setItem("");
+    setAudioBlocked(false);
   }, []);
 
   const fail = useCallback(
@@ -76,29 +102,137 @@ export function useArjunVoice(userId: number): ArjunVoice {
     [teardown],
   );
 
-  const applyAgent = useCallback((p: Participant, t0: number) => {
-    const a = parseAttributes(p.attributes);
-    setAgentState(a.agentState);
-    if (a.screen) setScreen(a.screen);
-    if (a.turn > turnRef.current) {
-      turnRef.current = a.turn;
-      setTurn(a.turn);
+  const applyAgent = useCallback(
+    (p: Participant, t0: number) => {
+      const a = parseAttributes(p.attributes);
+      if (a.screen === "closed") {
+        // Arjun ended an idle session on purpose: a normal end, never the "connection dropped" screen.
+        teardown();
+        resetSession();
+        return;
+      }
+      setAgentState(a.agentState);
+      if (a.screen) setScreen(a.screen);
+      if (a.item) setItem(a.item);
+      if (a.turn > turnRef.current) {
+        turnRef.current = a.turn;
+        setTurn(a.turn);
+      }
+      const text = p.attributes["arjun.reply"];
+      if (typeof text === "string") setReply(text);
+      if (a.agentState === "listening" && phaseRef.current === "waiting") {
+        const ms = Math.round(performance.now() - t0);
+        console.info(`[arjun] ready ${ms} ms after the tap`);
+        setReadyMs(ms);
+        clearTimers();
+        setPhaseBoth("live");
+      }
+    },
+    [resetSession, teardown],
+  );
+
+  /** Fetch a token and join a fresh room with every handler attached. null = it did not work (nothing left open). */
+  const join = useCallback(
+    async (t0: number): Promise<Room | null> => {
+      let tok;
+      try {
+        tok = await api.livekitToken(userId);
+      } catch {
+        return null;
+      }
+
+      // Browser echo cancellation and noise suppression stay ON: the agent has no noise filter yet
+      // (CLAUDE.md open question 6), and without echo cancellation Arjun would hear himself on a speaker.
+      const r = new Room({
+        audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      room.current = r;
+      stopping.current = false;
+
+      r.on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind === Track.Kind.Audio) {
+          const el = track.attach();
+          el.style.display = "none";
+          document.body.appendChild(el);
+        }
+      });
+      r.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
+      r.on(RoomEvent.AudioPlaybackStatusChanged, () => setAudioBlocked(!r.canPlaybackAudio));
+      r.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => {
+        if (isAgent(p)) applyAgent(p, t0);
+      });
+      r.on(RoomEvent.ParticipantConnected, (p) => {
+        if (isAgent(p)) applyAgent(p, t0);
+      });
+      const lost = () => {
+        if (stopping.current) return;
+        if (phaseRef.current === "idle") {
+          // a quiet (pre-warmed) room went away: forget it, the next tap joins a fresh one
+          room.current = null;
+          warm.current = false;
+          return;
+        }
+        fail("dropped");
+      };
+      r.on(RoomEvent.ParticipantDisconnected, (p) => {
+        if (isAgent(p)) lost();
+      });
+      r.on(RoomEvent.Reconnecting, () => {
+        timers.current.push(window.setTimeout(() => fail("dropped"), RECONNECT_GIVE_UP_MS));
+      });
+      r.on(RoomEvent.Reconnected, () => clearTimers());
+      r.on(RoomEvent.Disconnected, lost);
+      try {
+        r.registerTextStreamHandler("lk.transcription", async (reader, info) => {
+          const text = (await reader.readAll()).trim();
+          if (text && info.identity === r.localParticipant.identity) setHeard(text);
+        });
+      } catch {
+        // live transcription is a nicety; the screens work without it
+      }
+
+      try {
+        await r.connect(tok.url, tok.token);
+      } catch {
+        room.current = null;
+        return null;
+      }
+      return r;
+    },
+    [applyAgent, fail, userId],
+  );
+
+  const agentOf = (r: Room) => Array.from(r.remoteParticipants.values()).find(isAgent);
+
+  const prewarm = useCallback(async () => {
+    if (phaseRef.current !== "idle" || room.current || joining.current) return;
+    joining.current = true;
+    try {
+      const r = await join(performance.now());
+      if (r) warm.current = true;
+    } finally {
+      joining.current = false;
     }
-    const text = p.attributes["arjun.reply"];
-    if (typeof text === "string") setReply(text);
-    if (a.agentState === "listening" && phaseRef.current === "waiting") {
-      const ms = Math.round(performance.now() - t0);
-      console.info(`[arjun] ready ${ms} ms after the tap`);
-      setReadyMs(ms);
-      clearTimers();
-      setPhaseBoth("live");
+  }, [join]);
+
+  const arm = useCallback(async () => {
+    try {
+      // Ask for the mic once, inside the tap, so a later automatic start can open it without a prompt.
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch {
+      // a refused mic is reported as the plain "mic" failure when a session is started
+    }
+    try {
+      await room.current?.startAudio();
+    } catch {
+      // see audioBlocked
     }
   }, []);
 
   const start = useCallback(async () => {
     if (phaseRef.current === "connecting" || phaseRef.current === "waiting" || phaseRef.current === "live") return;
     const t0 = performance.now();
-    stopping.current = false;
     turnRef.current = 0;
     setFailure(undefined);
     setAgentState(undefined);
@@ -106,94 +240,53 @@ export function useArjunVoice(userId: number): ArjunVoice {
     setTurn(0);
     setReply("");
     setHeard("");
+    setItem("");
     setSafetyDismissedTurn(0);
-    setPhaseBoth("connecting");
 
-    let tok;
-    try {
-      tok = await api.livekitToken(userId);
-    } catch {
-      fail("connect");
-      return;
-    }
-    const tToken = performance.now();
-
-    // Browser echo cancellation and noise suppression stay ON: the agent has no noise filter yet
-    // (CLAUDE.md open question 6), and without echo cancellation Arjun would hear himself on a speaker.
-    const r = new Room({
-      audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    room.current = r;
-
-    const agentOf = () => Array.from(r.remoteParticipants.values()).find(isAgent);
-
-    r.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === Track.Kind.Audio) {
-        const el = track.attach();
-        el.style.display = "none";
-        document.body.appendChild(el);
+    let r = room.current && room.current.state === "connected" && warm.current ? room.current : null;
+    if (r) {
+      warm.current = false; // the pre-warmed room is now this session
+      setPhaseBoth("waiting");
+    } else {
+      if (room.current) teardown(); // a half-dead quiet room: start clean
+      setPhaseBoth("connecting");
+      r = await join(t0);
+      if (!r) {
+        fail("connect");
+        return;
       }
-    });
-    r.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
-    r.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => {
-      if (isAgent(p)) applyAgent(p, t0);
-    });
-    r.on(RoomEvent.ParticipantConnected, (p) => {
-      if (isAgent(p)) applyAgent(p, t0);
-    });
-    r.on(RoomEvent.ParticipantDisconnected, (p) => {
-      if (isAgent(p) && !stopping.current) fail("dropped");
-    });
-    r.on(RoomEvent.Reconnecting, () => {
-      timers.current.push(window.setTimeout(() => fail("dropped"), RECONNECT_GIVE_UP_MS));
-    });
-    r.on(RoomEvent.Reconnected, () => clearTimers());
-    r.on(RoomEvent.Disconnected, () => {
-      if (!stopping.current) fail("dropped");
-    });
-    try {
-      r.registerTextStreamHandler("lk.transcription", async (reader, info) => {
-        const text = (await reader.readAll()).trim();
-        if (text && info.identity === r.localParticipant.identity) setHeard(text);
-      });
-    } catch {
-      // live transcription is a nicety; the screens work without it
-    }
-
-    try {
-      await r.connect(tok.url, tok.token);
-    } catch {
-      fail("connect");
-      return;
+      setPhaseBoth("waiting");
     }
     const tConnected = performance.now();
-    setPhaseBoth("waiting");
     timers.current.push(window.setTimeout(() => fail("timeout"), READY_TIMEOUT_MS));
     try {
-      await r.startAudio(); // inside the tap's user gesture, so playback is allowed
+      await r.startAudio(); // inside the tap's user gesture (or after the Start tap), so playback is allowed
+      setAudioBlocked(!r.canPlaybackAudio);
       await r.localParticipant.setMicrophoneEnabled(true);
     } catch {
       fail("mic");
       return;
     }
-    console.info(
-      `[arjun] token ${Math.round(tToken - t0)} ms, joined ${Math.round(tConnected - tToken)} ms, mic on ${Math.round(performance.now() - tConnected)} ms`,
-    );
-    const a = agentOf(); // the agent may already be in the room
+    console.info(`[arjun] joined, mic on ${Math.round(performance.now() - tConnected)} ms; total ${Math.round(performance.now() - t0)} ms`);
+    const a = agentOf(r); // the agent may already be in the room
     if (a) applyAgent(a, t0);
-  }, [applyAgent, fail, userId]);
+  }, [applyAgent, fail, join, teardown]);
+
+  const unlockAudio = useCallback(async () => {
+    const r = room.current;
+    if (!r) return;
+    try {
+      await r.startAudio();
+    } catch {
+      // still blocked: the card stays on the screen
+    }
+    setAudioBlocked(!r.canPlaybackAudio);
+  }, []);
 
   const stop = useCallback(() => {
     teardown();
-    setPhaseBoth("idle");
-    setFailure(undefined);
-    setAgentState(undefined);
-    setScreen(undefined);
-    setTurn(0);
-    turnRef.current = 0;
-    setReply("");
-    setHeard("");
-  }, [teardown]);
+    resetSession();
+  }, [resetSession, teardown]);
 
   const sendText = useCallback(async (text: string) => {
     const r = room.current;
@@ -205,6 +298,16 @@ export function useArjunVoice(userId: number): ArjunVoice {
 
   useEffect(() => teardown, [teardown]);
 
-  const snapshot: VoiceSnapshot = { phase, failure, agentState, screen, turn, safetyDismissedTurn };
-  return { snapshot, reply, heard, readyMs, start, stop, sendText, dismissSafety };
+  const snapshot: VoiceSnapshot = {
+    phase,
+    failure,
+    agentState,
+    screen,
+    turn,
+    safetyDismissedTurn,
+    armed: false, // the page owns "armed"; ElderApp fills it in
+    hasCard: false, // ... and "hasCard" (it comes from SQL)
+    audioBlocked,
+  };
+  return { snapshot, reply, heard, readyMs, item, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety };
 }

@@ -12,6 +12,7 @@ import {
   MoonIcon,
   PhoneIcon,
   PillIcon,
+  SpeakerIcon,
   SunriseIcon,
   ThaliIcon,
   Toran,
@@ -663,6 +664,80 @@ export function SafetyScreen(p: { text: string; onOk: () => void }) {
         </button>
       </div>
       <p className="footnote">{AI_DISCLOSURE}</p>
+    </div>
+  );
+}
+
+/* ---- T8: start tap, delivered reminder, touch to hear ------------------------------------------------ */
+/** The one-time tap on a fresh page. Browsers allow sound only after a tap, so Arjun cannot speak a reminder before it. */
+export function StartScreen(p: { onStart: () => void }) {
+  return (
+    <div className="screen centered-end" style={{ gap: 22 }}>
+      <div className="center-block">
+        <Diya size={150} detailed label="अर्जुन" />
+        <h1 className="h-display" style={{ fontSize: 38, lineHeight: 1.4 }}>
+          अर्जुन
+        </h1>
+        <p style={{ fontSize: 26, lineHeight: 1.5 }}>आठवणी आणि औषधं सांगण्यासाठी एकदा दाबा</p>
+      </div>
+      <button className="btn primary" style={{ minHeight: 100, fontSize: 34 }} onClick={p.onStart}>
+        <SpeakerIcon size={38} />
+        सुरू करा
+      </button>
+      <p className="footnote">{AI_DISCLOSURE}</p>
+    </div>
+  );
+}
+
+/** A reminder that came due. Stays until the elder taps OK. `spoken` false = Arjun did NOT say it; the screen says so. */
+export function ReminderCardScreen(p: { task: string; timeLabel: string; spoken: boolean; late: boolean; onOk: () => void }) {
+  return (
+    <div className="screen" style={{ gap: 18, paddingBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <BellIcon />
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <h1 className="h-display" style={{ fontSize: 36, lineHeight: 1.3 }}>
+            आठवण
+          </h1>
+          <span className="t-muted" style={{ fontSize: 22, lineHeight: 1.4 }}>
+            {p.late ? `${p.timeLabel} ची आठवण` : p.timeLabel}
+          </span>
+        </div>
+      </div>
+      {!p.spoken && (
+        <p className="footnote" role="note" style={{ textAlign: "left" }}>
+          हे फक्त स्क्रीनवर आहे, अर्जुनने आवाजात सांगितलं नाही
+        </p>
+      )}
+      <div className="big-card">
+        <div className="body" style={{ padding: "22px 22px 26px" }} aria-live="polite">
+          <p style={{ fontSize: 34, lineHeight: 1.4, fontWeight: 700 }}>{p.task}</p>
+        </div>
+      </div>
+      <div className="stack-end">
+        <button className="btn primary" style={{ minHeight: 92, fontSize: 30 }} onClick={p.onOk}>
+          <CheckIcon />
+          ठीक आहे
+        </button>
+      </div>
+      <p className="footnote">{AI_DISCLOSURE}</p>
+    </div>
+  );
+}
+
+/** The browser is blocking Arjun's voice: one big tap lets it through. */
+export function TouchToHearScreen(p: { onTouch: () => void }) {
+  return (
+    <div className="screen centered-end" style={{ gap: 22 }}>
+      <div className="center-block">
+        <h1 className="h-display" style={{ fontSize: 38, lineHeight: 1.4 }}>
+          अर्जुनचा आवाज ऐकण्यासाठी दाबा
+        </h1>
+      </div>
+      <button className="btn primary" style={{ minHeight: 100, fontSize: 34 }} onClick={p.onTouch}>
+        <SpeakerIcon size={38} />
+        ऐका
+      </button>
     </div>
   );
 }

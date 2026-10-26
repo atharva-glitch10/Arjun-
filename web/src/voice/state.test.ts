@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import { FAILURE_TEXT, parseAttributes, shownFor } from "./state";
 import type { VoiceSnapshot } from "./state";
 
-const base: VoiceSnapshot = { phase: "live", agentState: "listening", turn: 0, safetyDismissedTurn: 0 };
+const base: VoiceSnapshot = {
+  phase: "live",
+  agentState: "listening",
+  turn: 0,
+  safetyDismissedTurn: 0,
+  armed: true,
+  hasCard: false,
+  audioBlocked: false,
+};
 const snap = (o: Partial<VoiceSnapshot>): VoiceSnapshot => ({ ...base, ...o });
 
 describe("which Ghar screen is shown", () => {
@@ -77,6 +85,7 @@ describe("reading the agent's attributes", () => {
       screen: "confirm",
       turn: 4,
       agentState: "speaking",
+      item: "",
     });
   });
 
@@ -85,7 +94,60 @@ describe("reading the agent's attributes", () => {
       screen: undefined,
       turn: 0,
       agentState: undefined,
+      item: "",
     });
-    expect(parseAttributes({})).toEqual({ screen: undefined, turn: 0, agentState: undefined });
+    expect(parseAttributes({})).toEqual({ screen: undefined, turn: 0, agentState: undefined, item: "" });
+  });
+});
+
+describe("T8: delivered reminders and medicines", () => {
+  it("reads the delivery screens, the SQL item they are about, and the normal end of a session", () => {
+    expect(parseAttributes({ "arjun.screen": "medicine", "arjun.turn": "5", "arjun.item": "dose:7" })).toMatchObject({
+      screen: "medicine",
+      item: "dose:7",
+    });
+    expect(parseAttributes({ "arjun.screen": "reminder", "arjun.item": "reminder:3" })).toMatchObject({
+      screen: "reminder",
+      item: "reminder:3",
+    });
+    expect(parseAttributes({ "arjun.screen": "closed", "arjun.turn": "6" }).screen).toBe("closed");
+    expect(parseAttributes({ "arjun.item": "x".repeat(500) }).item).toBe("");
+    expect(parseAttributes({ "arjun.item": "<img onerror=1>" }).item).toBe("");
+  });
+
+  it("asks for the one-time Start tap before anything else on a fresh page", () => {
+    expect(shownFor(snap({ phase: "idle", armed: false }))).toBe("start");
+  });
+
+  it("keeps an unacknowledged card on the idle page and while a session is being (re)started", () => {
+    expect(shownFor(snap({ phase: "idle", hasCard: true }))).toBe("card");
+    expect(shownFor(snap({ phase: "connecting", hasCard: true }))).toBe("card");
+    expect(shownFor(snap({ phase: "waiting", hasCard: true }))).toBe("card");
+  });
+
+  it("shows the card when the agent publishes a reminder or medicine screen, not the listening screen", () => {
+    for (const screen of ["reminder", "medicine"] as const) {
+      expect(shownFor(snap({ screen, turn: 4, hasCard: true }))).toBe("card");
+    }
+    expect(shownFor(snap({ hasCard: true }))).toBe("card"); // live, nothing newer: the card stays
+  });
+
+  it("lets a spoken conversation screen win over the card, and brings the card back after it", () => {
+    expect(shownFor(snap({ screen: "confirm", turn: 5, hasCard: true }))).toBe("confirm");
+    expect(shownFor(snap({ phase: "idle", hasCard: true, screen: "confirm", turn: 5 }))).toBe("card");
+  });
+
+  it("falls back to touch-to-hear when the browser blocks audio during a live session", () => {
+    expect(shownFor(snap({ audioBlocked: true }))).toBe("touch");
+    expect(shownFor(snap({ audioBlocked: true, hasCard: true }))).toBe("touch");
+  });
+
+  it("never lets the card, the Start screen or touch-to-hear hide a safety reply", () => {
+    expect(shownFor(snap({ screen: "safety", turn: 3, hasCard: true, audioBlocked: true }))).toBe("safety");
+    expect(shownFor(snap({ phase: "idle", armed: false, screen: "safety", turn: 3 }))).toBe("safety");
+  });
+
+  it("a dropped connection still shows the failure screen, even with a card waiting", () => {
+    expect(shownFor(snap({ phase: "failed", failure: "dropped", hasCard: true }))).toBe("failed");
   });
 });

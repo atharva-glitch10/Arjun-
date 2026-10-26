@@ -110,6 +110,25 @@ export interface Day {
   next: DayItem | null;
 }
 
+/** One reminder / medicine prompt on its way to the elder. `spoken_at` set = Arjun finished saying it; it is NOT proof she heard it. */
+export interface Delivery {
+  id: number;
+  kind: "reminder" | "medicine";
+  ref_id: number;
+  attempt: number;
+  due_at: string;
+  status: "queued" | "speaking" | "spoken" | "shown_only" | "undelivered" | "acknowledged" | "superseded";
+  late: boolean;
+  /** Reminder task / medicine name, verbatim from SQL. */
+  label: string;
+  /** Medicine dose, verbatim from SQL ("" for a reminder). */
+  detail: string;
+  spoken_at: string | null;
+  acked_at: string | null;
+  outcome: string | null;
+  fail_count: number;
+}
+
 export interface LivekitToken {
   url: string;
   token: string;
@@ -174,6 +193,10 @@ export const api = {
   day: (id: number) => core<Day>(`/users/${id}/day`),
   pendingAction: (id: number) => core<PendingAction | null>(`/users/${id}/actions/pending`),
   nextAppointment: (id: number) => core<Appointment | null>(`/users/${id}/appointments/next`),
+  openDeliveries: (id: number) => core<Delivery[]>(`/users/${id}/deliveries/open`),
+  deliveries: (id: number, days = 1) => core<Delivery[]>(`/users/${id}/deliveries?days=${days}`),
+  ackDelivery: (id: number, deliveryId: number, outcome = "ok") =>
+    core<Delivery>(`/users/${id}/deliveries/${deliveryId}/ack`, post({ outcome })),
   // A short-lived join token for one voice session (a fresh room each time; the secret stays server-side).
   livekitToken: (userId: number) => core<LivekitToken>("/livekit/token", post({ user_id: userId })),
 };
