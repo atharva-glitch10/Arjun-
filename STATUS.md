@@ -1,4 +1,4 @@
-# STATUS (2026-10-26)
+# STATUS (2026-10-26, end of day)
 
 Arjun talks through **Gnani Prisma (hearing) + Gnani Timbre (voice) over LiveKit**; the elder app and the family
 dashboard run on the laptop. Rules do the care work (reminders, times, medicines, safety); an optional **hosted,
@@ -36,6 +36,16 @@ non-Gnani LLM** is built for open conversation but is **not configured or run ye
   companion/chat replies and turns the rules cannot read; 4 s budget per turn, 120 tokens, last four exchanges,
   boundary-checked replies, per-call log without text. `eval/llm_compare.py` is tested on a fake provider.
 
+## T8, spoken reminders and medicines: BUILT, NOT HAND-TESTED
+Commits: delivery queue in core-api, reasoning renders fixed wording, voice agent speaks queued items and closes an
+idle session (60 s), scheduler added to `scripts/dev-up.ps1`, retry limit (one try + 2 retries, then "not
+delivered", family told once, stays on the elder screen), elder app (one-time Start tap, `arjun.item`, `closed`,
+touch-to-hear, pre-warm, card until acknowledged), dashboard line per delivery (spoken-not-acknowledged / taken
+(self-reported) / not delivered). Rules: a late medicine is not queued for speech and the family is told; a late
+plain reminder keeps its original time; backlog cap 3, nothing dropped.
+Nothing in T8 has been run with a real voice session, a real browser, or the real scheduler process; the tests use fakes.
+Known gaps: no quiet hours, no "repeat last line", an emergency alert is dashboard-only (see README).
+
 ## Verified vs NOT verified
 - **Verified by the speaker in the browser (2026-10-24, self-reported):** the 10:00 confirm card showed. The logs
   match for the card (the 17:15:30 turn read back "उद्या सकाळी 10:00 वाजता आठवण ठेवू का: ...").
@@ -43,7 +53,7 @@ non-Gnani LLM** is built for open conversation but is **not configured or run ye
   recognizer returned junk and that reminder was rejected (fixed afterwards by A and B); the only saved doctor
   reminder (id 2) came from the 14:00 Console session, and `turns.jsonl` has no voice turn after 17:17 on 24 Oct.
   To be re-checked WITH log evidence in the T8 hand-test session.
-- Verified by tests (core-api 76, reasoning 327, voice-agent 45, scheduler 3, vitest 24; ruff and `tsc` clean;
+- Verified by tests (2026-10-26 evening: core-api 103, reasoning 356, voice-agent 78, scheduler 7, vitest 52; ruff and `tsc` clean;
   eval 42/42 intent, 12/12 slot, 5/5 distress; all synthetic regression checks, not accuracy on real speech).
 - Verified live without a browser: token through the proxy, agent dispatch, tapped text -> confirm / saved /
   safety / story / reply screens with the agent speaking.
@@ -61,13 +71,12 @@ non-Gnani LLM** is built for open conversation but is **not configured or run ye
    3.0 s are placeholders. Credits used so far: not read from the dashboard yet.
 
 ## Next (in order)
-1. **T8** (spoken reminders and medicines, scheduler in dev-up, idle close, room pre-warm): plan written, waiting
-   for the speaker's OK; then ONE hand-test session for the whole checklist.
+1. **T8 hand-test**: ONE session for the whole checklist in `CLAUDE_CODE_TASKS.md` (first item: a reminder 2 minutes
+   ahead, elder page open and started, spoken by itself). Collect the log line for every item.
 2. **LLM**: add `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_PROVIDER_NAME` to a SEPARATE env file and run
    `python eval/llm_compare.py --env-file <that file>`; review the numbers before putting them in the live `.env`
    (the live path reads the same names and turns on at the next restart).
-3. **T8 spoken delivery** of reminders and medicine prompts (scheduler -> the voice session), then turn on
-   `OPENER_USER_IDS` / `BRIEFING_USER_IDS`.
+3. After the hand test: openers and briefings spoken (`OPENER_USER_IDS` / `BRIEFING_USER_IDS`), quiet hours.
 4. Decisions waiting for you: TTS over SSE with a pooled connection (saves ~1 s per reply), pre-warming the room
    when the elder page opens, closing an idle voice session (credits), a "repeat last line" RPC.
 5. Demo: main post ~Nov 1, submission by Nov 8 (deadline Nov 10). Native-speaker review of the safety lexicons (T12),

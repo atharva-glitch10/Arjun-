@@ -107,9 +107,9 @@ then `pytest` inside each service and `ruff check .` at the root.
 
 - **Medicines (new):** family creates/edits them on the dashboard; Arjun can only record "taken" / "snooze"
   after a spoken yes (or a tap) and deflects every medicine question to "ask the doctor". Verified by tests
-  and one local end-to-end run (core-api + reasoning + web in headless Edge). Not verified: real speech, real
-  device, the scheduler container, or delivery of the due-announcement to a voice session (the scheduler only
-  logs it; the elder screen finds due doses by polling every 30 s and speaks them with browser TTS).
+  and one local end-to-end run (core-api + reasoning + web in headless Edge). Not verified: real speech, a real
+  device, the scheduler container. Spoken delivery is built (see the T8 bullets) but has not been tried with a real
+  voice session. No browser speech is used anywhere.
 - Medicines are anchored to wake / lunch / dinner (+ family offset) or a fixed time; there is no
   "after breakfast" because no breakfast time exists yet. Snoozes are capped at the medicine's
   "ask up to" count. "On time" = within the medicine's window (default 30 min), all self-reported.
@@ -130,7 +130,26 @@ then `pytest` inside each service and `ruff check .` at the root.
   phone; (2) `vite --https` with a local certificate (mkcert) and the laptop's LAN address; (3) an HTTPS tunnel
   (cloudflared / ngrok) to port 5173, which also exposes the dev proxy and its API key, so demo data only;
   (4) Chrome's `unsafely-treat-insecure-origin-as-secure` flag on the phone, for a quick test only.
-- Due-medicine prompts on the elder screen are **screen only** and say so ("not spoken") until T8.
+- **T8, spoken reminders and medicines (built 2026-10-26, UNVERIFIED with real audio or in a browser):** the scheduler
+  (started by `scripts/dev-up.ps1`) queues each due reminder / medicine prompt in core-api; an open voice session
+  claims one at a time and speaks it with the fixed wording from SQL, and the item is "spoken" only after playback
+  finished. The elder page needs ONE tap on "सुरू करा" per page load (browsers block sound before a tap) and then
+  opens a voice session by itself when something is waiting (at most once a minute). "Spoken" means Arjun finished
+  saying it, not that Aaji heard it; the card stays on her screen until she taps OK / घेतली. A medicine prompt that
+  waited past its window is NOT spoken (the family is told) and says "not spoken" on the screen; a late plain
+  reminder keeps its original time and says when it was due; at most 3 late items are offered for speech, the rest
+  stay on the screen. An item that is interrupted or fails speech is retried at most twice, then marked "not
+  delivered" (family told once; it stays on the screen). An idle session closes itself after 60 s.
+- **No quiet hours:** a due reminder or medicine is spoken at any hour if the elder page is open and started, including
+  at night. There is no do-not-disturb setting yet.
+- **Browser sound can still be blocked** (for example after the page lost focus for long): the page then shows "ऐका"
+  (touch to hear), but a line Arjun already finished saying is NOT repeated (no "repeat last line" yet), so the
+  card on the screen is the fallback. If the elder page is closed, reminders queue and the dashboard says they were
+  not delivered.
+- **The emergency alert is dashboard-only:** a physical emergency shows a red banner for the family; no call, SMS or
+  WhatsApp is sent (telephony is frozen) and the banner says so.
+- Pre-warming joins a quiet room as the page opens; it ends by itself after 60 s without a tap. Credits used by
+  that were not measured.
 - Honorific ("आजी") and the animation switch are not stored server-side: honorific is a constant, "turn off
   animations" is per-device (localStorage). Evening theme is chosen by clock (17:00-05:00) or `?theme=evening`.
 - Design open questions still need testing with real elders: diya-only speak button, motion, script preference.
