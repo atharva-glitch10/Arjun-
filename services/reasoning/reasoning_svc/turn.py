@@ -23,7 +23,16 @@ from .clock import local_now
 from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency
 from .evon import EvonClient, sanitize_companion
-from .parser import MED_TAKEN_WORDS, Draft, Parsed, Profile, apply_text, has_med_word, parse
+from .parser import (
+    MED_TAKEN_WORDS,
+    SNOOZE_WORDS,
+    Draft,
+    Parsed,
+    Profile,
+    apply_text,
+    has_med_word,
+    parse,
+)
 from .textutil import collapse_repeats, detect_language, has_any, normalize
 
 log = logging.getLogger("reasoning.turn")
@@ -38,6 +47,7 @@ _LLM_INTENTS = frozenset(
 # Intents that may follow a pending question: answer it, or cancel it. A restated reminder is a correction of
 # a pending reminder (see _answers_pending). Nothing else may touch, replace or sit on top of the question.
 _ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY"})
+_SAFETY_HOLD_S = 120.0  # no reminder / medicine prompt is spoken this soon after a safety reply
 _HISTORY_IDLE = timedelta(minutes=30)  # a longer silence starts a fresh conversation
 
 _AI_QUESTIONS = (
@@ -80,6 +90,7 @@ class TurnEngine:
         self._history_cap = history_exchanges * 2
         self._mono = mono
         self._llm_deadline = 0.0
+        self._last_safety: dict[int, float] = {}  # user -> monotonic time of the last safety reply (T8)
         self._drafts: dict[int, Draft] = {}  # in-memory slot-filling state (single instance)
         self._chat_counter: dict[int, int] = {}
         # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
@@ -139,7 +150,7 @@ class TurnEngine:
         if parsed.intent == "DISTRESS":
             return self._distress(user_id, lang, trace, t0)
         if pending is not None and not self._answers_pending(parsed.intent, pending):
-            return self._repeat_pending(pending, lang, now, trace, t0)
+            return self._repeat_pending(user_id, pending, lang, now, trace, t0)
 
         # 4. dispatch
         try:
@@ -156,16 +167,25 @@ class TurnEngine:
     def _answers_pending(intent: str, pending: dict[str, Any]) -> bool:
         if intent in _ANSWERS:
             return True
+        if intent == "MED_SNOOZE" and pending["action_type"] == "MEDICINE_TAKEN":
+            return True  # "later" is an answer to "did you take it?"
         return intent == "CREATE_REMINDER" and pending["action_type"] == "CREATE_REMINDER"  # a correction
 
     def _repeat_pending(
-        self, pending: dict[str, Any], lang: str, now: datetime, trace: dict[str, Any], t0: float
+        self, uid: int, pending: dict[str, Any], lang: str, now: datetime, trace: dict[str, Any], t0: float
     ) -> TurnResult:
         """Anything that is not an answer, a cancel or a correction gets the SAME question again. The pending
         action is untouched: chat, a story offer or any new proposal never replaces it."""
         r = rp.R[rp.lang_or_default(lang)]
         payload = pending["payload"]
         kind = pending["action_type"]
+        if kind == "MEDICINE_TAKEN":
+            line = self._medicine_line(uid, payload.get("dose_id"), lang)
+            if line:
+                return TurnResult(
+                    line, "PENDING_REPEAT", "care", lang, awaiting_confirmation=True, screen="confirm",
+                    trace=self._t(trace, t0),
+                )
         if kind == "CREATE_REMINDER" and payload.get("date") and payload.get("time"):
             when = f"{rp.say_date(payload['date'], now.date(), lang)} {rp.say_time(payload['time'], lang)}"
             question = r["confirm_reminder"].format(task=payload.get("task", ""), when=when)
@@ -181,6 +201,75 @@ class TurnEngine:
             question, "PENDING_REPEAT", "care", lang, awaiting_confirmation=True, screen="confirm",
             trace=self._t(trace, t0),
         )
+
+    # ------------------------------------------------------------------ T8: deliveries
+    def _medicine_line(self, uid: int, dose_id: int | None, lang: str) -> str | None:
+        """The fixed medicine wording: name, dose and time exactly as the family entered them (from SQL)."""
+        if dose_id is None:
+            return None
+        r = rp.R[rp.lang_or_default(lang)]
+        for d in self.core.due_medicines(uid)["current"]:
+            if d["id"] == dose_id:
+                when = rp.say_time(d["due_at"][11:16], lang)
+                return r["deliver_medicine"].format(name=d["name"], dose=d["dose"], when=when)
+        return None
+
+    def busy(self, uid: int) -> dict[str, Any]:
+        """What stops a delivery or an idle close right now: a pending yes/no, a recent safety reply, a queue."""
+        held = uid in self._last_safety and self._mono() - self._last_safety[uid] < _SAFETY_HOLD_S
+        return {
+            "pending": self.core.pending(uid) is not None,
+            "safety_hold": bool(held),
+            "queued": self.core.deliveries_waiting(uid),
+        }
+
+    def deliver_next(self, uid: int, session: str) -> dict[str, Any] | None:
+        """Claim the next waiting reminder / medicine prompt and render its fixed wording, or return None.
+
+        Never while a yes/no is pending or just after a safety reply. The claim is atomic in core-api, so two open
+        sessions can never get the same item. Nothing is marked spoken here: the voice session does that after
+        playback finished. No LLM is involved.
+        """
+        b = self.busy(uid)
+        if b["pending"] or b["safety_hold"]:
+            return None
+        d = self.core.delivery_next(uid)
+        if d is None:
+            return None
+        try:
+            self.core.delivery_claim(uid, d["id"], session)
+        except CoreError:
+            return None  # another session got it, or it is no longer needed
+        lang = rp.lang_or_default(self.core.user(uid)["language"])
+        r = rp.R[lang]
+        try:
+            if d["kind"] == "medicine":
+                text = self._medicine_line(uid, d["ref_id"], lang)
+                if text is None:
+                    raise CoreError(409, "dose is not open")
+                self.core.propose(  # one spoken yes confirms it
+                    uid, "MEDICINE_TAKEN", {"dose_id": d["ref_id"], "asked": "delivery"}
+                )
+                screen, item, ask = "medicine", f"dose:{d['ref_id']}", True
+            else:
+                when = rp.say_time(d["due_at"][11:16], lang)
+                key = "deliver_reminder_late" if d["late"] else "deliver_reminder"
+                text = r[key].format(task=d["label"], when=when)
+                screen, item, ask = "reminder", f"reminder:{d['ref_id']}", False
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not render delivery %s: %s", d["id"], exc)
+            self.core.delivery_release(uid, d["id"], session, "interrupted")
+            return None
+        return {
+            "delivery_id": d["id"], "kind": d["kind"], "text": text, "screen": screen, "item": item,
+            "awaiting_confirmation": ask, "language": lang,
+        }
+
+    def deliver_spoken(self, uid: int, delivery_id: int, session: str) -> None:
+        self.core.delivery_spoken(uid, delivery_id, session)
+
+    def deliver_release(self, uid: int, delivery_id: int, session: str, reason: str) -> None:
+        self.core.delivery_release(uid, delivery_id, session, reason)
 
     def opener(self, user_id: int) -> str | None:
         """Proactive 'Shikva na' opener - scheduler-triggered, gated by caregiver-set hours."""
@@ -203,6 +292,12 @@ class TurnEngine:
         pending_action: str | None = None,
     ) -> tuple[Parsed, str]:
         rules = parse(text, profile, now, lang, has_pending, pending_action)
+        if pending_action == "MEDICINE_TAKEN":  # the open question is "did you take it?"
+            norm = normalize(text)
+            if rules.intent in ("COMPLETE_REMINDER", "MED_TAKEN") and has_any(norm, MED_TAKEN_WORDS):
+                rules.intent = "CONFIRM_YES"  # "घेतली" answers it
+            elif rules.intent in ("UNKNOWN", "CHAT") and has_any(norm, SNOOZE_WORDS):
+                rules.intent = "MED_SNOOZE"  # "नंतर" / "later" answers it
         # A medicine question is always deflected, whatever the LLM thinks it is.
         if rules.intent == "MEDICAL_QUESTION":
             return rules, "rules"
@@ -302,6 +397,11 @@ class TurnEngine:
             return saved
 
         if intent == "CONFIRM_NO":
+            asked_taken = pending is not None and pending["payload"].get("asked") == "delivery"
+            if pending is not None and asked_taken and p.topic != "correction":
+                self.core.reject(uid, pending["id"], answered_no=True)  # recorded as not taken (self-reported)
+                self._drafts.pop(uid, None)
+                return out(r["med_not_taken_ack"])  # no advice, no "take it later", no repeat
             if pending is not None:
                 self.core.reject(uid, pending["id"])
             self._drafts.pop(uid, None)
@@ -628,6 +728,7 @@ class TurnEngine:
         """Shared path for distress and physical emergency: stop everything, clear pending actions,
         record the event (core-api alerts family only per consent - emergency policy is PENDING a
         decision by the team), and speak the fixed template."""
+        self._last_safety[uid] = self._mono()  # no reminder is spoken over / right after this
         self._drafts.pop(uid, None)
         self._history.pop(uid, None)  # the story stops; nothing resumes after a crisis
         # Every core call is best-effort: the spoken safety reply below is returned regardless.

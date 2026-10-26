@@ -260,7 +260,10 @@ def _validate_payload(db: Session, user_id: int, body: s.ProposeIn, now: datetim
         dose = open_dose(db, user_id, did)
         med = db.get(m.Medicine, dose.medicine_id)
         # name/dose are copied verbatim from SQL so the confirmation can quote them exactly
-        return {"dose_id": did, "name": med.name if med else "", "dose": med.dose if med else ""}
+        out = {"dose_id": did, "name": med.name if med else "", "dose": med.dose if med else ""}
+        if t == "MEDICINE_TAKEN" and p.get("asked") == "delivery":
+            out["asked"] = "delivery"  # the question was "did you take it?", so a no means "not taken"
+        return out
     raise HTTPException(422, "unsupported action")  # pragma: no cover
 
 
@@ -382,7 +385,7 @@ def reject(
     reply clearing the question, a newer proposal) records nothing about the dose."""
     action = _get_pending(db, user_id, action_id, now)
     action.status = "rejected"
-    if answer == "no" and action.action_type == "MEDICINE_TAKEN":
+    if answer == "no" and action.action_type == "MEDICINE_TAKEN" and action.payload.get("asked") == "delivery":
         dose = db.get(m.MedicineDose, action.payload.get("dose_id", 0))
         if dose is not None and dose.user_id == user_id and dose.status in ("due", "reminded"):
             med = db.get(m.Medicine, dose.medicine_id)

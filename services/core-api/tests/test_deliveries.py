@@ -291,7 +291,7 @@ def test_a_no_answer_is_recorded_as_not_taken_and_the_family_is_told_without_adv
     d = _spoken_medicine(client, uid, box)
     dose = _dose_id(client, uid)
     a = client.post(f"/users/{uid}/actions/propose",
-                    json={"action_type": "MEDICINE_TAKEN", "payload": {"dose_id": dose}}).json()
+                    json={"action_type": "MEDICINE_TAKEN", "payload": {"dose_id": dose, "asked": "delivery"}}).json()
     assert client.post(f"/users/{uid}/actions/{a['id']}/reject", params={"answer": "no"}).status_code == 200
     got = [x for x in _all(client, uid) if x["id"] == d["id"]][0]
     assert (got["status"], got["outcome"]) == ("acknowledged", "not_taken")

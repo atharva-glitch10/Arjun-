@@ -58,8 +58,27 @@ class CoreClient:
     def confirm(self, uid: int, action_id: int) -> dict[str, Any]:
         return self._req("POST", f"/users/{uid}/actions/{action_id}/confirm")  # type: ignore[no-any-return]
 
-    def reject(self, uid: int, action_id: int) -> dict[str, Any]:
-        return self._req("POST", f"/users/{uid}/actions/{action_id}/reject")  # type: ignore[no-any-return]
+    def reject(self, uid: int, action_id: int, answered_no: bool = False) -> dict[str, Any]:
+        """answered_no=True only when the elder SAID no (a medicine "taken?" then counts as not taken)."""
+        params = {"answer": "no"} if answered_no else None
+        return self._req("POST", f"/users/{uid}/actions/{action_id}/reject", params=params)  # type: ignore[no-any-return]
+
+    # ---- T8 delivery queue (core-api decides; reasoning only renders the fixed wording) ----
+    def delivery_next(self, uid: int) -> dict[str, Any] | None:
+        return self._req("GET", f"/users/{uid}/deliveries/next")  # type: ignore[no-any-return]
+
+    def deliveries_waiting(self, uid: int) -> int:
+        return int(self._req("GET", f"/users/{uid}/deliveries/waiting")["queued"])
+
+    def delivery_claim(self, uid: int, did: int, session: str) -> dict[str, Any]:
+        return self._req("POST", f"/users/{uid}/deliveries/{did}/claim", json={"session": session})  # type: ignore[no-any-return]
+
+    def delivery_spoken(self, uid: int, did: int, session: str) -> dict[str, Any]:
+        return self._req("POST", f"/users/{uid}/deliveries/{did}/spoken", json={"session": session})  # type: ignore[no-any-return]
+
+    def delivery_release(self, uid: int, did: int, session: str, reason: str) -> dict[str, Any]:
+        body = {"session": session, "reason": reason}
+        return self._req("POST", f"/users/{uid}/deliveries/{did}/release", json=body)  # type: ignore[no-any-return]
 
     def distress(self, uid: int, kind: str = "distress") -> dict[str, Any]:
         """kind="emergency" ALWAYS alerts the family; "distress" only with the user's consent."""

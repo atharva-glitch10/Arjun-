@@ -61,6 +61,61 @@ def health() -> dict[str, object]:
     }
 
 
+class DeliveryClaimIn(BaseModel):
+    user_id: int
+    session: str
+
+
+class DeliveryDoneIn(DeliveryClaimIn):
+    reason: str = "interrupted"  # for release: "tts" (speech failed) | "interrupted"
+
+
+class DeliveryOut(BaseModel):
+    delivery_id: int
+    kind: str  # reminder | medicine
+    text: str  # the fixed wording to speak (from SQL through a template)
+    screen: str  # reminder | medicine
+    item: str  # reminder:<id> | dose:<id>
+    awaiting_confirmation: bool
+    language: str
+
+
+@app.post("/delivery/next", response_model=DeliveryOut | None)
+def delivery_next(body: DeliveryClaimIn) -> DeliveryOut | None:
+    """Claim + render the next waiting reminder / medicine prompt for this voice session, or null."""
+    try:
+        item = get_engine().deliver_next(body.user_id, body.session)
+    except CoreError as exc:
+        raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
+    return DeliveryOut(**item) if item else None
+
+
+@app.post("/delivery/{delivery_id}/spoken", status_code=204)
+def delivery_spoken(delivery_id: int, body: DeliveryClaimIn) -> None:
+    """Call ONLY after playback finished."""
+    try:
+        get_engine().deliver_spoken(body.user_id, delivery_id, body.session)
+    except CoreError as exc:
+        raise HTTPException(exc.status, exc.detail) from exc
+
+
+@app.post("/delivery/{delivery_id}/release", status_code=204)
+def delivery_release(delivery_id: int, body: DeliveryDoneIn) -> None:
+    try:
+        get_engine().deliver_release(body.user_id, delivery_id, body.session, body.reason)
+    except CoreError as exc:
+        raise HTTPException(exc.status, exc.detail) from exc
+
+
+@app.get("/session/{user_id}/busy")
+def session_busy(user_id: int) -> dict[str, object]:
+    """Pending yes/no, recent safety reply, queued deliveries: the voice session must not close while any is true."""
+    try:
+        return get_engine().busy(user_id)
+    except CoreError as exc:
+        raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
+
+
 @app.post("/turn", response_model=TurnOut)
 def turn(body: TurnIn) -> TurnOut:
     try:
