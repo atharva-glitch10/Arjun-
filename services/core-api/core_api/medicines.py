@@ -9,12 +9,13 @@ No adherence scores, no streaks.
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, object_session
 
 from . import models as m
 from . import schemas as s
 from .db import get_db
+from .deliveries import ack_item, enqueue
 from .deps import get_now, require_key
 
 router = APIRouter(dependencies=[Depends(require_key)])
@@ -112,6 +113,7 @@ def open_dose(db: Session, user_id: int, dose_id: int) -> m.MedicineDose:
 
 
 def mark_taken(dose: m.MedicineDose, now: datetime) -> None:
+    ack_item(object_session(dose), "medicine", dose.id, "taken", now)  # type: ignore[arg-type]
     dose.status = "taken"
     dose.taken_at = now
     dose.snoozed_until = None
@@ -120,6 +122,7 @@ def mark_taken(dose: m.MedicineDose, now: datetime) -> None:
 def mark_snoozed(dose: m.MedicineDose, now: datetime, minutes: int, max_snoozes: int) -> None:
     if dose.snooze_count >= max_snoozes:
         raise HTTPException(409, "no more snoozes for this dose; family is told if unconfirmed")
+    ack_item(object_session(dose), "medicine", dose.id, "snoozed", now)  # type: ignore[arg-type]
     dose.snooze_count += 1
     dose.snoozed_until = now + timedelta(minutes=minutes)
 
@@ -282,13 +285,26 @@ def tick(
             continue
         if dose.for_date < now.date() or dose.reminders_sent >= med.max_reminders:
             dose.status = "unconfirmed"
+            spoken = (
+                db.scalar(
+                    select(func.count())
+                    .select_from(m.Delivery)
+                    .where(m.Delivery.kind == "medicine", m.Delivery.ref_id == dose.id, m.Delivery.spoken_at.is_not(None))
+                )
+                or 0
+            )
+            heard = (
+                f"none of the {dose.reminders_sent} reminders could be spoken (no elder session was open)"
+                if spoken == 0
+                else f"{spoken} of {dose.reminders_sent} reminders were spoken"
+            )
             db.add(
                 m.Notification(
                     user_id=dose.user_id,
                     kind="medicine_unconfirmed",
                     body=(
                         f"{med.name} {med.dose} due {dose.due_at:%H:%M}: not confirmed after "
-                        f"{dose.reminders_sent} reminders. Arjun cannot tell whether it was taken."
+                        f"{dose.reminders_sent} reminders; {heard}. Arjun cannot tell whether it was taken."
                     )[:300],
                 )
             )
@@ -297,6 +313,7 @@ def tick(
         dose.status = "reminded"
         dose.reminders_sent += 1
         dose.last_reminded_at = now
+        enqueue(db, dose.user_id, "medicine", dose.id, dose.reminders_sent, now, now)  # T8: wait to be spoken
         reminded.append(
             {
                 "dose_id": dose.id,

@@ -11,6 +11,8 @@ from . import models as m
 from . import schemas as s
 from .day import router as day_router
 from .db import Base, engine, get_db
+from .deliveries import ack_item, enqueue
+from .deliveries import router as deliveries_router
 from .deps import check_api_key_configured, get_now, require_key
 from .livekit_token import router as livekit_router
 from .medicines import mark_snoozed, mark_taken, open_dose
@@ -133,6 +135,7 @@ def _complete(db: Session, user_id: int, reminder_id: int) -> m.Reminder:
     if reminder is None or reminder.user_id != user_id:
         raise HTTPException(404, "reminder not found")
     reminder.status = "done"
+    ack_item(db, "reminder", reminder_id, "done", datetime.now())
     return reminder
 
 
@@ -370,11 +373,31 @@ def confirm(
 def reject(
     user_id: int,
     action_id: int,
+    answer: Literal["no"] | None = None,
     db: Session = Depends(get_db),
     now: datetime = Depends(get_now),
 ) -> m.PendingAction:
+    """`answer=no` means the elder SAID no to this question. For a medicine "taken?" question that is recorded as
+    not taken (self-reported) and the family is told, with no advice and no repeat. Any other rejection (a safety
+    reply clearing the question, a newer proposal) records nothing about the dose."""
     action = _get_pending(db, user_id, action_id, now)
     action.status = "rejected"
+    if answer == "no" and action.action_type == "MEDICINE_TAKEN":
+        dose = db.get(m.MedicineDose, action.payload.get("dose_id", 0))
+        if dose is not None and dose.user_id == user_id and dose.status in ("due", "reminded"):
+            med = db.get(m.Medicine, dose.medicine_id)
+            dose.status = "not_taken"
+            db.add(
+                m.Notification(
+                    user_id=user_id,
+                    kind="medicine_not_taken",
+                    body=(
+                        f"{med.name} {med.dose} due {dose.due_at:%H:%M}: Aaji said she has not taken it "
+                        "(self-reported). Arjun gave no advice."
+                    )[:300],
+                )
+            )
+            ack_item(db, "medicine", dose.id, "not_taken", now)
     db.commit()
     return action
 
@@ -486,6 +509,7 @@ def fire_due(
         r.status = "fired"
         r.fired_at = now
         db.add(m.Notification(user_id=r.user_id, kind="reminder", body=r.task))
+        enqueue(db, r.user_id, "reminder", r.id, 1, r.due_at, now)  # T8: wait for a voice session to speak it
         fired.append({"reminder_id": r.id, "user_id": r.user_id, "task": r.task})
     db.commit()
     return fired
@@ -494,4 +518,5 @@ def fire_due(
 app.include_router(router)
 app.include_router(medicines_router)
 app.include_router(day_router)
+app.include_router(deliveries_router)
 app.include_router(livekit_router)

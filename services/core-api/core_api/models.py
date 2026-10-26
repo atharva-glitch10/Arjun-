@@ -138,6 +138,29 @@ class Medicine(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Delivery(Base):
+    """One due reminder / medicine prompt on its way to the elder's voice session (T8). See deliveries.py."""
+
+    __tablename__ = "deliveries"
+    __table_args__ = (UniqueConstraint("kind", "ref_id", "attempt", name="uq_delivery_once"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # reminder | medicine
+    ref_id: Mapped[int] = mapped_column(Integer)  # reminder id / medicine dose id
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    # queued | speaking | spoken | acknowledged | shown_only | undelivered | superseded
+    status: Mapped[str] = mapped_column(String(14), default="queued", index=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    spoken_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # set only after playback finished
+    acked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(14), nullable=True)  # taken | not_taken | snoozed | done | ok
+    fail_count: Mapped[int] = mapped_column(Integer, default=0)
+    notified: Mapped[bool] = mapped_column(Boolean, default=False)  # the family was told it was not delivered
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class MedicineDose(Base):
     """One scheduled intake. `taken` is self-reported by the elder, never verified."""
 
@@ -148,7 +171,7 @@ class MedicineDose(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     for_date: Mapped[date] = mapped_column(Date)
     due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    # due | reminded | taken | unconfirmed
+    # due | reminded | taken | unconfirmed | not_taken (the elder said no; self-reported)
     status: Mapped[str] = mapped_column(String(12), default="due")
     reminders_sent: Mapped[int] = mapped_column(Integer, default=0)
     snooze_count: Mapped[int] = mapped_column(Integer, default=0)

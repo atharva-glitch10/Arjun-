@@ -1,10 +1,13 @@
-"""Fires due reminders via core-api and (optionally) asks reasoning for a proactive opener.
+"""Fires due reminders and medicine prompts via core-api, which QUEUES each one for delivery (T8).
 
 All state is in core-api (SQL). This process only polls and triggers.
 
-NOT YET DELIVERED TO VOICE (T8): reminders, medicine prompts, briefings and openers are only
-logged here. Nothing is spoken on the elder device yet. "fired" in core-api means "due time
-passed", not "Aaji heard it". Do not claim spoken delivery until T8 is built and verified.
+A queued item is spoken by an open voice session (the agent pulls it from the queue). "fired" in core-api
+still only means "the due time passed"; only a delivery with `spoken_at` was heard. Each tick ends with a
+sweep that retires finished items, applies the late / backlog rules and tells the family about items that
+could not be spoken on time.
+
+Briefings and openers are NOT part of T8: they are still only logged here, never spoken.
 """
 
 import logging
@@ -46,17 +49,23 @@ def today_local() -> str:
 def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
     fired = http.post(f"{CORE}/internal/reminders/fire-due").json()
     for item in fired:
-        log.info("reminder due (not spoken, T8) user=%s task=%s", item["user_id"], item["task"])
+        log.info("reminder due, queued for delivery user=%s task=%s", item["user_id"], item["task"])
     meds = http.post(f"{CORE}/internal/medicines/tick").json()
     for item in meds.get("reminded", []):
-        # NOT spoken yet (T8). The elder screen polls core-api for due doses and shows them.
-        # Name/dose are SQL text, logged verbatim.
+        # Queued for delivery by core-api; a voice session speaks it. Name/dose are SQL text, logged verbatim.
         log.info(
-            "medicine due user=%s %s %s (reminder %s)",
+            "medicine due, queued for delivery user=%s %s %s (reminder %s)",
             item["user_id"], item["name"], item["dose"], item["reminder_no"],
         )
     for item in meds.get("unconfirmed", []):
         log.info("medicine unconfirmed user=%s %s -> family notified", item["user_id"], item["name"])
+    try:  # retire finished items, apply the late / backlog rules, tell the family about undelivered ones
+        swept = http.post(f"{CORE}/internal/deliveries/sweep")
+        swept.raise_for_status()
+        if any(swept.json().values()):
+            log.info("delivery sweep: %s", swept.json())
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("delivery sweep failed (the rest of the tick still runs): %s", exc)
     for uid in BRIEFING_USER_IDS:
         if _briefed_today.get(uid) == today:
             continue

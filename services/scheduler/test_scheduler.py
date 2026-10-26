@@ -10,6 +10,8 @@ def _http(calls, briefing_text="सुप्रभात", opener_text="आज�
             return httpx.Response(200, json=[{"reminder_id": 1, "user_id": 1, "task": "doctor"}])
         if path == "/internal/medicines/tick":
             return httpx.Response(200, json={"reminded": [], "unconfirmed": []})
+        if path == "/internal/deliveries/sweep":
+            return httpx.Response(200, json={"released": 0, "superseded": 0, "shown_only": 0, "notified": 0})
         if path.startswith("/briefing/"):
             return httpx.Response(200, json={"text": briefing_text})
         if path.startswith("/opener/"):
@@ -56,3 +58,40 @@ def test_null_briefing_is_retried_later_same_day(monkeypatch):
     scheduler.tick(_http(calls, briefing_text=None, opener_text=None), "2026-10-24")
     assert calls.count(("GET", "/briefing/1")) == 2  # None (before wake time) is not "done"
     assert calls.count(("POST", "/opener/1")) == 2
+
+
+def test_each_tick_queues_then_sweeps_in_that_order(monkeypatch):
+    _reset(monkeypatch, [])
+    calls = []
+    scheduler.tick(_http(calls), "2026-10-24")
+    order = [p for _, p in calls if p.startswith("/internal/")]
+    assert order == ["/internal/reminders/fire-due", "/internal/medicines/tick", "/internal/deliveries/sweep"]
+
+
+def test_a_failing_sweep_does_not_stop_the_briefing_or_the_opener(monkeypatch):
+    _reset(monkeypatch, [1])
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        path = request.url.path
+        if path == "/internal/deliveries/sweep":
+            return httpx.Response(500)
+        if path == "/internal/reminders/fire-due":
+            return httpx.Response(200, json=[])
+        if path == "/internal/medicines/tick":
+            return httpx.Response(200, json={"reminded": [], "unconfirmed": []})
+        if path.startswith("/briefing/"):
+            return httpx.Response(200, json={"text": "सुप्रभात"})
+        return httpx.Response(200, json={"text": "आजी"})
+
+    scheduler.tick(httpx.Client(transport=httpx.MockTransport(handler), base_url="http://x"), "2026-10-24")
+    assert ("GET", "/briefing/1") in calls and ("POST", "/opener/1") in calls
+
+
+def test_the_log_never_claims_a_reminder_was_spoken(monkeypatch, caplog):
+    _reset(monkeypatch, [])
+    caplog.set_level("INFO", logger="scheduler")
+    scheduler.tick(_http([]), "2026-10-24")
+    text = " ".join(r.getMessage() for r in caplog.records).lower()
+    assert "queued for delivery" in text and "spoken" not in text.replace("not spoken", "")
