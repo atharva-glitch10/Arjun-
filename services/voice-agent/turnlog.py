@@ -47,6 +47,12 @@ class TurnLog:
                 return self._open[i]
         return None
 
+    def bump(self) -> int:
+        """A new, larger event number for something that is not a spoken turn (a delivery, a close), so the app
+        can tell it from the previous screen. No row is written."""
+        self.index += 1
+        return self.index
+
     # ---- events -------------------------------------------------------------------------------
     def end_of_speech(self, t: float) -> None:
         cur = self._collecting()

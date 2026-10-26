@@ -83,6 +83,54 @@ def reply_or_fallback(
         )
 
 
+# Spoken (fixed text) when an idle session ends. It names the talk button of the elder screen exactly: "बोला".
+CLOSING_REPLY = {
+    "mr": "ठीक आहे. गरज लागली तर 'बोला' दाबा.",
+    "hi": "ठीक है। ज़रूरत हो तो 'बोला' दबाइए।",
+    "en": "Okay. If you need me, press 'बोला'.",
+}
+
+
+def closing_text(language: str) -> str:
+    return CLOSING_REPLY.get((language or "mr").split("-")[0].lower(), CLOSING_REPLY["mr"])
+
+
+# ---- T8: queued reminders / medicine prompts (the agent only knows reasoning, never core-api) ----------------
+def claim_next_delivery(user_id: int, session: str, http: httpx.Client | None = None) -> dict | None:  # type: ignore[type-arg]
+    """Claim + render the next waiting item for this session, or None (also when reasoning is down)."""
+    client = http or _shared_client()
+    try:
+        r = client.post(f"{REASONING_URL}/delivery/next", json={"user_id": user_id, "session": session})
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("delivery lookup failed (%s): %s", type(exc).__name__, exc)
+        return None
+
+
+def mark_delivery_spoken(user_id: int, delivery_id: int, session: str, http: httpx.Client | None = None) -> None:
+    """Report an item as spoken. Call ONLY after playback finished. Raises on failure so the caller can retry."""
+    client = http or _shared_client()
+    client.post(f"{REASONING_URL}/delivery/{delivery_id}/spoken", json={"user_id": user_id, "session": session}).raise_for_status()
+
+
+def release_delivery(user_id: int, delivery_id: int, session: str, reason: str, http: httpx.Client | None = None) -> None:
+    client = http or _shared_client()
+    body = {"user_id": user_id, "session": session, "reason": reason}
+    client.post(f"{REASONING_URL}/delivery/{delivery_id}/release", json=body).raise_for_status()
+
+
+def session_busy(user_id: int, http: httpx.Client | None = None) -> dict | None:  # type: ignore[type-arg]
+    """Pending yes/no, recent safety reply, queued items. None when it cannot be asked (never guess)."""
+    client = http or _shared_client()
+    try:
+        r = client.get(f"{REASONING_URL}/session/{user_id}/busy")
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 def should_speak(reply: BridgeReply, stale: bool) -> bool:
     """Speak this reply? An outdated one is dropped: the user has already said something newer, and
     answering the old sentence is how Arjun seemed to reply to the wrong thing (2026-10-24).

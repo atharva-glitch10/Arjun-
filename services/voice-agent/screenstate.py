@@ -14,14 +14,33 @@ logger = logging.getLogger("arjun.screen")
 SCREEN = "arjun.screen"  # reply | story | confirm | saved | safety
 TURN = "arjun.turn"  # increases with every spoken reply, so the app can tell a new reply from the same screen
 REPLY = "arjun.reply"  # the exact line being spoken, for the reply / story / safety screens
+ITEM = "arjun.item"  # reminder:<id> | dose:<id> for a delivered reminder / medicine prompt, else empty
 MAX_REPLY_CHARS = 600
 
 
 def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
     # Safety wins over every other screen: whatever reasoning labelled it, a safety-mode reply is "safety".
     screen = "safety" if reply.mode == "safety" else reply.screen
-    return {SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS]}
+    return {SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS], ITEM: ""}
+
+
+def delivery_attributes(item: dict, turn: int) -> dict[str, str]:  # type: ignore[type-arg]
+    """A queued reminder / medicine prompt: the screen to show and which SQL item it is (the app reads the card from SQL)."""
+    return {SCREEN: item["screen"], TURN: str(turn), REPLY: item["text"][:MAX_REPLY_CHARS], ITEM: item["item"]}
+
+
+def closed_attributes(turn: int) -> dict[str, str]:
+    """The session ended on purpose (idle): tells the app this is a normal end, not a dropped connection."""
+    return {SCREEN: "closed", TURN: str(turn), REPLY: "", ITEM: ""}
 
 
 async def publish_screen(participant, reply: BridgeReply, turn: int) -> None:  # type: ignore[no-untyped-def]
     await participant.set_attributes(attributes_for(reply, turn))
+
+
+async def publish_delivery(participant, item: dict, turn: int) -> None:  # type: ignore[no-untyped-def,type-arg]
+    await participant.set_attributes(delivery_attributes(item, turn))
+
+
+async def publish_closed(participant, turn: int) -> None:  # type: ignore[no-untyped-def]
+    await participant.set_attributes(closed_attributes(turn))

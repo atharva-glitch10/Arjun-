@@ -13,13 +13,24 @@ import sys
 from pathlib import Path
 
 import applog
-from bridge import fallback_text, reply_or_fallback
+from bridge import (
+    claim_next_delivery,
+    closing_text,
+    fallback_text,
+    mark_delivery_spoken,
+    release_delivery,
+    reply_or_fallback,
+    session_busy,
+)
+from delivery import DeliveryLoop
 from dotenv import dotenv_values
+from idle import IdleCloser, IdlePolicy
 from livekit import agents
 from livekit.agents import Agent, AgentSession, StopResponse, room_io
 from livekit.plugins import gnani, silero
 from responder import Responder
-from screenstate import publish_screen
+from screenstate import publish_closed, publish_delivery, publish_screen
+from sessionstate import SessionState
 from turnlog import TurnLog
 from usermeta import user_id_from_metadata
 
@@ -72,9 +83,11 @@ MAX_ENDPOINTING_S = float(os.environ.get("ARJUN_MAX_ENDPOINTING_S", "3.0"))
 
 
 class Arjun(Agent):
-    def __init__(self, turns: TurnLog, responder: Responder) -> None:
+    def __init__(self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy) -> None:
         self.turns = turns
         self.responder = responder
+        self.state = state
+        self.policy = policy
         # No LLM on the session; instructions are unused but required by the base class.
         super().__init__(instructions="Arjun is an AI voice companion. Replies come from reasoning.")
 
@@ -83,7 +96,10 @@ class Arjun(Agent):
         transcript = new_message.text_content or ""
         if not transcript.strip():
             raise StopResponse()
-        await self.responder.respond(transcript, "voice")
+        self.policy.touch()
+        async with self.state.turn():  # while a spoken turn is being answered the session is not idle / quiet
+            await self.responder.respond(transcript, "voice")
+        self.policy.touch()
         raise StopResponse()  # suppress the default LLM reply
 
 
@@ -107,10 +123,32 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     async def ask(text: str):  # type: ignore[no-untyped-def]
         return await asyncio.to_thread(reply_or_fallback, user_id, text, STT_LANGUAGE)
 
+    state = SessionState()
+    policy = IdlePolicy()
+    speech_lock = asyncio.Lock()  # one line at a time: a reply, a reminder and the closing line never overlap
+    session_id = ctx.job.id
+
+    async def say_locked(text: str) -> None:
+        async with speech_lock:
+            await session.say(text)
+
+    async def speak_checked(text: str) -> bool:
+        """Speak and say whether it REALLY played to the end. False = the elder interrupted. Raises if no audio was
+        produced (awaiting a speech handle never raises by itself, so a TTS failure would otherwise look like success)."""
+        async with speech_lock:
+            before = state.speaking_count
+            handle = session.say(text)
+            await handle
+            if handle.interrupted:
+                return False
+            if handle.exception() is not None or state.speaking_count == before:
+                raise RuntimeError("the speech did not play")
+            return True
+
     responder = Responder(
         turns,
         ask,
-        lambda text: session.say(text),
+        say_locked,
         lambda reply, turn: publish_screen(ctx.room.local_participant, reply, turn),
         lambda: fallback_text(STT_LANGUAGE),
     )
@@ -118,11 +156,16 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     async def on_tapped_text(sess, ev) -> None:  # type: ignore[no-untyped-def]
         """A button tap on the elder screen arrives as text on "lk.chat": same path as a spoken turn.
         LiveKit's default would call an LLM we do not have."""
+        policy.touch()
         await sess.interrupt()  # a tap while Arjun is talking cuts the old line off
-        await responder.respond(ev.text, "tap")
+        async with state.turn():
+            await responder.respond(ev.text, "tap")
+        policy.touch()
 
     @session.on("user_state_changed")
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
+        state.on_user_state(ev.new_state)
+        policy.touch()
         if ev.old_state == "speaking" and ev.new_state == "listening":
             turns.end_of_speech(ev.created_at)
 
@@ -133,6 +176,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     @session.on("agent_state_changed")
     def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
+        state.on_agent_state(ev.new_state)
+        policy.touch()  # the 60 s idle clock starts when Arjun stops talking
         if ev.new_state == "speaking":
             turns.agent_speaking(ev.created_at)
 
@@ -142,15 +187,60 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         err = getattr(ev, "error", ev)
         logger.error("session error: %s: %s", type(err).__name__, str(err)[:300])
 
+    background: list[asyncio.Task[None]] = []
+
     @session.on("close")
     def _on_close(ev) -> None:  # type: ignore[no-untyped-def]
         turns.close()
+        for task in background:
+            task.cancel()
 
     await session.start(
         room=ctx.room,
-        agent=Arjun(turns, responder),
+        agent=Arjun(turns, responder, state, policy),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
+
+    # ---- T8: queued reminders / medicines are spoken here; an idle session closes itself -------------------
+    async def claim_next():  # type: ignore[no-untyped-def]
+        return await asyncio.to_thread(claim_next_delivery, user_id, session_id)
+
+    async def mark_spoken(delivery_id: int) -> None:
+        await asyncio.to_thread(mark_delivery_spoken, user_id, delivery_id, session_id)
+
+    async def release(delivery_id: int, reason: str) -> None:
+        await asyncio.to_thread(release_delivery, user_id, delivery_id, session_id, reason)
+
+    async def publish_item(item: dict) -> None:  # type: ignore[type-arg]
+        policy.touch()
+        await publish_delivery(ctx.room.local_participant, item, turns.bump())
+
+    async def get_busy():  # type: ignore[no-untyped-def]
+        return await asyncio.to_thread(session_busy, user_id)
+
+    async def say_closing() -> str:
+        try:
+            return "done" if await speak_checked(closing_text(STT_LANGUAGE)) else "interrupted"
+        except Exception:  # noqa: BLE001 - even if the line cannot be spoken, an idle session still ends
+            logger.exception("could not speak the closing line")
+            return "done"
+
+    async def announce_closed() -> None:
+        await publish_closed(ctx.room.local_participant, turns.bump())
+
+    async def leave() -> None:
+        await asyncio.sleep(0.3)  # let the "closed" attribute reach the app before the agent leaves
+        ctx.shutdown(reason="idle for 60 s")
+
+    deliveries = DeliveryLoop(
+        claim_next=claim_next, spoken=mark_spoken, release=release, speak=speak_checked, publish=publish_item,
+        can_speak=lambda: state.quiet(speech_lock.locked()),
+    )
+    closer = IdleCloser(
+        policy, quiet=lambda: state.quiet(speech_lock.locked()), get_busy=get_busy, say_closing=say_closing,
+        publish_closed=announce_closed, shutdown=leave,
+    )
+    background += [asyncio.create_task(deliveries.run()), asyncio.create_task(closer.run())]
 
 
 if __name__ == "__main__":
