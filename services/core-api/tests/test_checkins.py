@@ -82,6 +82,15 @@ def test_the_daily_walk_is_asked_at_the_family_set_time_only_when_set(client):
     assert "walk" not in {c["kind"] for c in _all(client, no_walk)}
 
 
+def test_the_bp_check_is_asked_at_its_family_set_time(client):
+    uid = _user(client, bp_check_time="09:30", breakfast_time="10:00")
+    box = _clock(NOW)
+    out = _tick(client, box, datetime(2026, 10, 6, 9, 30))
+    assert [x["kind"] for x in out["asked"]] == ["bp"]
+    assert [d["label"] for d in _deliveries(client, uid)] == ["bp"]
+    assert client.get(f"/users/{uid}/checkins/open").json()["kind"] == "bp"
+
+
 def test_no_rows_and_no_prompts_when_the_family_switched_checkins_off(client):
     uid = _user(client, daily_checkins=False, breakfast_time="09:00")
     box = _clock(NOW)

@@ -15,6 +15,7 @@ import type {
   Activity,
   Anchor,
   Appointment,
+  BpReading,
   Contact,
   Delivery,
   Dose,
@@ -41,6 +42,7 @@ interface Data {
   deliveries: Delivery[];
   activity: Activity;
   today: WellbeingToday;
+  bp: BpReading[];
 }
 
 const DAY = 86_400_000;
@@ -125,7 +127,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -142,8 +144,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         api.wellbeingToday(userId).catch(
           (): WellbeingToday => ({ severity: "normal", mood: "not_assessed", conversations: 0, last_summary: "", last_at: null }),
         ),
+        api.bpReadings(userId).catch((): BpReading[] => []), // older core-api
       ]);
-      setData({ user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today });
+      setData({ user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -297,6 +300,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   const todayReminders = data.reminders.filter((r) => sameDay(parse(r.due_at), now));
   const doneToday = todayReminders.filter((r) => r.status === "done").length;
   const nextAppt = data.nextAppt;
+  const latestBp = data.bp[0] ?? null;
   const days = Array.from({ length: 7 }, (_, i) => new Date(now.getTime() - (6 - i) * DAY));
   const requestsToday = data.requests.filter((n) => sameDay(parse(n.created_at), now)).length;
   const name = user.name.replace(/\s*\(synthetic\)\s*$/i, "");
@@ -471,9 +475,10 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               <span className="label">self-reported</span>
             </div>
           )}
-          <div className="tile empty">
+          <div className={latestBp ? "tile" : "tile empty"}>
             <span className="label">BP check</span>
-            <span className="value">Not set up</span>
+            <span className="value">{latestBp ? `${latestBp.systolic} / ${latestBp.diastolic}` : "No reading yet"}</span>
+            <span className="label">{latestBp ? "last reading · raw numbers" : user.bp_check_time ? `at ${user.bp_check_time}` : "not in her day"}</span>
           </div>
           <div className="tile empty">
             <span className="label">Sugar check</span>
@@ -560,15 +565,36 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             <section className="fam-card">
               <h2>Health checks</h2>
               <div style={{ padding: "14px 16px", borderRadius: 14, background: "var(--ghar-sand)", display: "flex", flexDirection: "column", gap: 8 }}>
-                <span style={{ fontSize: 18, fontWeight: 800 }}>BP and sugar · not set up</span>
+                <span style={{ fontSize: 18, fontWeight: 800 }}>
+                  BP readings · raw numbers only
+                </span>
+                {data.bp.length === 0 ? (
+                  <span style={{ fontSize: 15, lineHeight: 1.5 }}>
+                    {user.bp_check_time
+                      ? `The BP check is in her day at ${user.bp_check_time}. No reading has been recorded yet.`
+                      : "The BP check is not in her day. Add a time under “Her day” to ask her to check it."}
+                  </span>
+                ) : (
+                  <ul className="fam-list">
+                    {data.bp.slice(0, 5).map((x) => (
+                      <li key={x.id}>
+                        <span style={{ fontWeight: 800 }}>
+                          {x.systolic} / {x.diastolic}
+                        </span>
+                        <span className="t-muted">
+                          {clock(parse(x.measured_at))} · {x.source}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <span style={{ fontSize: 15, lineHeight: 1.5 }}>
-                  Turn these on only if Aaji's doctor has asked for home checks (sugar only if she is diabetic). This
-                  needs the health-check service, which has not been built yet.
+                  Sugar checks are not set up. This needs the health-check service, which exists for BP only.
                 </span>
               </div>
               <p className="fam-note">
-                Arjun records the numbers Aaji reads out and repeats them back to confirm. It never tells her whether a
-                reading is good or bad. Please discuss readings with her doctor.
+                Arjun records the numbers Aaji reads out and repeats them back. It never says whether a reading is
+                good or bad, and there is no target or range here. Please discuss readings with her doctor.
               </p>
             </section>
           </div>

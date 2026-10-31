@@ -22,6 +22,7 @@ from .livekit_token import router as livekit_router
 from .medicines import mark_snoozed, mark_taken, open_dose
 from .medicines import router as medicines_router
 from .ratelimit import RateLimitMiddleware
+from .readings import router as readings_router
 from .recurrence import next_occurrence
 from .wellbeing import router as wellbeing_router
 
@@ -671,6 +672,7 @@ app.include_router(checkins_router)
 app.include_router(deliveries_router)
 app.include_router(livekit_router)
 app.include_router(activity_router)
+app.include_router(readings_router)
 app.include_router(wellbeing_router)
 app.include_router(feed_router)
 app.include_router(feed_ws_router)

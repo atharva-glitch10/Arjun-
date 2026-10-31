@@ -208,6 +208,23 @@ class Checkin(Base):
     followups: Mapped[int] = mapped_column(Integer, default=0)  # at most one 30-minute follow-up
 
 
+class BpReading(Base):
+    """One BP reading the elder read out (voice) or a synthetic device sent. Raw numbers only.
+
+    Boundary 7: no "good / bad / high / low / normal" is stored or derived here, and nothing is scored.
+    """
+
+    __tablename__ = "bp_readings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    systolic: Mapped[int] = mapped_column(Integer)
+    diastolic: Mapped[int] = mapped_column(Integer)
+    pulse: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    measured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    source: Mapped[str] = mapped_column(String(10), default="voice")  # voice | watch | manual
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Medicine(Base):
     """Created and edited by the family only (dashboard). Name and dose are stored exactly as
     entered and are only ever spoken or shown verbatim - never paraphrased or translated."""

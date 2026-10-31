@@ -597,3 +597,13 @@ _CHECKIN: dict[str, dict[str, str]] = {
 }
 for _lang, _texts in _CHECKIN.items():
     R[_lang].update(_texts)
+
+# A spoken BP reading: the SAME numbers back, fixed wording. Never good / bad / high / low / normal, never
+# advice (boundary 7). {reading} is already in the elder's script, e.g. "१३२ बाय ८६".
+_READING: dict[str, dict[str, str]] = {
+    "mr": {"bp_recorded": "बीपी {reading} नोंदवलं."},
+    "hi": {"bp_recorded": "बीपी {reading} दर्ज कर लिया।"},
+    "en": {"bp_recorded": "BP {reading}, noted."},
+}
+for _lang, _texts in _READING.items():
+    R[_lang].update(_texts)

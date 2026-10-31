@@ -159,6 +159,17 @@ export interface WellbeingToday {
   last_at: string | null;
 }
 
+/** Raw BP numbers only. There is no "level" or judgement anywhere (boundary 7). */
+export interface BpReading {
+  id: number;
+  user_id: number;
+  systolic: number;
+  diastolic: number;
+  pulse: number | null;
+  measured_at: string;
+  source: "voice" | "watch" | "manual";
+}
+
 export interface LivekitToken {
   url: string;
   token: string;
@@ -215,6 +226,7 @@ export const api = {
   notifications: (id: number) => core<Note[]>(`/users/${id}/notifications`),
   activity: (id: number) => core<Activity>(`/users/${id}/activity`),
   wellbeingToday: (id: number) => core<WellbeingToday>(`/users/${id}/wellbeing/today`),
+  bpReadings: (id: number) => core<BpReading[]>(`/users/${id}/bp-readings`),
   medicines: (id: number) => core<Medicine[]>(`/users/${id}/medicines`),
   addMedicine: (id: number, body: MedicineInput) =>
     core<Medicine>(`/users/${id}/medicines`, post(body)),

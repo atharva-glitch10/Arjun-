@@ -275,6 +275,28 @@ class CheckinAnswer(BaseModel):
     answer: Literal["done", "skipped"]
 
 
+class BpReadingIn(BaseModel):
+    """Raw numbers only. No target, range or judgement is accepted (boundary 7)."""
+
+    systolic: int = Field(ge=40, le=300)
+    diastolic: int = Field(ge=20, le=200)
+    pulse: int | None = Field(default=None, ge=20, le=250)
+    source: Literal["voice", "watch", "manual"] = "voice"
+
+    @model_validator(mode="after")
+    def _systolic_above_diastolic(self) -> "BpReadingIn":
+        if self.systolic <= self.diastolic:
+            raise ValueError("systolic must be above diastolic")
+        return self
+
+
+class BpReadingOut(BpReadingIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: int
+    measured_at: datetime
+
+
 class DayItem(BaseModel):
     kind: Literal["reminder", "appointment", "medicine", "meal", "wake", "walk", "bp"]
     at: datetime

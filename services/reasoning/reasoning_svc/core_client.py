@@ -79,6 +79,11 @@ class CoreClient:
             "POST", f"/users/{uid}/checkins/{checkin_id}/answer", json={"answer": answer}
         )  # type: ignore[no-any-return]
 
+    def add_bp_reading(self, uid: int, systolic: int, diastolic: int) -> dict[str, Any]:
+        """Raw numbers only; the reply repeats them back and never judges them (boundary 7)."""
+        body = {"systolic": systolic, "diastolic": diastolic, "source": "voice"}
+        return self._req("POST", f"/users/{uid}/bp-readings", json=body)  # type: ignore[no-any-return]
+
     def delivery_claim(self, uid: int, did: int, session: str) -> dict[str, Any]:
         return self._req("POST", f"/users/{uid}/deliveries/{did}/claim", json={"session": session})  # type: ignore[no-any-return]
 

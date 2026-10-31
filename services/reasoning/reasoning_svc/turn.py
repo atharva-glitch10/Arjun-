@@ -36,6 +36,7 @@ from .parser import (
     has_med_word,
     parse,
 )
+from .readings import format_bp, parse_bp
 from .textutil import collapse_repeats, detect_language, has_any, normalize, tokens
 
 log = logging.getLogger("reasoning.turn")
@@ -165,6 +166,9 @@ class TurnEngine:
         # A meal / walk prompt that a session really spoke takes a clear done/skipped answer - but only when
         # nothing else is waiting: no yes/no, no reminder draft, no undo window, no recent medicine prompt.
         if pending is None and draft is None and recent is None and self._recent_dose(user_id) is None:
+            reading = self._record_bp(user_id, text, lang, trace, t0)
+            if reading is not None:
+                return reading
             checkin = self._answer_open_checkin(user_id, text, lang, trace, t0)
             if checkin is not None:
                 return checkin
@@ -269,7 +273,10 @@ class TurnEngine:
     def _remember(self, uid: int, now: datetime, text: str, res: TurnResult) -> None:
         """The LLM's memory of THIS conversation: companion turns in full, care turns as short text. In memory
         only, never stored. Medicine turns are left out (their wording comes only from SQL templates)."""
-        if res.intent in ("MED_TAKEN", "MED_SNOOZE", "MEDICAL_QUESTION", "PENDING_REPEAT", "EMERGENCY", "DISTRESS"):
+        if res.intent in (
+            "MED_TAKEN", "MED_SNOOZE", "MEDICAL_QUESTION", "PENDING_REPEAT", "EMERGENCY", "DISTRESS",
+            "BP_READING",
+        ):
             return
         if res.intent == "CHAT" and res.mode == "companion":
             return  # _chat_reply already stored the exchange
@@ -320,6 +327,23 @@ class TurnEngine:
         )
 
     # ------------------------------------------------------------------ T8: deliveries
+    def _record_bp(self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
+        """Store a spoken BP reading and repeat the same numbers back. Never a judgement, never advice."""
+        numbers = parse_bp(text)
+        if numbers is None:
+            return None
+        systolic, diastolic = numbers
+        try:
+            self.core.add_bp_reading(uid, systolic, diastolic)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not store the BP reading: %s", exc)
+            return None
+        r = rp.R[rp.lang_or_default(lang)]
+        return TurnResult(
+            r["bp_recorded"].format(reading=format_bp(systolic, diastolic, lang)),
+            "BP_READING", "care", lang, trace=self._t(trace, t0),
+        )
+
     def _medicine_line(
         self, uid: int, dose_id: int | None, lang: str, key: str = "deliver_medicine"
     ) -> str | None:
