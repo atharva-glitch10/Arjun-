@@ -252,6 +252,7 @@ class EvonClient:
                 self.limiter.cool_down(min(max(wait, 1.0), 300.0))
             r.raise_for_status()
             data = r.json()
+            finish = data["choices"][0].get("finish_reason")  # "length" = the reply was cut by max_tokens
             content = strip_thinking(data["choices"][0]["message"].get("content"))
             if content is None:
                 raise ValueError("no visible answer (only reasoning, or empty)")
@@ -275,6 +276,7 @@ class EvonClient:
             latency_ms=round((time.perf_counter() - t0) * 1000),
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
+            finish_reason=finish,
         )
         log.info(json.dumps(record))
         return content

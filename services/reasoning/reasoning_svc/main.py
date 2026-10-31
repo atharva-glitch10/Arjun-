@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -8,6 +10,22 @@ from .ratelimit import TokenBucket
 from .turn import TurnEngine
 from .wellbeing import Tracker
 
+_OUR_LOGGERS = ("arjun", "reasoning")  # arjun.llm (one line per provider call), reasoning.turn / .wellbeing / ...
+
+
+def configure_logging() -> None:
+    """INFO for our own loggers. Under uvicorn nobody configured them, so every `log.info` (the per-call "arjun.llm"
+    line, the per-turn trace) vanished; uvicorn's own loggers are left exactly as they are. Idempotent."""
+    for name in _OUR_LOGGERS:
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.INFO)
+        if not lg.handlers and not logging.getLogger().handlers:  # the root logger has none under uvicorn
+            h = logging.StreamHandler()
+            h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+            lg.addHandler(h)
+
+
+configure_logging()
 app = FastAPI(title="Arjun reasoning")
 
 _engine: TurnEngine | None = None
