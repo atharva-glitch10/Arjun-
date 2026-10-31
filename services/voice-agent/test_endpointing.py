@@ -146,3 +146,15 @@ def test_the_responder_tells_the_policy_the_mode_of_the_reply(tmp_path):
     run(r.respond("a", "tap"))
     run(r.respond("b", "tap"))
     assert modes == ["companion", "care"]
+
+
+# ---- turn detection (task E): VAD-based by default ---------------------------------------------------------------
+@pytest.mark.parametrize("value, expected", [
+    (None, "vad"), ("", "vad"), ("vad", "vad"), ("VAD", "vad"), ("stt", "stt"), ("auto", None), ("cloud", None),
+    ("nonsense", "vad"),
+])
+def test_turn_detection_defaults_to_vad_and_auto_restores_the_cloud_detector(value, expected):
+    from endpointing import turn_detection_from_env
+
+    env = {} if value is None else {"ARJUN_TURN_DETECTION": value}
+    assert turn_detection_from_env(env) == expected

@@ -20,7 +20,7 @@ class Responder:
         self,
         turns: TurnLog,
         ask: Callable[[str], Awaitable[BridgeReply]],
-        say: Callable[[str], Awaitable[None]],
+        say: Callable[[str], Awaitable[bool | None]],
         publish: Callable[[BridgeReply, int], Awaitable[None]],
         fallback_text: Callable[[], str],
         thinking: Callable[[bool], Awaitable[None]] | None = None,
@@ -42,7 +42,9 @@ class Responder:
             reply = await self.ask(transcript)
         finally:
             await self._mark_thinking(False)
-        self.turns.reasoning_done(idx, time.time(), reply.text, reply.mode, reply.round_trip_ms)
+        self.turns.reasoning_done(
+            idx, time.time(), reply.text, reply.mode, reply.round_trip_ms, intent=reply.intent, source=reply.source
+        )
         if self.on_mode is not None:
             try:
                 self.on_mode(reply.mode)
@@ -60,9 +62,12 @@ class Responder:
             logger.exception("could not publish the screen attributes for turn %s", idx)
         self.turns.speaking_for(idx)
         try:
-            await self.say(self.speakable(reply))
+            played = await self.say(self.speakable(reply))
+            if played is False:  # cut off before any audio (she spoke again): the log says so instead of going silent
+                self.turns.not_spoken(idx, "interrupted")
         except Exception:  # noqa: BLE001 - TTS failure must be logged, not crash the session
             logger.exception("TTS failed for reply (mode=%s)", reply.mode)
+            self.turns.not_spoken(idx, "tts_failed")
             if reply.mode != "fallback":
                 try:
                     await self.say(self.fallback_text())

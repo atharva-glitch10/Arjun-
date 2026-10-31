@@ -15,19 +15,35 @@ index from the first final transcript until its audio starts (or it is skipped),
 
 import json
 import logging
+import time
 from pathlib import Path
 
 logger = logging.getLogger("arjun.turns")
 
 DEFAULT_PATH = Path(__file__).resolve().parents[2] / "eval" / "results" / "turns.jsonl"
 EOS_WINDOW_S = 5.0  # an end-of-speech this close to a final transcript belongs to it
+_EPOCH0 = 1_700_000_000  # turn numbers count from here, so they stay small enough for a screen attribute
 
 
 class TurnLog:
-    def __init__(self, language_selected: str, path: Path = DEFAULT_PATH) -> None:
+    # Why a turn has no "speaking" time (or that it has one). Written to every line as "outcome".
+    OUTCOMES = ("spoken", "interrupted", "tts_failed", "stale", "no_reply", "not_spoken")
+
+    @staticmethod
+    def base_for(epoch_s: float) -> int:
+        """Where a session's turn numbers start. Time-derived (2 numbers per second of wall clock), so a browser that
+        drops and rejoins (a NEW LiveKit job, a new TurnLog) continues ABOVE the old session: the app compares
+        `arjun.turn` numbers (a safety screen is dismissed "up to turn N"), so they must never go back to 1."""
+        return max(0, int(epoch_s) - _EPOCH0) * 2
+
+    def __init__(
+        self, language_selected: str, path: Path = DEFAULT_PATH, session: str = "", start: int = 0
+    ) -> None:
         self.language_selected = language_selected
         self.path = path
-        self.index = 0
+        self.session = session  # the LiveKit job id; one JSON line per turn carries it
+        self.start = start
+        self.index = start
         self._open: dict[int, dict] = {}  # turns not yet written, by index
         self._taken: set[int] = set()  # handed to reasoning (no longer collecting finals)
         self._last_eos: float | None = None
@@ -36,7 +52,9 @@ class TurnLog:
     # ---- helpers -----------------------------------------------------------------------------
     def _new(self) -> dict:
         self.index += 1
-        turn = {"turn": self.index, "language_selected": self.language_selected}
+        turn = {"turn": self.index, "n": self.index - self.start, "language_selected": self.language_selected}
+        if self.session:
+            turn["session"] = self.session
         self._open[self.index] = turn
         return turn
 
@@ -55,8 +73,11 @@ class TurnLog:
 
     # ---- events -------------------------------------------------------------------------------
     def end_of_speech(self, t: float) -> None:
+        """The LATEST end of speech before reasoning starts wins: in a long story she pauses many times, and only the
+        last pause is when she stopped (the first one made a 42 s monologue look like a 33 s delay, 2026-10-31)."""
         cur = self._collecting()
-        if cur is not None and "t_end_of_speech" not in cur and 0 <= t - cur["t_final_transcript"] <= EOS_WINDOW_S:
+        last_final = None if cur is None else cur.get("t_last_final", cur["t_final_transcript"])
+        if cur is not None and 0 <= t - last_final <= EOS_WINDOW_S:
             cur["t_end_of_speech"] = t  # the final transcript arrived first
         else:
             self._last_eos = t
@@ -65,6 +86,10 @@ class TurnLog:
         cur = self._collecting()
         if cur is not None:  # several finals before the turn is taken: keep the first time, join the text
             cur["transcript"] += " " + text
+            cur["t_last_final"] = t
+            if self._last_eos is not None and 0 <= t - self._last_eos <= EOS_WINDOW_S:
+                cur["t_end_of_speech"] = self._last_eos  # the end of speech arrived before this final
+                self._last_eos = None
             return int(cur["turn"])
         turn = self._new()
         turn.update(t_final_transcript=t, transcript=text, language_detected=language)
@@ -92,16 +117,31 @@ class TurnLog:
         return int(cur["turn"])
 
     def reasoning_done(
-        self, idx: int, t: float, reply: str, mode: str, reasoning_ms: float | None = None
+        self, idx: int, t: float, reply: str, mode: str, reasoning_ms: float | None = None,
+        intent: str = "", source: str = "",
     ) -> None:
         if idx in self._open:
             self._open[idx].update(t_reasoning_done=t, reply=reply, mode=mode)
+            if intent:
+                self._open[idx]["intent"] = intent
+            if source:  # rules | llm: who wrote the answer
+                self._open[idx]["source"] = source
             if reasoning_ms is not None:  # the /turn round trip itself, apart from the end-of-turn wait
                 self._open[idx]["reasoning_ms"] = round(reasoning_ms)
 
-    def speaking_for(self, idx: int) -> None:
+    def speaking_for(self, idx: int, t: float | None = None) -> None:
         """The reply for turn `idx` is about to be spoken: the next playout start belongs to it."""
         self._speaking = idx
+        if idx in self._open:
+            self._open[idx]["t_say_start"] = time.time() if t is None else t
+
+    def not_spoken(self, idx: int, reason: str) -> None:
+        """The reply for turn `idx` never played (she spoke again, or TTS failed): write the line now, with the reason."""
+        if self._speaking == idx:
+            self._speaking = None
+        if idx in self._open:
+            self._open[idx]["outcome"] = reason
+            self.flush(idx)
 
     def agent_speaking(self, t: float) -> None:
         idx, self._speaking = self._speaking, None
@@ -117,6 +157,7 @@ class TurnLog:
     def skip(self, idx: int, reason: str) -> None:
         if idx in self._open:
             self._open[idx]["skipped"] = reason
+            self._open[idx]["outcome"] = reason
             self.flush(idx)
 
     def close(self) -> None:
@@ -132,15 +173,23 @@ class TurnLog:
             return None
         # a tapped turn has no speech: the tap itself marks its start
         start = turn.get("t_end_of_speech") or (turn.get("t_final_transcript") if turn.get("source") == "tap" else None)
+        turn.setdefault("t_last_final", turn.get("t_final_transcript"))
         for name, a, b in (
             ("eos_to_final_ms", "t_end_of_speech", "t_final_transcript"),
-            ("endpointing_ms", "t_final_transcript", "t_reasoning_start"),
+            ("endpointing_ms", "t_last_final", "t_reasoning_start"),  # from the LAST final: she may talk on for a minute
             ("final_to_reasoning_ms", "t_final_transcript", "t_reasoning_done"),
             ("reasoning_to_audio_ms", "t_reasoning_done", "t_agent_speaking"),
             ("eos_to_audio_ms", "t_end_of_speech", "t_agent_speaking"),
+            ("tts_first_audio_ms", "t_say_start", "t_agent_speaking"),
         ):
             if turn.get(a) is not None and turn.get(b) is not None:
                 turn[name] = round((turn[b] - turn[a]) * 1000)
+        if "eos_to_audio_ms" in turn:
+            turn["eos_to_speaking_ms"] = turn["eos_to_audio_ms"]  # the name used in the write-up
+        if "t_agent_speaking" in turn:
+            turn["outcome"] = "spoken"
+        elif "outcome" not in turn:
+            turn["outcome"] = "not_spoken" if "reply" in turn else "no_reply"
         turn["complete"] = start is not None and "t_agent_speaking" in turn
         line = json.dumps(turn, ensure_ascii=False)
         logger.info("turn %s", line)

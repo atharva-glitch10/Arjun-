@@ -43,6 +43,8 @@ class BridgeReply:
     round_trip_ms: float
     screen: str = "reply"  # reply | story | confirm | saved | safety (decided by reasoning)
     intent: str = ""
+    speech: str = ""  # what to say, may carry Timbre v3 tags; empty = say `text`
+    source: str = ""  # rules | llm: who wrote the answer (for the turn log)
 
 
 def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = None) -> BridgeReply:
@@ -59,6 +61,8 @@ def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = Non
         round_trip_ms=(time.perf_counter() - t0) * 1000,
         screen=data.get("screen", "reply"),
         intent=data.get("intent", ""),
+        speech=data.get("speech", "") or "",
+        source=data.get("source", "") or "",
     )
 
 
@@ -83,7 +87,8 @@ def reply_or_fallback(
         )
 
 
-# Spoken (fixed text) when an idle session ends. It names the talk button of the elder screen exactly: "बोला".
+# Spoken (fixed text) when an idle session ends (only if ARJUN_IDLE_CLOSE_S > 0; hands-free never closes).
+# It names the talk button of the elder screen exactly: "बोला".
 CLOSING_REPLY = {
     "mr": "ठीक आहे. गरज लागली तर 'बोला' दाबा.",
     "hi": "ठीक है। ज़रूरत हो तो 'बोला' दबाइए।",

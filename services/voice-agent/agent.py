@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import applog
@@ -24,15 +25,24 @@ from bridge import (
 )
 from delivery import DeliveryLoop
 from dotenv import dotenv_values
-from endpointing import ConjunctionHold, EndpointingPolicy
+from endpointing import ConjunctionHold, EndpointingPolicy, turn_detection_from_env
 from idle import IdleCloser, IdlePolicy
 from livekit import agents
-from livekit.agents import Agent, AgentSession, StopResponse, room_io
+from livekit.agents import (
+    DEFAULT_API_CONNECT_OPTIONS,
+    Agent,
+    AgentSession,
+    APIStatusError,
+    StopResponse,
+    room_io,
+)
 from livekit.agents import tts as lk_tts
 from livekit.plugins import gnani, silero
+from livekit.plugins.gnani.tts import SSEChunkedStream
 from responder import Responder
 from screenstate import publish_closed, publish_delivery, publish_screen, publish_thinking
 from sessionstate import SessionState
+from ttsgate import TtsGate
 from turnlog import TurnLog
 from usermeta import user_id_from_metadata
 from voice import stt_options, tts_choice, tts_text
@@ -83,6 +93,20 @@ AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
 # companion / story 1.6 / 4.0 s, chosen by the mode of the LAST reply. PLACEHOLDERS until tuned on real elderly speech.
 
 
+TTS_GATE = TtsGate()  # Timbre allows ONE active request at a time (429 RATE_LIMITED otherwise); see ttsgate.py
+
+
+def _timbre_busy(exc: Exception) -> bool:
+    return isinstance(exc, APIStatusError) and exc.status_code == 429
+
+
+class _GatedSse(SSEChunkedStream):
+    """One SSE request at a time per process, a busy answer retried a couple of times (ttsgate.py)."""
+
+    async def _run(self, output_emitter) -> None:  # type: ignore[no-untyped-def]
+        await TTS_GATE.run(lambda: SSEChunkedStream._run(self, output_emitter), _timbre_busy)
+
+
 class SseTimbre(gnani.TTS):
     """Timbre over Server-Sent Events. Marked non-streaming on purpose: LiveKit then sends each SENTENCE to
     synthesize() (SSE on the plugin's pooled HTTP session) as soon as it is ready, instead of opening a new
@@ -91,6 +115,9 @@ class SseTimbre(gnani.TTS):
     def __init__(self, **kw) -> None:  # type: ignore[no-untyped-def]
         super().__init__(synthesize_method="sse", **kw)
         self._capabilities = lk_tts.TTSCapabilities(streaming=False)
+
+    def synthesize(self, text, *, conn_options=DEFAULT_API_CONNECT_OPTIONS):  # type: ignore[no-untyped-def]
+        return _GatedSse(tts=self, input_text=text, conn_options=conn_options)
 
 
 def make_tts(model: str, voice: str):  # type: ignore[no-untyped-def]
@@ -153,12 +180,16 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     timbre, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
     logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
     endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's
+    handling: dict = {"endpointing": endpointing.options()}  # type: ignore[type-arg]
+    detection = turn_detection_from_env()  # "vad" by default; None = LiveKit's cloud detector (see endpointing.py)
+    if detection is not None:
+        handling["turn_detection"] = detection
+    logger.info("turn detection %s, endpointing %s", detection or "auto (cloud)", endpointing.options())
     session = AgentSession(
         stt=gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING, **STT_OPTIONS),  # Prisma
         tts=timbre,  # key from GNANI_API_KEY
         vad=silero.VAD.load(),
-        min_endpointing_delay=endpointing.options()["min_delay"],
-        max_endpointing_delay=endpointing.options()["max_delay"],
+        turn_handling=handling,
     )
     user_started = asyncio.Event()  # set whenever she starts speaking (the conjunction hold waits on it)
 
@@ -177,7 +208,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     def apply_mode(mode: str) -> None:
         endpointing.set_mode(mode)
         session.update_options(endpointing_opts=endpointing.options())  # type: ignore[arg-type]
-    turns = TurnLog(language_selected=STT_LANGUAGE)
+    # One JSON line per turn, tagged with this LiveKit job id. The numbers start from the wall clock, so a browser that
+    # drops and rejoins (a new job, a new TurnLog) continues ABOVE the old session instead of restarting at 1.
+    turns = TurnLog(language_selected=STT_LANGUAGE, session=ctx.job.id, start=TurnLog.base_for(time.time()))
 
     # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
     from_metadata = user_id_from_metadata(ctx.job.metadata, 0)

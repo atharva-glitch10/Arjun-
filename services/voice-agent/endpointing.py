@@ -110,3 +110,16 @@ class ConjunctionHold:
                 return None
         self.held = ""
         return text
+
+
+def turn_detection_from_env(env: Mapping[str, str] | None = None) -> str | None:
+    """How the session decides she has finished: "vad" (silence after speech, default), "stt" (the speech-to-text
+    result), or None = LiveKit's automatic choice, which is its CLOUD turn detector.
+
+    Default "vad" since 2026-10-31: in the 22:47 session the cloud detector made 84 predictions and 4 of them timed out
+    ("eot prediction timed out", 1 s lost each, then a fallback), it logged a transport latency warning, and when it
+    judged a sentence unfinished it stretched the wait to the maximum on its own. Our own mode-aware delays plus the
+    conjunction hold (this module) do that job in the open. ARJUN_TURN_DETECTION=auto brings the cloud detector back."""
+    e = os.environ if env is None else env
+    v = (e.get("ARJUN_TURN_DETECTION") or "vad").strip().lower()
+    return None if v in ("auto", "cloud", "default") else (v if v in ("vad", "stt") else "vad")
