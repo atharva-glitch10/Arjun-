@@ -28,6 +28,8 @@ class UserIn(BaseModel):
     bp_check_time: str | None = None
     daily_checkins: bool = False  # meal / walk / BP check-ins are spoken only when the family switches this on
     honorific: str = Field(default="", max_length=60)
+    age: int | None = Field(default=None, ge=0, le=120)
+    conditions: list[str] = []
     interests: list[str] = []
     opener_start: str = "10:00"
     opener_end: str = "18:00"
@@ -50,6 +52,8 @@ class UserPatch(BaseModel):
     bp_check_time: str | None = None
     daily_checkins: bool | None = None
     honorific: str | None = Field(default=None, max_length=60)
+    age: int | None = Field(default=None, ge=0, le=120)
+    conditions: list[str] | None = None
     interests: list[str] | None = None
     opener_start: str | None = None
     opener_end: str | None = None

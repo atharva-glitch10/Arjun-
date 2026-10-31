@@ -245,7 +245,19 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
   const { user } = data;
   const now = new Date();
+  const marker = (label: string, hhmm: string, detail: string) => {
+    const at = new Date(now);
+    at.setHours(Number(hhmm.slice(0, 2)), Number(hhmm.slice(3, 5)), 0, 0);
+    return { at, label, detail, status: "Family-set", ok: false };
+  };
   const todayItems = [
+    marker("Wake", user.wake_time, "Family-set time"),
+    marker("Breakfast", user.breakfast_time, "Family-set meal"),
+    marker("Lunch", user.lunch_time, "Family-set meal"),
+    marker("Snack", user.snack_time, "Family-set meal"),
+    marker("Dinner", user.dinner_time, "Family-set meal"),
+    ...(user.walk_time ? [marker("Walk", user.walk_time, "Family-set time")] : []),
+    ...(user.bp_check_time ? [marker("BP check", user.bp_check_time, "Family-set time")] : []),
     ...data.reminders
       .filter((r) => sameDay(parse(r.due_at), now))
       .map((r) => ({
@@ -482,8 +494,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               </div>
             ))}
             <p className="fam-note">
-              Everything here is what Aaji told Arjun. "Done" and "Taken" are self-reported. "On time" is within the window set for each medicine (default 30 min). Meals and walks will appear
-              here once they are set up.
+              Everything here is what Aaji told Arjun. "Done" and "Taken" are self-reported. "On time" is within the window set for each medicine (default 30 min). Meals, the walk and the BP check are the family-set times above; nothing is scored.
             </p>
           </section>
 
@@ -569,14 +580,50 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         />
 
         <section className="fam-card">
-          <h2>Times, interests and consent</h2>
+          <h2>Her day (family-set times)</h2>
           <div className="fam-form">
             <TimeField label="Wake" value={user.wake_time} onSave={(v) => run(() => api.patchUser(userId, { wake_time: v }))} />
+            <TimeField label="Breakfast" value={user.breakfast_time} onSave={(v) => run(() => api.patchUser(userId, { breakfast_time: v }))} />
             <TimeField label="Lunch" value={user.lunch_time} onSave={(v) => run(() => api.patchUser(userId, { lunch_time: v }))} />
+            <TimeField label="Snack" value={user.snack_time} onSave={(v) => run(() => api.patchUser(userId, { snack_time: v }))} />
             <TimeField label="Dinner" value={user.dinner_time} onSave={(v) => run(() => api.patchUser(userId, { dinner_time: v }))} />
+            <OptionalTimeField label="Walk" value={user.walk_time} onSave={(v) => run(() => api.patchUser(userId, { walk_time: v }))} />
+            <OptionalTimeField label="BP check" value={user.bp_check_time} onSave={(v) => run(() => api.patchUser(userId, { bp_check_time: v }))} />
             <TimeField label="Chat from" value={user.opener_start} onSave={(v) => run(() => api.patchUser(userId, { opener_start: v }))} />
             <TimeField label="Chat until" value={user.opener_end} onSave={(v) => run(() => api.patchUser(userId, { opener_end: v }))} />
           </div>
+          <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 16 }}>
+            <input
+              type="checkbox"
+              style={{ width: 24, height: 24 }}
+              checked={user.daily_checkins}
+              onChange={(e) => run(() => api.patchUser(userId, { daily_checkins: e.target.checked }))}
+            />
+            Ask about meals, the walk and the BP check at the times above (she answers; nothing is scored)
+          </label>
+          <div className="fam-form">
+            <TextField
+              label="Age"
+              initial={user.age === null ? "" : String(user.age)}
+              onSave={(v) => run(() => api.patchUser(userId, { age: v.trim() ? Number(v) : null }))}
+            />
+            <TextField
+              label="Conditions (comma separated; shown to the family, never used for advice)"
+              initial={user.conditions.join(", ")}
+              onSave={(v) =>
+                run(() => api.patchUser(userId, { conditions: v.split(",").map((s) => s.trim()).filter(Boolean) }))
+              }
+            />
+            <TextField
+              label="How Arjun addresses her (blank = her name)"
+              initial={user.honorific}
+              onSave={(v) => run(() => api.patchUser(userId, { honorific: v.trim() }))}
+            />
+          </div>
+        </section>
+
+        <section className="fam-card">
+          <h2>Interests and consent</h2>
           <TextField
             label="Interests (comma separated)"
             initial={user.interests.join(", ")}
@@ -712,6 +759,41 @@ function TextField({ label, initial, onSave }: { label: string; initial: string;
     <label className="fam-field">
       {label}
       <input className="fam-input" defaultValue={initial} onBlur={(e) => onSave(e.target.value)} style={{ maxWidth: 420 }} />
+    </label>
+  );
+}
+
+/** An optional family-set time: unticked means "not part of her day". */
+function OptionalTimeField({
+  label,
+  value,
+  onSave,
+}: {
+  label: string;
+  value: string | null;
+  onSave: (v: string | null) => void;
+}) {
+  return (
+    <label className="fam-field">
+      {label}
+      <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          className="fam-input"
+          type="time"
+          defaultValue={value ?? ""}
+          disabled={value === null}
+          onBlur={(e) => {
+            if (e.target.value) onSave(e.target.value);
+          }}
+        />
+        <input
+          type="checkbox"
+          style={{ width: 24, height: 24 }}
+          checked={value !== null}
+          aria-label={`${label} is part of her day`}
+          onChange={(e) => onSave(e.target.checked ? (value ?? "09:00") : null)}
+        />
+      </span>
     </label>
   );
 }

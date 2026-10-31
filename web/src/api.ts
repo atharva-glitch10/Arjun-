@@ -2,9 +2,21 @@ export interface User {
   id: number;
   name: string;
   language: "mr" | "hi" | "en";
+  /** How Arjun addresses her ("" = the name). */
+  honorific: string;
+  age: number | null;
+  /** Read-only context: shown to the family, never used for advice. */
+  conditions: string[];
   wake_time: string;
+  breakfast_time: string;
   lunch_time: string;
+  snack_time: string;
   dinner_time: string;
+  /** null = not part of her day. */
+  walk_time: string | null;
+  bp_check_time: string | null;
+  /** Meal / walk / BP check-ins are spoken only when the family switches this on. */
+  daily_checkins: boolean;
   interests: string[];
   opener_start: string;
   opener_end: string;
@@ -92,7 +104,7 @@ export interface PendingAction {
 }
 
 export interface DayItem {
-  kind: "reminder" | "appointment" | "medicine" | "meal" | "wake";
+  kind: "reminder" | "appointment" | "medicine" | "meal" | "wake" | "walk" | "bp";
   at: string;
   label: string;
   detail: string;

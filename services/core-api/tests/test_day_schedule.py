@@ -24,6 +24,17 @@ def _heerabai(client) -> int:
     return r.json()["id"]
 
 
+def test_user_age_and_conditions_are_stored_and_editable(client):
+    uid = client.post(
+        "/users",
+        json={"name": "Aaji (synthetic)", "age": 63, "conditions": ["Type 2 diabetes", "High blood pressure"]},
+    ).json()["id"]
+    u = client.get(f"/users/{uid}").json()
+    assert u["age"] == 63 and u["conditions"] == ["Type 2 diabetes", "High blood pressure"]
+    r = client.patch(f"/users/{uid}", json={"age": 64, "conditions": ["Type 2 diabetes"]})
+    assert r.status_code == 200 and r.json()["age"] == 64 and r.json()["conditions"] == ["Type 2 diabetes"]
+
+
 def test_user_has_the_new_day_times_and_defaults(client):
     uid = client.post("/users", json={"name": "Aaji (synthetic)"}).json()["id"]
     u = client.get(f"/users/{uid}").json()
@@ -110,13 +121,15 @@ def test_ensure_columns_adds_the_new_columns_to_an_old_database_and_is_idempoten
     ensure_columns(engine)
     ensure_columns(engine)  # a second start changes nothing
     cols = {c["name"] for c in inspect(engine).get_columns("users")}
-    assert {"breakfast_time", "snack_time", "walk_time", "bp_check_time", "daily_checkins", "honorific"} <= cols
+    assert {"breakfast_time", "snack_time", "walk_time", "bp_check_time", "daily_checkins", "honorific",
+            "age", "conditions"} <= cols
     acols = {c["name"] for c in inspect(engine).get_columns("appointments")}
     assert {"weekdays", "start_time", "end_time"} <= acols
     with Session(engine) as s:  # the old row is intact and reads with the defaults
         u = s.get(m.User, 1)
         assert u.name == "Aaji (synthetic)" and u.breakfast_time == "08:00" and u.snack_time == "17:00"
         assert u.walk_time is None and u.daily_checkins is False
+        assert u.age is None and u.conditions == []
 
 
 def test_ensure_columns_skips_tables_that_do_not_exist_yet(tmp_path):

@@ -42,6 +42,9 @@ class User(Base):
     # Meal / walk / BP check-ins are spoken only when the family switched them on.
     daily_checkins: Mapped[bool] = mapped_column(Boolean, default=False)
     honorific: Mapped[str] = mapped_column(String(60), default="")  # how Arjun addresses her ("" = the name)
+    # Read-only context shown to the family (and used by the seed). Never used to give advice or a diagnosis.
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    conditions: Mapped[list[str]] = mapped_column(JSON, default=list)
     interests: Mapped[list[str]] = mapped_column(JSON, default=list)
     opener_start: Mapped[str] = mapped_column(String(5), default="10:00")
     opener_end: Mapped[str] = mapped_column(String(5), default="18:00")

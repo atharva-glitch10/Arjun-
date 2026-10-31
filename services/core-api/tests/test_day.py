@@ -20,9 +20,11 @@ def test_day_view_orders_sql_items_and_finds_next(client, uid):
     labels = [(i["kind"], i["label"]) for i in d["items"]]
     assert labels == [
         ("wake", "wake"),
+        ("meal", "breakfast"),
         ("appointment", "Eye check"),
         ("meal", "lunch"),
         ("reminder", "call Rahul"),
+        ("meal", "snack"),
         ("meal", "dinner"),
     ]
     assert d["next"]["label"] == "Eye check" and d["next"]["detail"] == "Pune"
