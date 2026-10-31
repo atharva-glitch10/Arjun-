@@ -24,15 +24,18 @@ from bridge import (
 )
 from delivery import DeliveryLoop
 from dotenv import dotenv_values
+from endpointing import ConjunctionHold, EndpointingPolicy
 from idle import IdleCloser, IdlePolicy
 from livekit import agents
 from livekit.agents import Agent, AgentSession, StopResponse, room_io
+from livekit.agents import tts as lk_tts
 from livekit.plugins import gnani, silero
 from responder import Responder
-from screenstate import publish_closed, publish_delivery, publish_screen
+from screenstate import publish_closed, publish_delivery, publish_screen, publish_thinking
 from sessionstate import SessionState
 from turnlog import TurnLog
 from usermeta import user_id_from_metadata
+from voice import stt_options, tts_choice, tts_text
 
 logger = logging.getLogger("arjun.agent")
 
@@ -68,23 +71,62 @@ USER_ID = int(os.environ.get("ARJUN_USER_ID", "1"))  # demo: one synthetic user 
 # unconfirmed (CLAUDE.md open question 1); set GNANI_USE_STREAMING=0 to fall back to non-streaming.
 STT_LANGUAGE = os.environ.get("GNANI_STT_LANGUAGE", "mr-IN")
 USE_STREAMING = os.environ.get("GNANI_USE_STREAMING", "1") == "1"
-# Gnani TTS now accepts only timbre-v2.5 / timbre-v3.0 and requires a voice (checked 2026-10-21 against the
-# REST API); the plugin's own default model (timbre-v2.0) and voice (Pranav) are out of date. `language` is
-# only sent by the plugin for timbre-v2.5.
-TTS_MODEL = os.environ.get("GNANI_TTS_MODEL", "timbre-v2.5")
-TTS_VOICE = os.environ.get("GNANI_TTS_VOICE", "Omkar")
-TTS_LANGUAGE = os.environ.get("GNANI_TTS_LANGUAGE", "mr-IN")
+# Gnani TTS accepts timbre-v2.5 / timbre-v3.0 and requires a voice (checked 2026-10-21 against the REST API).
+# Default now: timbre-v3.0 (voice tags) over SSE. v3.0 + "Avinash" is UNVERIFIED on our key: the first synthesis
+# of each worker process is a probe, and on failure the session uses the verified v2.5 + "Omkar" instead.
+TTS = tts_choice()
+TTS_MODEL, TTS_VOICE, TTS_LANGUAGE = TTS["model"], TTS["voice"], TTS["language"]
+STT_OPTIONS = stt_options()  # format="transcribe" (ITN) + itn_native_numerals, per the project brief
 # Explicit dispatch name. An unnamed worker was never sent into Console/Playground rooms (2026-10-21).
 AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
-# Seconds of silence before end of turn. PLACEHOLDERS: elderly speakers pause mid-sentence, so start
-# longer than the library default and tune on real recordings (CLAUDE.md: measure, don't guess).
-MIN_ENDPOINTING_S = float(os.environ.get("ARJUN_MIN_ENDPOINTING_S", "1.0"))
-MAX_ENDPOINTING_S = float(os.environ.get("ARJUN_MAX_ENDPOINTING_S", "3.0"))
+# Seconds of silence before end of turn: mode-aware since task D (2026-10-31), see endpointing.py. Care 0.8 / 2.5 s,
+# companion / story 1.6 / 4.0 s, chosen by the mode of the LAST reply. PLACEHOLDERS until tuned on real elderly speech.
+
+
+class SseTimbre(gnani.TTS):
+    """Timbre over Server-Sent Events. Marked non-streaming on purpose: LiveKit then sends each SENTENCE to
+    synthesize() (SSE on the plugin's pooled HTTP session) as soon as it is ready, instead of opening a new
+    WebSocket for every reply (~1 s connect, measured 2026-10-26)."""
+
+    def __init__(self, **kw) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(synthesize_method="sse", **kw)
+        self._capabilities = lk_tts.TTSCapabilities(streaming=False)
+
+
+def make_tts(model: str, voice: str):  # type: ignore[no-untyped-def]
+    kw = {"model": model, "voice": voice, "language": TTS_LANGUAGE}
+    if TTS["method"] == "sse":
+        return SseTimbre(**kw)
+    return gnani.TTS(synthesize_method=TTS["method"], **kw)  # "websocket" / "rest", the old path
+
+
+_PROBED: dict[str, bool] = {}  # model -> works, per worker process
+
+
+async def working_tts():  # type: ignore[no-untyped-def]
+    """(tts, model) for this session: the configured Timbre if a one-word probe works, else the verified one."""
+    primary = make_tts(TTS_MODEL, TTS_VOICE)
+    if TTS_MODEL == TTS["fallback_model"] and TTS_VOICE == TTS["fallback_voice"]:
+        return primary, TTS_MODEL
+    if _PROBED.get(TTS_MODEL) is None:
+        try:
+            await asyncio.wait_for(primary.synthesize("नमस्कार").collect(), timeout=8)
+            _PROBED[TTS_MODEL] = True
+        except Exception as exc:  # noqa: BLE001 - any failure means: use the voice we know works
+            logger.error("TTS %s / %s failed its probe (%s); using %s / %s", TTS_MODEL, TTS_VOICE,
+                         type(exc).__name__, TTS["fallback_model"], TTS["fallback_voice"])
+            _PROBED[TTS_MODEL] = False
+    if _PROBED[TTS_MODEL]:
+        return primary, TTS_MODEL
+    return make_tts(TTS["fallback_model"], TTS["fallback_voice"]), TTS["fallback_model"]
 
 
 class Arjun(Agent):
-    def __init__(self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy) -> None:
+    def __init__(
+        self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy, hold: ConjunctionHold
+    ) -> None:
         self.turns = turns
+        self.hold = hold
         self.responder = responder
         self.state = state
         self.policy = policy
@@ -94,11 +136,13 @@ class Arjun(Agent):
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:  # type: ignore[no-untyped-def]
         """Send the transcript to reasoning and speak its templated reply (no built-in LLM)."""
         transcript = new_message.text_content or ""
-        if not transcript.strip():
-            raise StopResponse()
         self.policy.touch()
+        # A sentence that ends in "आणि / पण / म्हणजे / की" is not finished: wait for the rest (endpointing.py).
+        text = await self.hold.settle(transcript)
+        if text is None or not text.strip():  # held for more speech, or nothing to answer
+            raise StopResponse()
         async with self.state.turn():  # while a spoken turn is being answered the session is not idle / quiet
-            await self.responder.respond(transcript, "voice")
+            await self.responder.respond(text, "voice")
         self.policy.touch()
         raise StopResponse()  # suppress the default LLM reply
 
@@ -106,13 +150,33 @@ class Arjun(Agent):
 async def entrypoint(ctx: agents.JobContext) -> None:
     applog.setup_file_log()  # the CLI may have reset logging after import; make sure the file handler is on
     await ctx.connect()
+    timbre, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
+    logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
+    endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's
     session = AgentSession(
-        stt=gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING),  # Prisma
-        tts=gnani.TTS(model=TTS_MODEL, voice=TTS_VOICE, language=TTS_LANGUAGE),  # Timbre; key from GNANI_API_KEY
+        stt=gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING, **STT_OPTIONS),  # Prisma
+        tts=timbre,  # key from GNANI_API_KEY
         vad=silero.VAD.load(),
-        min_endpointing_delay=MIN_ENDPOINTING_S,
-        max_endpointing_delay=MAX_ENDPOINTING_S,
+        min_endpointing_delay=endpointing.options()["min_delay"],
+        max_endpointing_delay=endpointing.options()["max_delay"],
     )
+    user_started = asyncio.Event()  # set whenever she starts speaking (the conjunction hold waits on it)
+
+    async def wait_for_speech(timeout: float) -> bool:
+        user_started.clear()
+        if state.user == "speaking":  # `state` is created below, before any turn can complete
+            return True
+        try:
+            await asyncio.wait_for(user_started.wait(), timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    hold = ConjunctionHold(endpointing, wait_for_speech)
+
+    def apply_mode(mode: str) -> None:
+        endpointing.set_mode(mode)
+        session.update_options(endpointing_opts=endpointing.options())  # type: ignore[arg-type]
     turns = TurnLog(language_selected=STT_LANGUAGE)
 
     # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
@@ -151,6 +215,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         say_locked,
         lambda reply, turn: publish_screen(ctx.room.local_participant, reply, turn),
         lambda: fallback_text(STT_LANGUAGE),
+        thinking=lambda on: publish_thinking(ctx.room.local_participant, on),  # "विचार करतोय…"
+        speakable=lambda reply: tts_text(reply.text, reply.speech, active_model),  # tags only for Timbre v3
+        on_mode=apply_mode,
     )
 
     async def on_tapped_text(sess, ev) -> None:  # type: ignore[no-untyped-def]
@@ -165,6 +232,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     @session.on("user_state_changed")
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
         state.on_user_state(ev.new_state)
+        if ev.new_state == "speaking":
+            user_started.set()
         policy.touch()
         if ev.old_state == "speaking" and ev.new_state == "listening":
             turns.end_of_speech(ev.created_at)
@@ -197,7 +266,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Arjun(turns, responder, state, policy),
+        agent=Arjun(turns, responder, state, policy, hold),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
 
@@ -230,7 +299,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     async def leave() -> None:
         await asyncio.sleep(0.3)  # let the "closed" attribute reach the app before the agent leaves
-        ctx.shutdown(reason="idle for 60 s")
+        ctx.shutdown(reason=f"idle for {policy.idle_after_s:.0f} s")
 
     deliveries = DeliveryLoop(
         claim_next=claim_next, spoken=mark_spoken, release=release, speak=speak_checked, publish=publish_item,

@@ -23,15 +23,31 @@ class Responder:
         say: Callable[[str], Awaitable[None]],
         publish: Callable[[BridgeReply, int], Awaitable[None]],
         fallback_text: Callable[[], str],
+        thinking: Callable[[bool], Awaitable[None]] | None = None,
+        speakable: Callable[[BridgeReply], str] | None = None,
+        on_mode: Callable[[str], None] | None = None,
     ) -> None:
         self.turns, self.ask, self.say, self.publish, self.fallback_text = turns, ask, say, publish, fallback_text
+        self.thinking = thinking  # the "विचार करतोय…" marker on the elder screen
+        # reply -> the exact text for TTS (tagged for Timbre v3, plain otherwise); default: the screen text
+        self.speakable = speakable or (lambda r: r.text)
+        self.on_mode = on_mode  # the mode of each reply (care / companion / ...) sets the next turn's endpointing
 
     async def respond(self, transcript: str, source: str = "voice") -> str:
         """Returns "spoken" or "skipped" (an outdated plain reply)."""
         idx = self.turns.reasoning_started(transcript, t=time.time(), source=source)
+        await self._mark_thinking(True)
         # Never silence: `ask` turns any reasoning failure into a fixed spoken line.
-        reply = await self.ask(transcript)
+        try:
+            reply = await self.ask(transcript)
+        finally:
+            await self._mark_thinking(False)
         self.turns.reasoning_done(idx, time.time(), reply.text, reply.mode, reply.round_trip_ms)
+        if self.on_mode is not None:
+            try:
+                self.on_mode(reply.mode)
+            except Exception:  # noqa: BLE001 - a timing tweak must never break a turn
+                logger.debug("could not apply the endpointing mode", exc_info=True)
         if not should_speak(reply, self.turns.is_stale(idx)):
             # Reasoning ran (so its state stays consistent) but the user has spoken again: stay quiet
             # and leave the screen alone; the newest sentence will be answered instead.
@@ -44,7 +60,7 @@ class Responder:
             logger.exception("could not publish the screen attributes for turn %s", idx)
         self.turns.speaking_for(idx)
         try:
-            await self.say(reply.text)
+            await self.say(self.speakable(reply))
         except Exception:  # noqa: BLE001 - TTS failure must be logged, not crash the session
             logger.exception("TTS failed for reply (mode=%s)", reply.mode)
             if reply.mode != "fallback":
@@ -53,3 +69,11 @@ class Responder:
                 except Exception:  # noqa: BLE001
                     logger.exception("TTS fallback also failed")
         return "spoken"
+
+    async def _mark_thinking(self, on: bool) -> None:
+        if self.thinking is None:
+            return
+        try:
+            await self.thinking(on)
+        except Exception:  # noqa: BLE001 - a marker must never break a turn
+            logger.debug("could not publish the thinking marker", exc_info=True)
