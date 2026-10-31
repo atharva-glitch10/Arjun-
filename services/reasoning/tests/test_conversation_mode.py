@@ -246,3 +246,22 @@ def test_ask_first_mode_also_keeps_the_chat_going(core_http, uid):
     add_reminder(core_http, uid)
     assert eng.handle(uid, CHICKEN).intent == "CHAT"
     assert reminder_status(core_http, uid) == ["pending"]
+
+
+# ---- found by the 23:14 measurement run: a silently kept story must not open the undo window ---------------------
+STORY = "माझ्या लहानपणी आम्ही गावाला जायचो तिथे आजीच्या घरी मोठं अंगण होतं आणि आम्ही सगळे भावंडं खेळायचो"
+
+
+def test_a_bare_nahi_after_a_kept_story_answers_the_chat_and_does_not_delete_the_story(core_http, uid):
+    eng, _, _ = make(core_http)
+    eng.handle(uid, STORY)  # kept privately, nothing was read back to her
+    assert core_http.get(f"/users/{uid}/stories/latest").json() is not None
+    res = eng.handle(uid, "नाही")
+    assert res.intent == "CHAT" and res.mode == "companion"
+    assert core_http.get(f"/users/{uid}/stories/latest").json() is not None  # still there
+
+
+def test_a_bare_ho_after_a_kept_story_is_chat_not_a_bare_ok(core_http, uid):
+    eng, _, _ = make(core_http)
+    eng.handle(uid, STORY)
+    assert eng.handle(uid, "हो").intent == "CHAT"

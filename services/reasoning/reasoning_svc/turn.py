@@ -707,7 +707,14 @@ class TurnEngine:
                     self.core.propose(uid, "SAVE_STORY", {"summary": text.strip()[:2000]})
                     return out(r["ask_save_story"], "companion", wait=True)
                 # No question: kept privately (only she can share it: "हे घरच्यांना सांग"); the chat goes on.
+                before = self._last_done.get(uid)
                 self._act(uid, "SAVE_STORY", {"summary": text.strip()[:2000]})
+                # Nothing was read back to her, so there is nothing for "नाही" to undo: a bare no after a long story
+                # answers the chat, it must not delete the story (found 2026-10-31 in the 15-turn measurement run).
+                if before is None:
+                    self._last_done.pop(uid, None)
+                else:
+                    self._last_done[uid] = before
             reply, speech, from_llm = self._chat_reply(uid, text, lang, now)
             res = out(reply, "companion")
             res.speech = speech
