@@ -18,7 +18,12 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 
 ## Hard boundaries (never violate, never "improve" away)
 1. **The LLM never touches the database.** The LLM only suggests; core-api validates and acts.
-   Flow: reasoning proposes -> core-api stores a *pending* action -> only a spoken yes executes it.
+   Flow: reasoning proposes -> core-api validates and stores the action -> it is executed.
+   **CHANGED 2026-10-31 (team decision): no yes/no questions.** Arjun executes at once, reads it back in ONE
+   line ("ठेवली: उद्या सकाळी 10:00, डॉक्टर. बदलायचं असेल तर 'नको' म्हणा.") and "नको / चुकलं" within the undo
+   window (reasoning 150 s, core-api 180 s) puts it back (`POST /actions/{id}/undo`). Missing details are still
+   ASKED (boundary 3). A help request cannot be unsent; undo sends the family a second note instead.
+   `ARJUN_ASK_BEFORE_ACTING=1` restores the old spoken-yes flow (the older test suites run in that mode).
 2. **Reminders, appointments, medicines, contacts come from SQL only.** RAG is for past stories only.
 3. **Never guess.** Ambiguous AM/PM, missing date, or "after the meal" without which meal -> ask.
 4. **Arjun is an AI.** Say so whenever asked. Never claim to be human, to have feelings or family.
@@ -40,12 +45,18 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
      WhatsApp is sent (telephony is frozen), and the alert text says so (boundary 14).
    - **Emotional distress** -> stop the story, respond gently, offer a family call, mention
      Elderline 14567 (8 AM-8 PM), alert caregiver ONLY per consent (unchanged).
+   - **Family view (2026-10-31)**: per conversation a seriousness level (normal / watch / urgent / emergency),
+     a mood word and a short paraphrased summary go to the dashboard (`wellbeing` table + live feed). NEVER a
+     transcript. Mood, summaries, distress and loneliness are shown ONLY with the same consent flag
+     (`consent_distress_alert`, labelled "share how she is doing"); without it the family sees what she did and
+     the level for help requests / emergencies only. The LLM may RAISE the level, never lower the rules floor.
    - Both lexicons are UNVERIFIED until a native speaker reviews them. The external distress test
      set (T12) must pass before any public demo.
 9. **No engagement tricks**: no streaks, no "I missed you", nothing discouraging human contact.
 10. **Companion never recites recipes/facts from model memory.** It asks the user to teach it.
     At most one opener per day window; "nako" means no more that day.
-11. **Stories are private by default**; saved only after a yes, shared only after a second yes;
+11. **Stories are private by default**; (2026-10-31: kept privately without asking; shared only when she asks,
+    "हे घरच्यांना सांग";
     "he visar" deletes. Never invent memories: reference a past story only from stored text.
     No raw audio stored. Demo uses synthetic data only.
 12. **Secrets**: ONE root `.env` (only `.env.example` is tracked). `LLM_API_KEY` is read only by reasoning. `GNANI_API_KEY` and LiveKit keys
@@ -61,10 +72,17 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 |---|---|---|
 | Prisma | STT, ears (streaming, code-mixed) | Gnani API via LiveKit Gnani plugin (credits) |
 | Timbre | TTS, Arjun's male voice | Gnani API via plugin. API accepts ONLY `timbre-v2.5` / `timbre-v3.0` and needs a voice (we use `Omkar`, verified 2026-10-21) |
-| Hosted LLM (**non-Gnani**) | Open conversation ONLY: companion/chat replies, and turns the rules cannot read (UNKNOWN) | Any OpenAI-compatible API: `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_PROVIDER_NAME` (key read only by reasoning). What the elder says in those turns is sent to the provider, so demo data is synthetic. Limits: ~4 s per turn, 120 tokens, last 4 exchanges |
+| Hosted LLM (**non-Gnani**) | Open conversation ONLY: companion/chat replies, and turns the rules cannot read (UNKNOWN) | Any OpenAI-compatible API: `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_PROVIDER_NAME` (key read only by reasoning). What the elder says in those turns is sent to the provider, so demo data is synthetic. Limits: ~4 s per turn, 120 tokens (measured: Marathi replies use 20-42), last 8 exchanges |
 | Evon v3.3 | NOT USED (decision T9, 2026-10-24) | Not on the API platform, not covered by credits; would need an 80 GB GPU. The `EVON_*` names still work as aliases of `LLM_*` if it is ever used. Never run it on the dev laptop |
 
 **Truthful write-up:** speech in = Gnani Prisma, speech out = Gnani Timbre, the conversation LLM = the hosted non-Gnani provider named in `LLM_PROVIDER_NAME` (none configured yet), Evon = not used.
+
+**LLM (2026-10-31): Sarvam-105B** (hosted, non-Gnani) via `SARVAM_API_KEY` (alone enough; `SARVAM_MODEL`
+optional, e.g. `sarvam-105b-conversations`). Thinking is OFF (`reasoning_effort: null`) for latency and any
+`<think>` text is stripped. It may put ONE Timbre v3.0 voice tag (`<laugh> <giggle> <sigh> <exhales> <whispers>
+<excited> <slow> <pauses>`) in a companion reply; the screen never shows tags, and non-v3 TTS gets them stripped.
+It also writes the family's conversation summary (JSON, enums validated). Calls are limited (concurrency 4,
+60/min, back-off after a provider 429) and never queue: over a limit, the rules answer.
 
 Layered brain so the app works with no LLM at all: safety rules -> rules + Marathi time grammar -> the hosted
 LLM, asked only for companion/chat replies and for turns the rules return UNKNOWN (it may then only suggest

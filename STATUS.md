@@ -1,3 +1,50 @@
+# STATUS (2026-10-31)
+
+## Built 2026-10-31 (tests + a live two-service smoke run; NOT run with a real voice, browser or Sarvam key)
+- **No yes/no questions** (default): Arjun acts at once and reads back in one line; "नको / चुकलं" within 150 s undoes
+  it (core-api `POST /actions/{id}/undo`, 180 s). Missing day/time is still asked. `ARJUN_ASK_BEFORE_ACTING=1` = old flow.
+- **Hands-free elder page** (default): connects on open, never closes the session (`ARJUN_IDLE_CLOSE_S=0`),
+  reconnects with back-off, reply screens return home by themselves, "मी ऐकतोय" badge, "विचार करतोय…" thinking
+  marker, a voice-volume slider. `?handsfree=0` = old tap flow. `scripts/elder-kiosk.ps1` opens Chrome with
+  autoplay allowed so not even the one sound tap is needed on the elder device.
+- **Family view**: per conversation a seriousness level + mood + short summary (no transcript), a "How is she today"
+  headline, and a **live feed over WebSocket** with REST polling fallback (same ids). Mood/summaries/distress/
+  loneliness only with the consent checkbox (now labelled "share how she is doing").
+- **Sarvam-105B**: `SARVAM_API_KEY` alone turns it on; thinking off; `<think>` stripped; it picks Timbre v3 voice
+  tags at runtime; writes the summaries; limited to 4 concurrent / 60 per min with 429 back-off.
+- **Voice**: Timbre **v3.0 over SSE** (pooled HTTP, sentence by sentence) with a probe that falls back to the verified
+  v2.5 + Omkar; Prisma `format=transcribe` + `itn_native_numerals=true`; endpointing 0.7 / 2.5 s.
+- **Rate limits**: core-api 30/s per client, `/turn` 2/s per user, LLM 60/min. 429 + Retry-After.
+- **Bugs found by running it**: (1) row timestamps used the machine clock, so on a UTC machine (Docker) every action
+  expired the moment it was proposed; fixed in `models.utcnow`. (2) a failed turn left a reminder draft that
+  swallowed the next sentence; fixed. Regression tests for both.
+- Tests (2026-10-31): core-api 122, reasoning 394 (+1 skipped), voice-agent 83, scheduler 8, vitest 71; ruff, `tsc`,
+  `vite build`, no-browser-speech check clean; eval 42/42 intent, 12/12 slot, 5/5 distress. The agent's TTS/STT
+  wiring was checked against the real livekit-agents 1.8.6 / gnani 1.8.6 packages (no credentials).
+- Smoke run (cloud box, rules only): `/turn` 31-125 ms; save → "नको" undo → re-save → lonely → help all correct;
+  WS pushed lonely (watch), help (urgent) and the conversation summary (urgent, mood lonely).
+
+## NOT verified (add to the hand test)
+Timbre v3.0 + "Avinash" on our key (the probe falls back if not), how v3 actually renders `<laugh>` / `<slow>` in
+Marathi, SSE latency vs the old WebSocket path (measure with turns.jsonl), always-open session credit cost, the
+kiosk launcher, the WS through the Vite proxy in a real browser, any real Sarvam reply or summary (no key yet).
+
+# STATUS (2026-10-29)
+
+## Added 2026-10-29 (tests only; NOT hand-tested in a browser or with a real voice)
+- **Emergency alarm reaches a background dashboard tab**: checked every 15 s even when hidden, sound + one pop-up per
+  emergency + flashing title until "I have seen it". Needs one "Turn on emergency alarm" tap per page load.
+  Still no SMS / call; a closed tab gets nothing.
+- **"Last talked to Arjun"** tile for the family: one timestamp per user (voice turn or card tap), never words;
+  past wake + 3 h with nothing today it suggests a call.
+- **Loneliness phrases** (UNVERIFIED lexicon): warm fixed reply naming family contacts, keeps listening; with consent,
+  one "feeling lonely today" note a day for the family.
+- Tests (2026-10-29): core-api 109, reasoning 368 (+1 skipped), voice-agent 78, scheduler 7, vitest 64; ruff, `tsc`,
+  `vite build` and the no-browser-speech check clean; eval 42/42 intent, 12/12 slot, 5/5 distress.
+- Open, for the team: should a TAP on मदत alert the family directly instead of asking a second yes?
+- Add to the T8 hand-test checklist: the alarm with the dashboard tab in the background (time it), the pop-up,
+  "I have seen it", the last-active tile after a spoken turn and after a card tap, a spoken "मला एकटं वाटतं".
+
 # STATUS (2026-10-26, end of day)
 
 Arjun talks through **Gnani Prisma (hearing) + Gnani Timbre (voice) over LiveKit**; the elder app and the family
@@ -33,7 +80,7 @@ non-Gnani LLM** is built for open conversation but is **not configured or run ye
   phone delivery yet. Emotional distress alerts only with consent (unchanged). CLAUDE.md boundary 8 and open
   question 8 updated.
 - **Hosted LLM for open conversation (built, dormant)**: `LLM_*` settings (`EVON_*` are aliases), asked ONLY for
-  companion/chat replies and turns the rules cannot read; 4 s budget per turn, 120 tokens, last four exchanges,
+  companion/chat replies and turns the rules cannot read; 4 s budget per turn, 120 tokens, last eight exchanges (care turns included as short text),
   boundary-checked replies, per-call log without text. `eval/llm_compare.py` is tested on a fake provider.
 
 ## T8, spoken reminders and medicines: BUILT, NOT HAND-TESTED

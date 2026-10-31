@@ -3,6 +3,16 @@
 Spec and hard boundaries: [CLAUDE.md](CLAUDE.md). Arjun is an AI, a bridge to people - not a
 replacement for them. No medical advice; physical-emergency and distress phrases get a fixed safety reply (lexicons unverified); stories private by default.
 
+## New on 2026-10-31 (see STATUS.md for what is verified)
+- **Talk, nothing to press**: the elder page connects by itself and keeps listening; no "... ठेवू का? हो किंवा नाही" -
+  Arjun does it, says it in one line, and "नको" undoes it. Run the elder device with `scripts\elder-kiosk.ps1`.
+- **The family knows how she is**: seriousness level + mood + short summary per conversation (never her words),
+  pushed live over a WebSocket (`/ws/users/{id}/feed`) with REST polling as fallback (`/users/{id}/feed?after=`).
+- **Sarvam-105B** for conversation and summaries (`SARVAM_API_KEY`), **Timbre v3.0 over SSE** with voice tags the
+  LLM chooses, **Prisma transcribe + native numerals**, rate limits on every entry point.
+- Engineering notes (latency, concurrency, rate limiting, polling/WS, error handling, boundaries, identity):
+  [docs/ENGINEERING.md](docs/ENGINEERING.md).
+
 ## What works today (verified by tests / smoke run)
 Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Marathi / Hindi / English.
 
@@ -39,6 +49,14 @@ then `pytest` inside each service and `ruff check .` at the root.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
+- **2026-10-31 changes are tested, not hand-tested**: no real voice, browser, Sarvam key or Timbre v3.0 call yet.
+- **Always listening costs credits**: hands-free keeps one Prisma stream open all day; cost per day is unmeasured.
+  `ARJUN_IDLE_CLOSE_S=60` brings back the idle close.
+- **No question also means no safety net for a misheard reminder** except the read-back and "नको" within 150 s.
+- **Conversation summaries send the conversation to Sarvam** (only with the consent flag on and a key set). Rules
+  summaries ("set a reminder, chatted") are used otherwise. Synthetic data only for the demo.
+- Openers and morning briefings are still only logged by the scheduler, not spoken.
+- One shared API key; no per-person login or elder/family roles yet (frozen until after Nov 10).
 - **Parser quality is unmeasured.** The 42 eval cases were written alongside the parser, so 100% there
   says nothing about real speech. Needs real transcripts of elderly Marathi speakers.
 - Task text is the leftover words after removing time/command words (e.g. "doctor jaycha"), not a clean noun phrase.
@@ -75,7 +93,7 @@ then `pytest` inside each service and `ruff check .` at the root.
 - Distress check is keyword + stem-pattern rules (spelling folded: anusvara/chandrabindu, i/u length, nukta) and
   now answers even if core-api is down. The lexicon is **unverified**: written without a native speaker or real
   Prisma output, and its tests were written by the same author, so they are not an independent recall measure.
-  Not handled: loneliness phrases, falls, chest pain / physical emergencies (policy decision pending), and some
+  Loneliness phrases have their own gentle path (see above). Not handled here: some
   everyday phrases ("sab khatam ho gaya" for milk) still trigger a check-in. Distress check was keywords only; Evon can additionally return `DISTRESS` but there is no separate classifier.
 - Slot-filling drafts live in reasoning's memory (single instance; lost on restart).
 - Single shared API key, no caregiver/elder role separation or login yet. The Memory Book endpoint is
@@ -93,11 +111,11 @@ then `pytest` inside each service and `ruff check .` at the root.
   that provider**, so the demo uses synthetic data only. CLAUDE.md open question 5 (is a non-Gnani LLM allowed in
   the entry?) is still unanswered on Discord: say plainly in the posts which model does what. No provider is
   configured yet, so nothing has run through it live. Reply quality in Marathi is unmeasured (`eval/llm_compare.py`
-  measures it once a provider is set). Limits: one ~4 s budget per turn, 120 tokens, last four exchanges, no name
+  measures it once a provider is set). Limits: one ~4 s budget per turn, 120 tokens, last eight exchanges, no name
   or contact details sent; replies that claim to be human, say "I missed you", give medical advice, or recite
   recipes/facts are replaced by a fixed line.
 - Companion conversation: the elder screen now keeps listening after a CHAT reply (ends on silence, "nako", or the
-  back button), and reasoning sends the LLM the last four exchanges of this conversation plus the user's interests
+  back button), and reasoning sends the LLM the last eight exchanges (care turns as short text) of this conversation plus the user's interests
   (in memory only, dropped after 30 min idle or on distress, never stored). Covered by mock-provider tests only:
   **no real LLM reply and no real speech has run through it**, so reply quality, Marathi fluency and the
   hands-free loop on a real device are unverified. Without `LLM_BASE_URL` the replies are still the 4 canned lines.
@@ -148,6 +166,28 @@ then `pytest` inside each service and `ruff check .` at the root.
   not delivered.
 - **The emergency alert is dashboard-only:** a physical emergency shows a red banner for the family; no call, SMS or
   WhatsApp is sent (telephony is frozen) and the banner says so.
+- **Emergency alarm in a background tab (new 2026-10-29, UNVERIFIED in a real browser):** the dashboard checks the
+  notifications every 15 s even when its tab is hidden (the normal 10 s refresh still pauses), and rings until
+  someone taps "I have seen it - stop the alarm": a repeating Web Audio tone (no speech API), one system pop-up
+  per emergency and a flashing tab title. The family taps "Turn on emergency alarm" once per page load (browsers
+  block sound before a tap; pop-ups need permission once). Acknowledged ids are kept per browser (localStorage).
+  Limits: browsers slow background timers (Chrome: about once a minute), so a background alert can take up to
+  ~1 minute; a closed tab, a sleeping laptop or a phone with the page closed gets nothing.
+- **"Last talked to Arjun" (new 2026-10-29):** every `/turn` (safety turns included) and every tap on an elder card
+  records ONE timestamp in core-api (`activity` table, `GET/POST /users/{id}/activity`): time and voice/tap only,
+  never words. It is written after the reply was sent (no added latency). The dashboard's first tile shows it;
+  3 h after the family-set wake time with nothing today it says she has not talked to Arjun today and suggests a
+  call, without calling it a problem (she may simply not have used the app). Not an inactivity alarm: nothing is
+  sent and nothing escalates.
+- **Loneliness phrases (new 2026-10-29, lexicon UNVERIFIED):** "मला एकटं वाटतं", "अकेलापन", "I feel lonely" and
+  similar get a fixed warm reply that names up to three family contacts and offers a call, then keeps listening
+  (companion mode). Only for chat / unreadable turns with nothing pending: a care command or a pending yes/no
+  wins, and distress / emergency still override it. With the family-alert consent ON, the family gets ONE
+  "said she is feeling lonely today" note a day (`POST /users/{id}/lonely`), never her words. Written without a
+  native speaker or real Prisma output; needs the T12 review like the other two lexicons.
+- **The मदत (help) button needs a second yes:** a tap starts a voice session that says "मदत", which proposes
+  REQUEST_CAREGIVER and asks "shall I tell your caregiver? yes or no". Not changed (team decision needed): a tap
+  on a dedicated help button could arguably alert directly.
 - Pre-warming joins a quiet room as the page opens; it ends by itself after 60 s without a tap. Credits used by
   that were not measured.
 - Honorific ("आजी") and the animation switch are not stored server-side: honorific is a constant, "turn off

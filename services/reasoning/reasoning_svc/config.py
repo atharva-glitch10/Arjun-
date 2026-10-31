@@ -10,6 +10,10 @@ COMPANION_TEMPERATURE = 0.6
 COMPANION_TOP_P = 0.95
 
 
+SARVAM_BASE_URL = "https://api.sarvam.ai/v1"
+SARVAM_MODEL = "sarvam-105b"
+
+
 @dataclass(frozen=True)
 class LlmSettings:
     """The one OpenAI-compatible LLM used for open conversation (and messy UNKNOWN phrasing).
@@ -25,7 +29,10 @@ class LlmSettings:
     send_template_kwargs: bool = True
     timeout_s: float = 4.0  # one budget for ALL LLM calls in a turn (the voice path waits ~5 s for reasoning)
     max_tokens: int = 120
-    history_exchanges: int = 4  # last four user/assistant exchanges only
+    history_exchanges: int = 8  # last eight user/assistant exchanges (task B, 2026-10-31); was 4
+    reasoning_off: bool = False  # send reasoning_effort=null (Sarvam): no hidden "thinking" before the answer
+    max_concurrent: int = 4  # LLM calls in flight at once (concurrency limit)
+    per_minute: int = 60  # LLM calls per minute (rate limit); over it the rules answer instead
 
     @property
     def configured(self) -> bool:
@@ -50,11 +57,17 @@ def llm_settings(env: Mapping[str, str] | None = None) -> LlmSettings:
     if get("LLM_BASE_URL"):
         base, model, key = get("LLM_BASE_URL"), get("LLM_MODEL"), get("LLM_API_KEY")
         provider = get("LLM_PROVIDER_NAME") or "hosted-llm"
+    elif get("SARVAM_API_KEY"):
+        # Sarvam (hosted, non-Gnani), OpenAI-compatible. Setting SARVAM_API_KEY alone turns it on.
+        base = get("SARVAM_BASE_URL") or SARVAM_BASE_URL
+        model, key, provider = get("SARVAM_MODEL") or SARVAM_MODEL, get("SARVAM_API_KEY"), "sarvam"
     else:
         base, key = get("EVON_BASE_URL"), get("EVON_API_KEY")
         model = get("EVON_MODEL") or ("gnani/gnani-evon-v3.3-30B-A3B" if base else "")
         provider = get("LLM_PROVIDER_NAME") or ("evon" if base else "none")
-    template = get("LLM_SEND_TEMPLATE_KWARGS") or get("EVON_SEND_TEMPLATE_KWARGS") or "1"
+    sarvam = provider == "sarvam" or "sarvam.ai" in base
+    # chat_template_kwargs is a vLLM/Evon extension; hosted Sarvam does not take it.
+    template = get("LLM_SEND_TEMPLATE_KWARGS") or get("EVON_SEND_TEMPLATE_KWARGS") or ("0" if sarvam else "1")
     return LlmSettings(
         base_url=base,
         model=model,
@@ -63,7 +76,11 @@ def llm_settings(env: Mapping[str, str] | None = None) -> LlmSettings:
         send_template_kwargs=template != "0",
         timeout_s=float(number("LLM_TIMEOUT_S", 4.0, float)),
         max_tokens=int(number("LLM_MAX_TOKENS", 120, int)),
-        history_exchanges=int(number("LLM_HISTORY_EXCHANGES", 4, int)),
+        history_exchanges=int(number("LLM_HISTORY_EXCHANGES", 8, int)),
+        # Sarvam-105B "thinks" by default; in a voice turn that is pure latency, so it is switched off.
+        reasoning_off=sarvam and get("LLM_REASONING") != "1",
+        max_concurrent=int(number("LLM_MAX_CONCURRENT", 4, int)),
+        per_minute=int(number("LLM_PER_MINUTE", 60, int)),
     )
 
 
@@ -84,3 +101,19 @@ SCHEMA_DIR = os.environ.get(
 
 ELDERLINE_NUMBER = "14567"  # govt senior helpline, 8 AM - 8 PM
 LONG_STORY_WORDS = 15  # a CHAT turn at least this long triggers a "keep this story?" consent ask
+
+# No-question mode (default): act at once, read back in one line, "नको" within UNDO_WINDOW_S undoes it.
+# ARJUN_ASK_BEFORE_ACTING=1 brings back the old "... ठेवू का? हो किंवा नाही" flow.
+ASK_BEFORE_ACTING = os.environ.get("ARJUN_ASK_BEFORE_ACTING", "0") == "1"
+UNDO_WINDOW_S = float(os.environ.get("UNDO_WINDOW_S", "150"))  # core-api allows 180 s; keep a margin
+
+# Timbre v3.0 inline voice tags the LLM may choose at runtime. Only gentle ones: no <shouting>, <coughs>,
+# <yawns>, <sniffles> (wrong for an elder companion). The voice agent strips them for any other TTS model.
+VOICE_TAGS = ("<laugh>", "<giggle>", "<sigh>", "<exhales>", "<whispers>", "<excited>", "<slow>", "<pauses>")
+
+# Per-user /turn rate limit (a stuck recognizer loop must not flood core-api or the LLM).
+TURN_RATE_PER_S = float(os.environ.get("TURN_RATE_PER_S", "2"))
+TURN_RATE_BURST = int(os.environ.get("TURN_RATE_BURST", "6"))
+
+# A conversation ends after this much silence; its summary then goes to the family (wellbeing.py).
+CONVERSATION_IDLE_S = float(os.environ.get("CONVERSATION_IDLE_S", "180"))
