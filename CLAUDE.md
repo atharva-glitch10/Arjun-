@@ -135,7 +135,7 @@ nginx replicas, S3 cache, multi-elder accounts, telephony, SMS/WhatsApp, Evon fi
    numbers (EULA 16)? Teammate using the primary registrant's key?
 6. Does noise cancellation (LiveKit BVC) help or hurt Prisma (A/B)? It is NOT in the code yet (the plugin
    needs PyPI); the elder browser keeps its own echo cancellation + noise suppression on until then.
-7. Endpointing (1.0 s / 3.0 s) are placeholders; tune on elderly speech.
+7. Endpointing is mode-aware (care 0.8 / 2.5 s, chat 1.6 / 4.0 s, 2026-10-31) and a sentence ending in आणि/पण/म्हणजे/की is held; all are placeholders; tune on elderly speech.
 8. ~~Emergency alert: should it override the family-alert consent setting?~~ DECIDED 2026-10-24: yes for a
    physical emergency (always alerts); no for emotional distress (consent only). See boundary 8.
 

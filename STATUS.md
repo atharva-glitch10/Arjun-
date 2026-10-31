@@ -1,3 +1,28 @@
+# STATUS (2026-10-31, night)
+
+## Built 2026-10-31 night: long Marathi conversations (tasks A-G; tested, ONE 15-turn run with the real Sarvam key; NOT run with a real voice)
+- **Conversation mode** (`turn.py`): after a companion turn (5 min), odd / short / greeting turns and a bare yes-no that answers
+  nothing stay in the chat, with history. "झालं / झाला ना" completes a reminder only when its words match an open reminder
+  today (a lone 1-4 word "झालं" outside a chat still closes the one open reminder). "नको" still ends the chat; safety and care
+  commands still win. A silently kept story no longer opens the undo window (so a bare "नाही" cannot delete it).
+- **Memory**: the LLM sees up to 8 exchanges of this conversation, care turns as short text (medicine turns left out). `LLM_MAX_TOKENS`
+  stays 120 (measured 20-42 tokens per reply).
+- **Health complaints** (UNVERIFIED lexicon, `distress.py: symptom_category`): a fixed no-advice reply, a `health_complaint` note at
+  "watch" only with the family-alert consent (the reply says "noted on the family's screen" ONLY when a note exists), and the chat
+  goes on. Dizziness is emergency-level. LLM replies with health advice (rest, water, a pill, "go to the doctor") are replaced.
+- **Voice**: endpointing follows the mode of the last reply (care 0.8/2.5 s, chat 1.6/4.0 s); a sentence ending in आणि / पण /
+  म्हणजे / की is held for more speech; VAD turn detection by default (cloud detector timed out 4 of 84 times);
+  Timbre requests are serialised and a 429 is retried; the turn log has intent, source, outcome, session, tts_first_audio_ms,
+  eos_to_speaking_ms, and the LAST end of speech; turn numbers continue across a reconnect.
+- **Logging**: `arjun.llm` / `reasoning.*` at INFO under uvicorn: one line per provider call, no text, no key.
+- Tests (2026-10-31 night): core-api 124, reasoning 505, voice-agent 148, scheduler 8, vitest 71; ruff and `tsc` clean; eval 42/42
+  intent, 12/12 slot, 5/5 distress; no-browser-speech check clean. Numbers: `eval/results/RESULTS.md`.
+- **NOT verified**: a real spoken session on the new code (end-of-speech -> speaking is unmeasured since the changes), whether VAD
+  turn detection feels better than the cloud detector with elderly speech, the 1.6 s chat delay on real speakers, the symptom /
+  advice lexicons against native speakers, why the browser left the room three times between 22:43 and 22:48. The running
+  stack must be restarted (`scripts/dev-up.ps1`) to pick all of this up.
+- **Known gap**: after a Sarvam timeout every following chat turn waits the full 4 s again (3 in a row in run 1); a short cool-down is not built.
+
 # STATUS (2026-10-31)
 
 ## Built 2026-10-31 (tests + a live two-service smoke run; NOT run with a real voice, browser or Sarvam key)

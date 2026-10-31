@@ -190,3 +190,61 @@ is recorded here as the speaker's report and is to be re-checked with log eviden
 core-api 54, reasoning 221, voice-agent 32, scheduler 3, vitest 13 passed; ruff clean; web `tsc` clean; eval 42/42
 intent, 12/12 slot, 5/5 distress (2026-10-24, Windows, Python 3.12). These are regression checks on
 synthetic text, not accuracy on real speech.
+
+## 2026-10-31 night: long Marathi conversations (tasks A-F), measured
+
+All synthetic. A scripted 15-turn Marathi conversation went through `POST /turn` on an isolated stack (a throwaway SQLite
+core-api on :8100 and the real reasoning service on :8101 with the real `SARVAM_API_KEY`, model `sarvam-105b`, thinking
+off, no-question mode). The script is not in the repo; the turns are the six live-session transcripts plus ordinary
+chat, a `आज काय आहे` care command and "are you human". Latency is the client-side wall time of one `/turn` call. n = 15 per
+run: a smoke test, not a benchmark.
+
+| | Run 1 (code before the story-undo fix) | Run 2 (final code) |
+|---|---|---|
+| Turns answered by the LLM (`source: llm`) | 7 / 15 (46.7 %) | 11 / 15 (73.3 %) |
+| Turns answered "मला नीट समजलं नाही" | 0 / 15 | 0 / 15 |
+| Median `/turn` time | 451 ms | 458 ms |
+| 95th percentile | 4130 ms | 652 ms |
+| Provider calls ok / failed | 7 / 3 (all 3 `ReadTimeout` at the 4 s budget) | 11 / 0 |
+| Boundary replacements (companion reply rejected) | 0 | 0 |
+
+- The 4 turns Sarvam did not answer in run 2 are rules by design: a greeting, the health-complaint template, `आज काय आहे`
+  (SQL) and the "are you human" disclosure. In run 1 three CHAT turns (the chicken sentence, `झाला ना`, `डंड`) hit a provider
+  `ReadTimeout`, so the fixed companion lines answered after ~4 s each (12 s of dead air in a row). Replaying the same turns
+  with a 30 s timeout answered in 0.28-0.55 s each, so the stall was transient and could not be reproduced. A short cool-down
+  after a timeout (skip the LLM for ~15 s) would avoid the repeated 4 s waits; it is NOT built.
+- Completion tokens: 10 real Marathi companion replies used 20-42 tokens (median 26, `finish_reason: stop` on every
+  logged call), so `LLM_MAX_TOKENS=120` was not cutting replies and stays. In run 1 prompt tokens grew from 438 to 755 over the 15 turns
+  with the 8-exchange history.
+- The six evidence transcripts: (1) the chicken sentence and `झाला ना` -> `CHAT`, no reminder completed; (2) a bare `नाही`
+  mid-chat -> `CHAT`, not `DECLINE_TOPIC`; (3) `डंड` and `गंठलं ते इन्स्पेक्ट करतात` -> `CHAT`; (4) the headache sentence -> `SYMPTOM`,
+  fixed no-advice template, one `health_complaint` notification at seriousness `watch` in the family feed (the user had
+  the share consent on). (5) the turn log and (6) the `arjun.llm` logging are described below.
+- One quality observation, not a bug: after the health-complaint template the next LLM reply echoed it ("मी आता इथेच
+  थांबतो") instead of answering the granddaughter sentence. The fixed template is in the history the LLM sees.
+- The per-call `arjun.llm` log line now appears under uvicorn: provider, model, purpose, latency_ms, prompt/completion tokens,
+  finish_reason, ok/error (checked live in `g-reasoning` output, never text, never the key).
+
+### Why the old turn log looked wrong (read from `logs/voice-agent.app.log`, session 22:45-22:48)
+
+- The "33 s end-of-speech -> speaking" turn was a measurement error: the sentence was a 42 s monologue (`speech_start_time`
+  to `last_speaking_time`) and the log had kept its FIRST pause as the end of speech. The last end of speech now wins.
+  From the log timestamps the commit-to-reply time of that turn was about 3.9 s (turn committed 22:46:42.7, assistant item added 22:46:46.6); that is not the same quantity as end-of-speech -> speaking, so it is not quoted as one.
+- Turns with a reply but no speaking time were replies that never played: the elder talked again while the reply was
+  being produced (`डंड`), or Gnani answered `429 RATE_LIMITED "Only 1 active request is allowed at a time"` (22:47:20) when two
+  Timbre requests overlapped. Timbre calls are now serialised in the agent and retried twice on that 429, and every turn
+  line carries an `outcome` (spoken / interrupted / tts_failed / stale / not_spoken / no_reply).
+- LiveKit's cloud turn detector made 84 predictions in that log and 4 timed out ("eot prediction timed out", then a fallback).
+  The session now uses VAD turn detection by default (`ARJUN_TURN_DETECTION=auto` restores the cloud detector).
+- The agent saw three `participant_disconnected` closes between 22:43 and 22:48 (the browser left the room). The browser console
+  was not available, so WHY the page left is not established. Each rejoin is a new job with a new turn log; turn numbers
+  now start from the wall clock, so they continue above the previous session instead of restarting at 1.
+
+### Real spoken session after these changes: NOT measured
+
+No spoken session has been run on the new code (it needs the speaker, a microphone and the browser). Last measured on the OLD code
+(22:45-22:48 session, 5 complete rows, with the monologue artifact above): end-of-speech -> audio median 3107 ms (2538, 2606,
+3107, 3459 and the 33365 artifact). Do not quote that as the new latency. The new endpointing waits longer on purpose in
+chat (1.6 s of silence instead of 0.7 s), so companion turns should answer about 0.9 s later than before; this is the expected
+trade, not a measurement. Measure it from `eval/results/turns.jsonl` (`eos_to_speaking_ms`, `outcome`) after the next session.
+

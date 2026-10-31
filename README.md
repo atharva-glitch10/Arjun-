@@ -49,6 +49,10 @@ then `pytest` inside each service and `ruff check .` at the root.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
+- **2026-10-31 night (conversation mode, symptoms, endpointing) is tested and measured on text only**: a 15-turn Marathi run with the
+  real Sarvam key (11/15 answered by the LLM, 0 "not understood"), but NO spoken session on the new code. Chat turns now wait 1.6 s of
+  silence (0.8 s for commands), so a chat reply arrives about 0.9 s later; the symptom and health-advice word lists are unverified.
+  After a Sarvam timeout the next chat turns wait 4 s each again (no cool-down yet).
 - **2026-10-31 changes are tested, not hand-tested**: no real voice, browser, Sarvam key or Timbre v3.0 call yet.
 - **Always listening costs credits**: hands-free keeps one Prisma stream open all day; cost per day is unmeasured.
   `ARJUN_IDLE_CLOSE_S=60` brings back the idle close.
