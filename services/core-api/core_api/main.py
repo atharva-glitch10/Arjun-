@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
+from .checkins import router as checkins_router
 from .day import router as day_router
 from .db import Base, engine, ensure_columns, get_db
 from .deliveries import ack_item, enqueue
@@ -666,6 +667,7 @@ def fire_due(
 app.include_router(router)
 app.include_router(medicines_router)
 app.include_router(day_router)
+app.include_router(checkins_router)
 app.include_router(deliveries_router)
 app.include_router(livekit_router)
 app.include_router(activity_router)

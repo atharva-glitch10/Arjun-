@@ -70,6 +70,15 @@ class CoreClient:
     def deliveries_waiting(self, uid: int) -> int:
         return int(self._req("GET", f"/users/{uid}/deliveries/waiting")["queued"])
 
+    def open_checkin(self, uid: int) -> dict[str, Any] | None:
+        """The one meal prompt still waiting for an answer; `heard` says a session really spoke it."""
+        return self._req("GET", f"/users/{uid}/checkins/open")  # type: ignore[no-any-return]
+
+    def answer_checkin(self, uid: int, checkin_id: int, answer: str) -> dict[str, Any]:
+        return self._req(
+            "POST", f"/users/{uid}/checkins/{checkin_id}/answer", json={"answer": answer}
+        )  # type: ignore[no-any-return]
+
     def delivery_claim(self, uid: int, did: int, session: str) -> dict[str, Any]:
         return self._req("POST", f"/users/{uid}/deliveries/{did}/claim", json={"session": session})  # type: ignore[no-any-return]
 

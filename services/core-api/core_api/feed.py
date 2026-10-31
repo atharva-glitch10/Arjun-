@@ -44,6 +44,7 @@ _KINDS: dict[str, tuple[str, str]] = {
     "health_complaint": ("watch", "A health complaint was mentioned"),
     "medicine_not_taken": ("watch", "Medicine not taken"),
     "medicine_unconfirmed": ("watch", "Medicine not confirmed"),
+    "checkin": ("info", "Check-in"),
     "undelivered": ("watch", "Reminder not delivered"),
     "help_cancelled": ("info", "Help request cancelled"),
 }

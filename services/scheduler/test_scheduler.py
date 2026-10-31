@@ -10,6 +10,8 @@ def _http(calls, briefing_text="सुप्रभात", opener_text="आज�
             return httpx.Response(200, json=[{"reminder_id": 1, "user_id": 1, "task": "doctor"}])
         if path == "/internal/medicines/tick":
             return httpx.Response(200, json={"reminded": [], "unconfirmed": []})
+        if path == "/internal/checkins/tick":
+            return httpx.Response(200, json={"asked": [], "followed_up": [], "closed": []})
         if path == "/internal/deliveries/sweep":
             return httpx.Response(200, json={"released": 0, "superseded": 0, "shown_only": 0, "notified": 0})
         if path == "/conversations/flush-idle":
@@ -67,7 +69,12 @@ def test_each_tick_queues_then_sweeps_in_that_order(monkeypatch):
     calls = []
     scheduler.tick(_http(calls), "2026-10-24")
     order = [p for _, p in calls if p.startswith("/internal/")]
-    assert order == ["/internal/reminders/fire-due", "/internal/medicines/tick", "/internal/deliveries/sweep"]
+    assert order == [
+        "/internal/reminders/fire-due",
+        "/internal/medicines/tick",
+        "/internal/checkins/tick",
+        "/internal/deliveries/sweep",
+    ]
 
 
 def test_a_failing_sweep_does_not_stop_the_briefing_or_the_opener(monkeypatch):
@@ -83,6 +90,8 @@ def test_a_failing_sweep_does_not_stop_the_briefing_or_the_opener(monkeypatch):
             return httpx.Response(200, json=[])
         if path == "/internal/medicines/tick":
             return httpx.Response(200, json={"reminded": [], "unconfirmed": []})
+        if path == "/internal/checkins/tick":
+            return httpx.Response(200, json={"asked": [], "followed_up": [], "closed": []})
         if path.startswith("/briefing/"):
             return httpx.Response(200, json={"text": "सुप्रभात"})
         return httpx.Response(200, json={"text": "आजी"})

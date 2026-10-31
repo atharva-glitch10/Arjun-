@@ -533,3 +533,67 @@ AUTO: dict[str, dict[str, str]] = {
 }
 for _lang, _keys in AUTO.items():
     R[_lang].update(_keys)
+
+# Meal / walk / BP check-ins. Prompts and answers are fixed templates; the answer is the elder's own
+# self-report. Nothing here scores, judges or advises.
+_CHECKIN: dict[str, dict[str, str]] = {
+    "mr": {
+        "checkin_prompt_breakfast": "नाश्त्याची वेळ. नाश्ता झाला का?",
+        "checkin_prompt_lunch": "दुपारच्या जेवणाची वेळ. जेवण झालं का?",
+        "checkin_prompt_snack": "संध्याकाळच्या नाश्त्याची वेळ. नाश्ता झाला का?",
+        "checkin_prompt_walk": "फिरायला जाण्याची वेळ. फिरायला गेलात का?",
+        "checkin_prompt_bp": "बीपी तपासण्याची वेळ.",
+        "checkin_done_breakfast": "ठीक आहे, नाश्ता झाला असं नोंदवलं.",
+        "checkin_done_lunch": "ठीक आहे, दुपारचं जेवण झालं असं नोंदवलं.",
+        "checkin_done_snack": "ठीक आहे, संध्याकाळचा नाश्ता झाला असं नोंदवलं.",
+        "checkin_done_walk": "ठीक आहे, फिरायला गेल्याचं नोंदवलं.",
+        "checkin_done_bp": "ठीक आहे, बीपी तपासणी झाली असं नोंदवलं.",
+        "checkin_skipped_breakfast": "ठीक आहे, नाश्ता नाही झाला असं नोंदवलं.",
+        "checkin_skipped_lunch": "ठीक आहे, दुपारचं जेवण नाही झालं असं नोंदवलं.",
+        "checkin_skipped_snack": "ठीक आहे, संध्याकाळचा नाश्ता नाही झाला असं नोंदवलं.",
+        "checkin_skipped_walk": "ठीक आहे, फिरायला जाता आलं नाही असं नोंदवलं.",
+        "checkin_skipped_bp": "ठीक आहे, बीपी तपासणी नाही झाली असं नोंदवलं.",
+        "checkin_class_today": "आज {when} {title} आहे.",
+        "checkin_again": "पुन्हा आठवण: {prompt}",
+    },
+    "hi": {
+        "checkin_prompt_breakfast": "नाश्ते का समय। नाश्ता हो गया?",
+        "checkin_prompt_lunch": "दोपहर के खाने का समय। खाना हो गया?",
+        "checkin_prompt_snack": "शाम के नाश्ते का समय। नाश्ता हो गया?",
+        "checkin_prompt_walk": "सैर पर जाने का समय। सैर पर गए?",
+        "checkin_prompt_bp": "बीपी जाँचने का समय।",
+        "checkin_done_breakfast": "ठीक है, नाश्ता हो गया, दर्ज कर लिया।",
+        "checkin_done_lunch": "ठीक है, दोपहर का खाना हो गया, दर्ज कर लिया।",
+        "checkin_done_snack": "ठीक है, शाम का नाश्ता हो गया, दर्ज कर लिया।",
+        "checkin_done_walk": "ठीक है, सैर पर गए, दर्ज कर लिया।",
+        "checkin_done_bp": "ठीक है, बीपी जाँच हो गई, दर्ज कर लिया।",
+        "checkin_skipped_breakfast": "ठीक है, नाश्ता नहीं हुआ, दर्ज कर लिया।",
+        "checkin_skipped_lunch": "ठीक है, दोपहर का खाना नहीं हुआ, दर्ज कर लिया।",
+        "checkin_skipped_snack": "ठीक है, शाम का नाश्ता नहीं हुआ, दर्ज कर लिया।",
+        "checkin_skipped_walk": "ठीक है, सैर पर नहीं जा सके, दर्ज कर लिया।",
+        "checkin_skipped_bp": "ठीक है, बीपी जाँच नहीं हुई, दर्ज कर लिया।",
+        "checkin_class_today": "आज {when} {title} है।",
+        "checkin_again": "फिर याद दिलाता हूँ: {prompt}",
+    },
+    "en": {
+        "checkin_prompt_breakfast": "Time for breakfast. Have you had breakfast?",
+        "checkin_prompt_lunch": "Time for lunch. Have you had lunch?",
+        "checkin_prompt_snack": "Time for your evening snack. Have you had it?",
+        "checkin_prompt_walk": "Time for your walk. Did you go for your walk?",
+        "checkin_prompt_bp": "Time to check your BP.",
+        "checkin_done_breakfast": "Okay, noted that you had breakfast.",
+        "checkin_done_lunch": "Okay, noted that you had lunch.",
+        "checkin_done_snack": "Okay, noted that you had your snack.",
+        "checkin_done_walk": "Okay, noted that you went for your walk.",
+        "checkin_done_bp": "Okay, noted that you checked your BP.",
+        "checkin_skipped_breakfast": "Okay, noted that you did not have breakfast.",
+        "checkin_skipped_lunch": "Okay, noted that you did not have lunch.",
+        "checkin_skipped_snack": "Okay, noted that you did not have your snack.",
+        "checkin_skipped_walk": "Okay, noted that you could not go for your walk.",
+        "checkin_skipped_bp": "Okay, noted that you did not check your BP.",
+        "checkin_class_today": "You have {title} today {when}.",
+        "checkin_again": "A reminder again: {prompt}",
+    },
+}
+for _lang, _texts in _CHECKIN.items():
+    R[_lang].update(_texts)

@@ -19,6 +19,7 @@ import httpx
 
 from . import config
 from . import replies as rp
+from .checkins import answer_from_text
 from .clock import local_now
 from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency, is_lonely, symptom_category
@@ -161,6 +162,12 @@ class TurnEngine:
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
         draft = self._drafts.get(user_id)
         recent = self._recent_done(user_id)
+        # A meal / walk prompt that a session really spoke takes a clear done/skipped answer - but only when
+        # nothing else is waiting: no yes/no, no reminder draft, no undo window, no recent medicine prompt.
+        if pending is None and draft is None and recent is None and self._recent_dose(user_id) is None:
+            checkin = self._answer_open_checkin(user_id, text, lang, trace, t0)
+            if checkin is not None:
+                return checkin
         answerable = pending["action_type"] if pending else (recent["action_type"] if recent else None)
         if answerable is None and self._recent_dose(user_id) is not None:
             answerable = "MEDICINE_TAKEN"  # "हो" / "घेतली" right after a medicine prompt
@@ -326,6 +333,66 @@ class TurnEngine:
                 return r[key].format(name=d["name"], dose=d["dose"], when=when)
         return None
 
+    def _checkin_line(self, uid: int, kind: str, lang: str, attempt: int = 1) -> str:
+        """A fixed check-in prompt. A snack on a class day also names that class, from SQL only."""
+        r = rp.R[rp.lang_or_default(lang)]
+        prompt = r.get(f"checkin_prompt_{kind}") or r["checkin_prompt_breakfast"]
+        if kind == "snack":
+            event = self._evening_appointment(uid)
+            if event is not None:
+                prompt = (
+                    f"{prompt} "
+                    + r["checkin_class_today"].format(
+                        when=rp.say_time(event["at"][11:16], lang), title=event["label"]
+                    )
+                )
+        if attempt > 1:
+            return r["checkin_again"].format(prompt=prompt)
+        return prompt
+
+    def _evening_appointment(self, uid: int) -> dict[str, Any] | None:
+        """Today's evening appointment/class (from the day view), if the family set one."""
+        try:
+            day = self.core.day(uid)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not read today for the snack line: %s", exc)
+            return None
+        now = datetime.fromisoformat(day["now"])
+        for item in day["items"]:
+            if (
+                item["kind"] == "appointment"
+                and item["at"][:10] == now.date().isoformat()
+                and int(item["at"][11:13]) >= 16
+            ):
+                return item
+        return None
+
+    def _answer_open_checkin(
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float
+    ) -> TurnResult | None:
+        """Record a spoken done / skipped answer for the open check-in, on a fixed template."""
+        try:
+            c = self.core.open_checkin(uid)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not read the open check-in: %s", exc)
+            return None
+        if not c or not c.get("heard"):
+            return None  # queued but never spoken: the words are not an answer to it
+        answer = answer_from_text(text)
+        if answer is None:
+            return None
+        try:
+            self.core.answer_checkin(uid, c["id"], answer)
+        except CoreError as exc:
+            log.warning("could not record the check-in answer: %s", exc)
+            return None
+        r = rp.R[rp.lang_or_default(lang)]
+        key = f"checkin_{answer}_{c['kind']}"
+        intent = "CHECKIN_DONE" if answer == "done" else "CHECKIN_SKIPPED"
+        return TurnResult(
+            r.get(key, r["checkin_done_breakfast"]), intent, "care", lang, trace=self._t(trace, t0)
+        )
+
     # ------------------------------------------------------------------ no-question mode
     def _act(self, uid: int, action_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         """Propose, then (no-question mode) confirm at once. core-api still validates everything: the LLM
@@ -405,6 +472,9 @@ class TurnEngine:
                     text = self._medicine_line(uid, d["ref_id"], lang, key="deliver_medicine_auto") or text
                     self._asked_dose[uid] = (d["ref_id"], self._mono())
                     screen, item, ask = "medicine", f"dose:{d['ref_id']}", False
+            elif d["kind"] == "checkin":
+                text = self._checkin_line(uid, d["label"], lang, d["attempt"])
+                screen, item, ask = "reply", f"checkin:{d['ref_id']}", False
             else:
                 when = rp.say_time(d["due_at"][11:16], lang)
                 key = "deliver_reminder_late" if d["late"] else "deliver_reminder"

@@ -59,6 +59,11 @@ def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
         )
     for item in meds.get("unconfirmed", []):
         log.info("medicine unconfirmed user=%s %s -> family notified", item["user_id"], item["name"])
+    checkins = http.post(f"{CORE}/internal/checkins/tick").json()
+    for item in checkins.get("asked", []):
+        log.info("check-in due, queued for delivery user=%s %s", item["user_id"], item["kind"])
+    for item in checkins.get("followed_up", []):
+        log.info("check-in follow-up, queued for delivery user=%s %s", item["user_id"], item["kind"])
     try:  # retire finished items, apply the late / backlog rules, tell the family about undelivered ones
         swept = http.post(f"{CORE}/internal/deliveries/sweep")
         swept.raise_for_status()

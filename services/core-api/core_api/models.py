@@ -186,6 +186,28 @@ class TopicDecline(Base):
     count: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class Checkin(Base):
+    """One family-switched-on meal / walk / BP check-in for one day.
+
+    Only a `daily_checkins` user gets rows. The elder's answer is self-reported: "done" or "skipped".
+    Nothing here is scored, summarised or turned into advice. A meal that waited longer than the ask
+    window is `missed` and is never asked; an asked one nobody answered goes `unanswered`.
+    """
+
+    __tablename__ = "checkins"
+    __table_args__ = (UniqueConstraint("user_id", "for_date", "kind", name="uq_checkin_per_day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # breakfast | lunch | snack | dinner (walk | bp later)
+    for_date: Mapped[date] = mapped_column(Date)
+    due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    # pending | asked | done | skipped | missed | unanswered
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    asked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    followups: Mapped[int] = mapped_column(Integer, default=0)  # at most one 30-minute follow-up
+
+
 class Medicine(Base):
     """Created and edited by the family only (dashboard). Name and dose are stored exactly as
     entered and are only ever spoken or shown verbatim - never paraphrased or translated."""
@@ -214,8 +236,8 @@ class Delivery(Base):
     __table_args__ = (UniqueConstraint("kind", "ref_id", "attempt", name="uq_delivery_once"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(10))  # reminder | medicine
-    ref_id: Mapped[int] = mapped_column(Integer)  # reminder id / medicine dose id
+    kind: Mapped[str] = mapped_column(String(10))  # reminder | medicine | checkin
+    ref_id: Mapped[int] = mapped_column(Integer)  # reminder id / medicine dose id / check-in id
     attempt: Mapped[int] = mapped_column(Integer, default=1)
     due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     # queued | speaking | spoken | acknowledged | shown_only | undelivered | superseded

@@ -259,6 +259,22 @@ class SnoozeIn(BaseModel):
     minutes: int = Field(default=15, ge=5, le=60)
 
 
+class CheckinOut(BaseModel):
+    id: int
+    user_id: int
+    kind: str  # breakfast | lunch | snack | dinner | walk | bp
+    due_at: datetime
+    status: str  # pending | asked | done | skipped | missed | unanswered
+    asked_at: datetime | None
+    answered_at: datetime | None
+    followups: int
+    heard: bool  # a voice session really spoke (or showed) the prompt for this check-in
+
+
+class CheckinAnswer(BaseModel):
+    answer: Literal["done", "skipped"]
+
+
 class DayItem(BaseModel):
     kind: Literal["reminder", "appointment", "medicine", "meal", "wake", "walk", "bp"]
     at: datetime

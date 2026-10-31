@@ -1,7 +1,7 @@
-"""T8: the delivery queue. A due reminder or medicine prompt is QUEUED here; a voice session CLAIMS it atomically,
-speaks it, and only after playback really finished is it marked "spoken". Nothing is silently dropped: items
-that are not spoken (too late, over the backlog cap, speech failed) stay listed for the elder screen and the
-dashboard with an honest status.
+"""T8: the delivery queue. A due reminder, medicine prompt or meal check-in is QUEUED here; a voice session
+CLAIMS it atomically, speaks it, and only after playback really finished is it marked "spoken". Nothing is
+silently dropped: items that are not spoken (too late, over the backlog cap, speech failed) stay listed for the
+elder screen and the dashboard with an honest status.
 
   queued -> speaking (claimed) -> spoken -> acknowledged
   queued -> shown_only    not spoken on purpose (medicine waited past its window; over the backlog cap)
@@ -38,13 +38,13 @@ LIVE = ("queued", "speaking", "spoken", "shown_only", "undelivered")  # not fini
 
 class DeliveryOut(BaseModel):
     id: int
-    kind: str  # reminder | medicine
+    kind: str  # reminder | medicine | checkin
     ref_id: int
     attempt: int
     due_at: datetime
     status: str
     late: bool
-    label: str  # the reminder task / the medicine name, verbatim from SQL
+    label: str  # the reminder task / the medicine name / the check-in meal, verbatim from SQL
     detail: str  # the medicine dose, verbatim from SQL ("" for reminders)
     spoken_at: datetime | None
     acked_at: datetime | None
@@ -72,6 +72,9 @@ def _user(db: Session, user_id: int) -> m.User:
 
 
 def _item(db: Session, d: m.Delivery) -> tuple[str, str]:
+    if d.kind == "checkin":
+        c = db.get(m.Checkin, d.ref_id)
+        return (c.kind if c else ""), ""
     if d.kind == "reminder":
         r = db.get(m.Reminder, d.ref_id)
         return (r.task if r else ""), ""
@@ -92,6 +95,9 @@ def _out(db: Session, d: m.Delivery, now: datetime) -> DeliveryOut:
 
 def _item_open(db: Session, d: m.Delivery, now: datetime) -> bool:
     """Is the thing this delivery is about still waiting for the elder?"""
+    if d.kind == "checkin":
+        c = db.get(m.Checkin, d.ref_id)
+        return c is not None and c.status == "asked"
     if d.kind == "reminder":
         r = db.get(m.Reminder, d.ref_id)
         return r is not None and r.status != "done"
