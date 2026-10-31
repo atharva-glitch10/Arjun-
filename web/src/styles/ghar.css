@@ -173,3 +173,24 @@ h1, h2, p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   button:active { transform: none; }
 }
+
+/* ---- Hands-free elder screen (2026-10-31): listening badge, thinking marker, volume slider ---------------- */
+.hf-badge { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex;
+  align-items: center; gap: 10px; padding: 10px 18px; border-radius: 999px; background: var(--ghar-surface);
+  color: var(--ghar-ink); font-size: 24px; font-weight: 700; box-shadow: 0 2px 0 var(--ghar-card-shadow); }
+.hf-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--ghar-leaf); animation: hf-pulse 1.6s ease-in-out infinite; }
+.thinking-marker { position: fixed; bottom: 110px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex;
+  align-items: center; gap: 14px; padding: 14px 24px; border-radius: 999px; background: var(--ghar-indigo);
+  color: #fff; font-size: 28px; font-weight: 700; }
+.thinking-marker .dots { display: inline-flex; gap: 6px; }
+.thinking-marker .dots i { width: 12px; height: 12px; border-radius: 50%; background: #fff; display: block;
+  animation: hf-bounce 1.2s ease-in-out infinite; }
+.thinking-marker .dots i:nth-child(2) { animation-delay: 0.15s; }
+.thinking-marker .dots i:nth-child(3) { animation-delay: 0.3s; }
+.volume { position: fixed; bottom: 16px; right: 16px; z-index: 20; display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-radius: 16px; background: var(--ghar-surface); font-size: 26px;
+  box-shadow: 0 2px 0 var(--ghar-card-shadow); }
+.volume input[type="range"] { width: 200px; height: 44px; accent-color: var(--ghar-indigo); }
+@keyframes hf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes hf-bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) { .hf-dot, .thinking-marker .dots i { animation: none; } }

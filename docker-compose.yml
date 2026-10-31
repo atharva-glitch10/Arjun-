@@ -31,6 +31,9 @@ services:
       CORE_API_KEY: ${CORE_API_KEY:-dev-change-me}
       EVON_BASE_URL: ${EVON_BASE_URL:-}
       EVON_MODEL: ${EVON_MODEL:-gnani/gnani-evon-v3.3-30B-A3B}
+      SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+      SARVAM_MODEL: ${SARVAM_MODEL:-sarvam-105b}
+      ARJUN_ASK_BEFORE_ACTING: ${ARJUN_ASK_BEFORE_ACTING:-0}
     depends_on: [core-api]
     ports: ["8001:8001"]
 

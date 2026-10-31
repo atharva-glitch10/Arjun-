@@ -22,6 +22,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from . import models as m
+from .activity import mark_seen
 from .db import get_db
 from .deps import get_now, require_key
 
@@ -327,5 +328,6 @@ def ack(user_id: int, delivery_id: int, body: AckIn | None = None, db: Session =
     _user(db, user_id)
     d = _mine(db, user_id, delivery_id)
     d.status, d.acked_at, d.outcome = "acknowledged", now, (body or AckIn()).outcome
+    mark_seen(db, user_id, now, "tap")  # a tap on the elder screen means she is up and about
     db.commit()
     return _out(db, d, now)

@@ -129,6 +129,20 @@ export interface Delivery {
   fail_count: number;
 }
 
+/** When the elder last spoke to Arjun or tapped her screen. Time only: no words are stored. */
+export interface Activity {
+  last_seen_at: string | null;
+  how: "voice" | "tap" | null;
+}
+
+export interface WellbeingToday {
+  severity: "normal" | "watch" | "urgent" | "emergency";
+  mood: string;
+  conversations: number;
+  last_summary: string;
+  last_at: string | null;
+}
+
 export interface LivekitToken {
   url: string;
   token: string;
@@ -177,6 +191,8 @@ export const api = {
   memoryBook: (id: number) => core<SharedStory[]>(`/users/${id}/memory-book`),
   caregiverRequests: (id: number) => core<Note[]>(`/users/${id}/caregiver-requests`),
   notifications: (id: number) => core<Note[]>(`/users/${id}/notifications`),
+  activity: (id: number) => core<Activity>(`/users/${id}/activity`),
+  wellbeingToday: (id: number) => core<WellbeingToday>(`/users/${id}/wellbeing/today`),
   medicines: (id: number) => core<Medicine[]>(`/users/${id}/medicines`),
   addMedicine: (id: number, body: MedicineInput) =>
     core<Medicine>(`/users/${id}/medicines`, post(body)),

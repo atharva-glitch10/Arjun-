@@ -7,13 +7,16 @@ reminder is waiting; if the elder starts talking during the closing line, the se
 
 import asyncio
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 log = logging.getLogger("arjun.idle")
 
-IDLE_AFTER_S = 60.0
+# Hands-free (default): 0 = never close; the elder device keeps one session open and just listens. Set
+# ARJUN_IDLE_CLOSE_S=60 to get the old behaviour back (saves recognition credits; then a tap opens a new session).
+IDLE_AFTER_S = float(os.environ.get("ARJUN_IDLE_CLOSE_S", "0"))
 
 
 class IdlePolicy:
@@ -27,7 +30,13 @@ class IdlePolicy:
     def idle_for(self) -> float:
         return self.clock() - self._last
 
+    @property
+    def enabled(self) -> bool:
+        return self.idle_after_s > 0
+
     def may_close(self, quiet: bool, busy: dict[str, Any] | None) -> bool:
+        if not self.enabled:  # hands-free: the session stays open
+            return False
         if busy is None:  # could not ask reasoning: do not guess
             return False
         blocked = busy.get("pending") or busy.get("safety_hold") or busy.get("queued", 0) > 0
@@ -55,6 +64,8 @@ class IdleCloser:
         """True once the session has been closed."""
         if self.closing:
             return True
+        if not self.policy.enabled:
+            return False
         if self.policy.idle_for() < self.policy.idle_after_s or not self.quiet():
             return False
         if not self.policy.may_close(True, await self.get_busy()):
@@ -69,6 +80,9 @@ class IdleCloser:
         return True
 
     async def run(self) -> None:
+        if not self.policy.enabled:
+            log.info("hands-free: the voice session never closes by itself (ARJUN_IDLE_CLOSE_S=0)")
+            return
         while not self.closing:
             try:
                 await self.tick()

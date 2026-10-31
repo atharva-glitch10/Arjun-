@@ -66,6 +66,13 @@ def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
             log.info("delivery sweep: %s", swept.json())
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("delivery sweep failed (the rest of the tick still runs): %s", exc)
+    try:  # conversations quiet for a few minutes -> one summary line each for the family dashboard
+        flushed = http.post(f"{REASONING}/conversations/flush-idle")
+        flushed.raise_for_status()
+        if flushed.json().get("sent"):
+            log.info("conversation summaries sent: %s", flushed.json()["sent"])
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("conversation flush failed (the rest of the tick still runs): %s", exc)
     for uid in BRIEFING_USER_IDS:
         if _briefed_today.get(uid) == today:
             continue

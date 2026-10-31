@@ -19,7 +19,7 @@ import {
 } from "../ghar/Screens";
 import type { UpcomingItem } from "../ghar/Screens";
 import { FAILURE_TEXT, shownFor } from "../voice/state";
-import { cardFor, shouldAutoStart } from "./cards";
+import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
 import {
   dateLine,
@@ -39,6 +39,16 @@ import {
 const HONORIFIC = "आजी";
 
 const hhmmOf = (iso: string): string => iso.slice(11, 16);
+
+// Hands-free is the default: the page connects by itself, keeps listening, and needs no button. `?handsfree=0`
+// brings back the tap-to-talk flow (for testing on a laptop without a dedicated elder device).
+const HANDS_FREE = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get("handsfree") !== "0";
+  } catch {
+    return true;
+  }
+})();
 
 const toHhmm = (value: unknown): string => (typeof value === "string" ? value.slice(0, 5) : "00:00");
 
@@ -87,9 +97,43 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
 
   const voice = useArjunVoice(userId);
   const deliveredCard = cardFor(open, voice.item);
-  const snapshot = { ...voice.snapshot, armed, hasCard: deliveredCard !== undefined };
-  const shown = shownFor(snapshot);
+  const snapshot = { ...voice.snapshot, armed: armed || HANDS_FREE, hasCard: deliveredCard !== undefined };
+  const [restedTurn, setRestedTurn] = useState(0);
+  const shown = restingScreen(shownFor(snapshot), voice.snapshot.turn, restedTurn, HANDS_FREE);
   const { phase } = voice.snapshot;
+
+  // Hands-free: open the voice session as the page opens and keep it open; reconnect by itself after a drop.
+  const attempts = useRef({ last: null as number | null, count: 0 });
+  useEffect(() => {
+    if (!HANDS_FREE) return;
+    if (phase === "live") {
+      attempts.current.count = 0;
+      return;
+    }
+    const tryNow = () => {
+      const a = attempts.current;
+      const since = a.last === null ? null : Date.now() - a.last;
+      if (shouldConnectHandsFree({ handsFree: true, phase, sinceLastMs: since, attempt: a.count })) {
+        a.last = Date.now();
+        if (phase === "failed") a.count += 1;
+        void voice.arm().then(() => voice.start());
+      }
+    };
+    tryNow();
+    const id = window.setInterval(tryNow, 1_000);
+    return () => window.clearInterval(id);
+  }, [phase, voice]);
+
+  // Hands-free: a reply screen goes back to the home screen by itself (no OK tap); a new reply shows again.
+  useEffect(() => {
+    if (!HANDS_FREE) return;
+    const s = shownFor(snapshot);
+    if (s !== "reply" && s !== "saved" && s !== "story") return;
+    const turn = voice.snapshot.turn;
+    const id = window.setTimeout(() => setRestedTurn(turn), REST_AFTER_MS[s]);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.snapshot.turn, voice.snapshot.screen, voice.snapshot.phase]);
 
   const loadDeliveries = useCallback(async () => {
     try {
@@ -275,12 +319,20 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
 
   const begin = (text?: string) => {
     setError("");
+    if (phase === "live") {  // hands-free: the session is already open, just say it
+      if (text) void voice.sendText(text);
+      return;
+    }
     queuedText.current = text ?? null;
     void voice.start();
   };
 
   const toHome = () => {
-    voice.stop();
+    if (HANDS_FREE) {
+      setRestedTurn(voice.snapshot.turn); // back to the home screen; the session keeps listening
+    } else {
+      voice.stop();
+    }
     queuedText.current = null;
     lastCard.current = null;
     setPending(null);
@@ -510,11 +562,42 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     }
   };
 
+  const live = phase === "live";
   return (
     <div
       className={`elder-shell${shown === "listen" || shown === "connecting" ? " listening" : evening && shown === "home" ? " night" : ""}`}
     >
+      {HANDS_FREE && live && shown === "home" && (
+        <div className="hf-badge" role="status">
+          <span className="hf-dot" aria-hidden /> मी ऐकतोय · कधीही बोला
+        </div>
+      )}
+      {live && voice.thinking && (
+        <div className="thinking-marker" role="status" aria-live="polite">
+          <span className="dots" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+          विचार करतोय…
+        </div>
+      )}
       {body()}
+      {HANDS_FREE && (
+        <label className="volume" title="आवाज">
+          <span aria-hidden>🔈</span>
+          <input
+            type="range"
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={voice.volume}
+            aria-label="अर्जुनचा आवाज"
+            onChange={(e) => voice.setVolume(Number(e.target.value))}
+          />
+          <span aria-hidden>🔊</span>
+        </label>
+      )}
     </div>
   );
 }

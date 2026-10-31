@@ -34,6 +34,21 @@ export interface ArjunVoice {
   /** A tapped answer ("हो", "नाही"): goes to the agent as text and takes the same path as speech. */
   sendText: (text: string) => Promise<void>;
   dismissSafety: () => void;
+  /** Arjun is working out the answer (reasoning / the LLM): show the "thinking" marker. */
+  thinking: boolean;
+  /** Arjun's voice volume, 0..1 (the slider on the elder screen). Kept on this device. */
+  volume: number;
+  setVolume: (v: number) => void;
+}
+
+const VOLUME_KEY = "arjun.volume";
+function savedVolume(): number {
+  try {
+    const v = Number.parseFloat(window.localStorage.getItem(VOLUME_KEY) ?? "");
+    return Number.isFinite(v) ? Math.min(1, Math.max(0.1, v)) : 1;
+  } catch {
+    return 1;
+  }
 }
 
 const isAgent = (p: Participant): p is RemoteParticipant => p.kind === ParticipantKind.AGENT;
@@ -50,6 +65,10 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [item, setItem] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [volume, setVolumeState] = useState(savedVolume);
+  const volumeRef = useRef(volume);
+  const audioEls = useRef(new Set<HTMLMediaElement>());
 
   const room = useRef<Room | null>(null);
   const stopping = useRef(false);
@@ -90,6 +109,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     setHeard("");
     setItem("");
     setAudioBlocked(false);
+    setThinking(false);
   }, []);
 
   const fail = useCallback(
@@ -112,6 +132,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
         return;
       }
       setAgentState(a.agentState);
+      setThinking(p.attributes["arjun.thinking"] === "1" || a.agentState === "thinking");
       if (a.screen) setScreen(a.screen);
       if (a.item) setItem(a.item);
       if (a.turn > turnRef.current) {
@@ -153,10 +174,17 @@ export function useArjunVoice(userId: number): ArjunVoice {
         if (track.kind === Track.Kind.Audio) {
           const el = track.attach();
           el.style.display = "none";
+          el.volume = volumeRef.current;
+          audioEls.current.add(el);
           document.body.appendChild(el);
         }
       });
-      r.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
+      r.on(RoomEvent.TrackUnsubscribed, (track) =>
+        track.detach().forEach((el) => {
+          audioEls.current.delete(el);
+          el.remove();
+        }),
+      );
       r.on(RoomEvent.AudioPlaybackStatusChanged, () => setAudioBlocked(!r.canPlaybackAudio));
       r.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => {
         if (isAgent(p)) applyAgent(p, t0);
@@ -296,6 +324,20 @@ export function useArjunVoice(userId: number): ArjunVoice {
 
   const dismissSafety = useCallback(() => setSafetyDismissedTurn(turnRef.current), []);
 
+  const setVolume = useCallback((v: number) => {
+    const next = Math.min(1, Math.max(0.1, v));
+    volumeRef.current = next;
+    setVolumeState(next);
+    audioEls.current.forEach((el) => {
+      el.volume = next;
+    });
+    try {
+      window.localStorage.setItem(VOLUME_KEY, String(next));
+    } catch {
+      // private mode: the volume is kept for this page load only
+    }
+  }, []);
+
   useEffect(() => teardown, [teardown]);
 
   const snapshot: VoiceSnapshot = {
@@ -309,5 +351,8 @@ export function useArjunVoice(userId: number): ArjunVoice {
     hasCard: false, // ... and "hasCard" (it comes from SQL)
     audioBlocked,
   };
-  return { snapshot, reply, heard, readyMs, item, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety };
+  return {
+    snapshot, reply, heard, readyMs, item, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
+    thinking, volume, setVolume,
+  };
 }

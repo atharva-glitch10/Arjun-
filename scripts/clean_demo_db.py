@@ -26,7 +26,8 @@ from sqlalchemy.orm import Session  # noqa: E402
 KEEP_USER = 1
 # children first, so foreign keys never block a delete
 USER_TABLES = [m.MedicineDose, m.Medicine, m.Contact, m.Reminder, m.Appointment, m.StoryMemory, m.PendingAction,
-               m.CaregiverRequest, m.Notification, m.DistressEvent, m.TopicDecline]
+               m.CaregiverRequest, m.Notification, m.DistressEvent, m.TopicDecline, m.Activity,
+               m.Wellbeing, m.FeedEvent]
 MODELS = {model.__tablename__: model for model in [*USER_TABLES, m.User]}
 SEED_CONTACTS = [("राहुल", "मुलगा", "00000 00001"), ("नेहा", "नात", "00000 00002")]  # made up, not real numbers
 

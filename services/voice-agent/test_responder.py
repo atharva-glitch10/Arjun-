@@ -116,6 +116,7 @@ def test_attributes_carry_screen_turn_and_the_spoken_text():
         "arjun.turn": "3",
         "arjun.reply": "ठीक आहे",
         "arjun.item": "",
+        "arjun.thinking": "0",  # a published reply always clears the thinking marker
     }
 
 
@@ -138,4 +139,6 @@ def test_publish_screen_sets_attributes_on_the_participant():
 
     p = P()
     _run(publish_screen(p, _reply(screen="saved"), 2))
-    assert p.got == {"arjun.screen": "saved", "arjun.turn": "2", "arjun.reply": "ठीक आहे", "arjun.item": ""}
+    assert p.got == {
+        "arjun.screen": "saved", "arjun.turn": "2", "arjun.reply": "ठीक आहे", "arjun.item": "", "arjun.thinking": "0",
+    }

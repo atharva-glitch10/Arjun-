@@ -31,11 +31,14 @@ function Get-Setting([string]$name) { if ($local.ContainsKey($name)) { $local[$n
 
 $services = [ordered]@{
     "core-api"    = @{ Dir = "services\core-api"; Cmd = "& '$py' -m uvicorn core_api.main:app --port 8000"
-                       Vars = "DATABASE_URL", "CORE_API_KEY", "ARJUN_TZ", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "ARJUN_AGENT_NAME" }
+                       Vars = "DATABASE_URL", "CORE_API_KEY", "ARJUN_TZ", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "ARJUN_AGENT_NAME",
+                       "CORE_RATE_LIMIT", "CORE_RATE_PER_S", "CORE_RATE_BURST", "UNDO_TTL_S", "FEED_RECHECK_S" }
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
                        "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
-                       "LLM_TIMEOUT_S", "LLM_MAX_TOKENS", "LLM_HISTORY_EXCHANGES" }
+                       "LLM_TIMEOUT_S", "LLM_MAX_TOKENS", "LLM_HISTORY_EXCHANGES",
+                       "SARVAM_API_KEY", "SARVAM_MODEL", "SARVAM_BASE_URL", "LLM_REASONING", "LLM_MAX_CONCURRENT", "LLM_PER_MINUTE",
+                       "ARJUN_ASK_BEFORE_ACTING", "UNDO_WINDOW_S", "TURN_RATE_PER_S", "TURN_RATE_BURST", "CONVERSATION_IDLE_S" }
     "scheduler"   = @{ Dir = "services\scheduler"; Cmd = "& '$py' scheduler.py"
                        # queues due reminders / medicines for the voice session. No OPENER_/BRIEFING_USER_IDS: those are not T8.
                        Vars = "CORE_API_URL", "CORE_API_KEY", "REASONING_URL", "ARJUN_TZ", "SCHEDULER_INTERVAL_SECONDS" }

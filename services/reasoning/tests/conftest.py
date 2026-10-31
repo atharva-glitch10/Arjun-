@@ -12,6 +12,10 @@ from sqlalchemy.orm import sessionmaker
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.pop("CORE_API_KEY", None)
 os.environ["ARJUN_TESTING"] = "1"  # the only way core-api runs without CORE_API_KEY
+# The older suites were written for the ask-first flow ("... ठेवू का? हो किंवा नाही"), which stays available
+# behind ARJUN_ASK_BEFORE_ACTING=1. The no-question default is tested with ask_first=False explicitly
+# (test_no_questions.py and the other new suites).
+os.environ.setdefault("ARJUN_ASK_BEFORE_ACTING", "1")
 
 # Integration tests run reasoning against the real core-api app (in-memory SQLite).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core-api"))
@@ -54,3 +58,9 @@ def uid(core_http) -> int:
 @pytest.fixture()
 def engine(core_http) -> TurnEngine:
     return TurnEngine(CoreClient(core_http), evon=None, clock=lambda: NOW)
+
+
+@pytest.fixture()
+def auto(core_http) -> TurnEngine:
+    """The production default: no yes/no questions, act at once, "नको" undoes."""
+    return TurnEngine(CoreClient(core_http), evon=None, clock=lambda: NOW, ask_first=False)

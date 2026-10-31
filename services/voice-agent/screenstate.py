@@ -15,13 +15,14 @@ SCREEN = "arjun.screen"  # reply | story | confirm | saved | safety
 TURN = "arjun.turn"  # increases with every spoken reply, so the app can tell a new reply from the same screen
 REPLY = "arjun.reply"  # the exact line being spoken, for the reply / story / safety screens
 ITEM = "arjun.item"  # reminder:<id> | dose:<id> for a delivered reminder / medicine prompt, else empty
+THINKING = "arjun.thinking"  # "1" while reasoning works out the answer: the elder screen shows "विचार करतोय…"
 MAX_REPLY_CHARS = 600
 
 
 def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
     # Safety wins over every other screen: whatever reasoning labelled it, a safety-mode reply is "safety".
     screen = "safety" if reply.mode == "safety" else reply.screen
-    return {SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS], ITEM: ""}
+    return {SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS], ITEM: "", THINKING: "0"}
 
 
 def delivery_attributes(item: dict, turn: int) -> dict[str, str]:  # type: ignore[type-arg]
@@ -44,3 +45,7 @@ async def publish_delivery(participant, item: dict, turn: int) -> None:  # type:
 
 async def publish_closed(participant, turn: int) -> None:  # type: ignore[no-untyped-def]
     await participant.set_attributes(closed_attributes(turn))
+
+
+async def publish_thinking(participant, on: bool) -> None:  # type: ignore[no-untyped-def]
+    await participant.set_attributes({THINKING: "1" if on else "0"})

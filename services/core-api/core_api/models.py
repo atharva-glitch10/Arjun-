@@ -14,10 +14,16 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
+from .deps import local_now
 
 
 def utcnow() -> datetime:
-    return datetime.now()  # naive user-local time by design (see README)
+    """Naive HOUSEHOLD-local time (ARJUN_TZ, default Asia/Kolkata), the same clock as `get_now`.
+
+    (Name kept for the existing column defaults.) It used to be the machine clock: in a UTC container a row
+    created "now" then looked 5 h 30 min old next to get_now(), so every proposed action expired at once
+    (found 2026-10-31 in a smoke run on a UTC machine; on the IST dev laptop the two clocks agreed)."""
+    return local_now()
 
 
 class User(Base):
@@ -106,6 +112,53 @@ class DistressEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     caregiver_alerted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Activity(Base):
+    """Last time the elder spoke to Arjun or tapped the elder screen. Time only: no words are stored."""
+
+    __tablename__ = "activity"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    how: Mapped[str] = mapped_column(String(10), default="voice")  # voice | tap
+
+
+class Wellbeing(Base):
+    """How she is doing, for the family: a seriousness level, a mood word and a short summary.
+
+    kind="moment": one serious moment, written at once (help asked, lonely, distress, emergency).
+    kind="conversation": one line per finished conversation. NO transcript is stored: the summary is a short
+    paraphrase (by the LLM when configured, otherwise built from the intents by rules).
+    """
+
+    __tablename__ = "wellbeing"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(15), default="conversation")  # moment | conversation
+    severity: Mapped[str] = mapped_column(String(10), default="normal")  # normal | watch | urgent | emergency
+    mood: Mapped[str] = mapped_column(String(20), default="not_assessed")
+    summary: Mapped[str] = mapped_column(String(400), default="")
+    turns: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(10), default="rules")  # rules | llm
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class FeedEvent(Base):
+    """One line of the family's live feed (WebSocket push + REST polling share this table and its ids).
+
+    Written automatically for every new Notification and Wellbeing row (see feed.py), so no endpoint can forget.
+    """
+
+    __tablename__ = "feed_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    severity: Mapped[str] = mapped_column(String(10), default="info")  # info | normal | watch | urgent | emergency
+    title: Mapped[str] = mapped_column(String(120), default="")
+    body: Mapped[str] = mapped_column(String(400), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

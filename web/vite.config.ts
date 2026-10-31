@@ -12,6 +12,7 @@ export default defineConfig({
       "/core": {
         target: coreTarget,
         changeOrigin: true,
+        ws: true, // the family feed WebSocket (/core/ws/...): the key header is added to the upgrade too
         rewrite: (p) => p.replace(/^\/core/, ""),
         headers: apiKey ? { "X-API-Key": apiKey } : {},
       },

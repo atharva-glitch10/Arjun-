@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Delivery } from "../api";
-import { AUTO_START_COOLDOWN_MS, cardFor, shouldAutoStart } from "./cards";
+import { AUTO_START_COOLDOWN_MS, cardFor, reconnectDelay, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 
 const d = (o: Partial<Delivery>): Delivery => ({
   id: 1,
@@ -82,5 +82,31 @@ describe("when the page starts a voice session by itself", () => {
   it("waits out a cooldown after the last automatic start, so a stuck item cannot cause a loop", () => {
     expect(shouldAutoStart({ ...ok, sinceLastMs: AUTO_START_COOLDOWN_MS - 1 })).toBe(false);
     expect(shouldAutoStart({ ...ok, sinceLastMs: AUTO_START_COOLDOWN_MS })).toBe(true);
+  });
+});
+
+
+describe("hands-free", () => {
+  it("connects at once when the page opens, and not when it is turned off", () => {
+    expect(shouldConnectHandsFree({ handsFree: true, phase: "idle", sinceLastMs: null, attempt: 0 })).toBe(true);
+    expect(shouldConnectHandsFree({ handsFree: false, phase: "idle", sinceLastMs: null, attempt: 0 })).toBe(false);
+    expect(shouldConnectHandsFree({ handsFree: true, phase: "live", sinceLastMs: null, attempt: 0 })).toBe(false);
+  });
+
+  it("reconnects after a drop with a growing wait, never a tight loop", () => {
+    expect(reconnectDelay(0)).toBe(0);
+    expect(reconnectDelay(1)).toBe(2_000);
+    expect(reconnectDelay(99)).toBe(30_000);
+    expect(shouldConnectHandsFree({ handsFree: true, phase: "failed", sinceLastMs: 1_000, attempt: 1 })).toBe(false);
+    expect(shouldConnectHandsFree({ handsFree: true, phase: "failed", sinceLastMs: 2_500, attempt: 1 })).toBe(true);
+  });
+
+  it("shows home while listening and after a reply was read, but never hides safety or a card", () => {
+    expect(restingScreen("listen", 0, 0, true)).toBe("home");
+    expect(restingScreen("reply", 3, 2, true)).toBe("reply");
+    expect(restingScreen("reply", 3, 3, true)).toBe("home");
+    expect(restingScreen("safety", 3, 3, true)).toBe("safety");
+    expect(restingScreen("card", 3, 3, true)).toBe("card");
+    expect(restingScreen("listen", 0, 0, false)).toBe("listen");
   });
 });
