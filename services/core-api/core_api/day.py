@@ -15,6 +15,7 @@ from . import schemas as s
 from .db import get_db
 from .deps import get_now, require_key
 from .medicines import due_at_for, ensure_doses
+from .recurrence import occurrence_on
 
 router = APIRouter(dependencies=[Depends(require_key)])
 
@@ -61,16 +62,15 @@ def day_view(
             s.DayItem(kind="reminder", at=r.due_at, label=r.task, status=r.status, ref_id=r.id)
         )
     for a in db.scalars(
-        select(m.Appointment).where(
-            m.Appointment.user_id == user_id,
-            m.Appointment.starts_at >= start,
-            m.Appointment.starts_at < end,
-        )
+        select(m.Appointment).where(m.Appointment.user_id == user_id)
     ):
+        at = occurrence_on(a, day)
+        if at is None:
+            continue
         items.append(
             s.DayItem(
                 kind="appointment",
-                at=a.starts_at,
+                at=at,
                 label=a.title,
                 detail=a.location,
                 status="scheduled",

@@ -35,6 +35,10 @@ export interface Appointment {
   title: string;
   starts_at: string;
   location: string;
+  /** 0=Monday..6=Sunday. null = a one-off appointment. */
+  weekdays: number[] | null;
+  start_time: string | null;
+  end_time: string | null;
 }
 
 export interface Contact {
@@ -191,10 +195,16 @@ export const api = {
   deleteReminder: (id: number, rid: number) =>
     core<void>(`/users/${id}/reminders/${rid}`, { method: "DELETE" }),
   appointments: (id: number) => core<Appointment[]>(`/users/${id}/appointments`),
-  addAppointment: (id: number, title: string, startsAt: string, location: string) =>
+  addAppointment: (
+    id: number,
+    title: string,
+    startsAt: string,
+    location: string,
+    weekly?: { weekdays: number[]; start_time: string; end_time?: string },
+  ) =>
     core<Appointment>(
       `/users/${id}/appointments`,
-      post({ title, starts_at: startsAt, location }),
+      post({ title, starts_at: startsAt, location, ...(weekly ?? {}) }),
     ),
   contacts: (id: number) => core<Contact[]>(`/users/${id}/contacts`),
   addContact: (id: number, name: string, relation: string, phone: string) =>

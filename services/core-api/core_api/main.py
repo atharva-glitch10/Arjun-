@@ -21,6 +21,7 @@ from .livekit_token import router as livekit_router
 from .medicines import mark_snoozed, mark_taken, open_dose
 from .medicines import router as medicines_router
 from .ratelimit import RateLimitMiddleware
+from .recurrence import next_occurrence
 from .wellbeing import router as wellbeing_router
 
 
@@ -184,15 +185,19 @@ def list_appointments(user_id: int, db: Session = Depends(get_db)) -> list[m.App
 @router.get("/users/{user_id}/appointments/next", response_model=s.AppointmentOut | None)
 def next_appointment(
     user_id: int, db: Session = Depends(get_db), now: datetime = Depends(get_now)
-) -> m.Appointment | None:
+) -> s.AppointmentOut | None:
+    """The next occurrence, also for a weekly appointment. `starts_at` is that occurrence, not the raw first day."""
     _user(db, user_id)
-    q = (
-        select(m.Appointment)
-        .where(m.Appointment.user_id == user_id, m.Appointment.starts_at >= now)
-        .order_by(m.Appointment.starts_at)
-        .limit(1)
-    )
-    return db.scalars(q).first()
+    best: tuple[datetime, m.Appointment] | None = None
+    for appt in db.scalars(select(m.Appointment).where(m.Appointment.user_id == user_id)):
+        when = next_occurrence(appt, now)
+        if when is not None and (best is None or when < best[0]):
+            best = (when, appt)
+    if best is None:
+        return None
+    out = s.AppointmentOut.model_validate(best[1])
+    out.starts_at = best[0]
+    return out
 
 
 # ---- stories (private by default) -------------------------------------------------------------

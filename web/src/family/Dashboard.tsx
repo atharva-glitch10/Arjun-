@@ -31,6 +31,7 @@ interface Data {
   user: User;
   reminders: Reminder[];
   appointments: Appointment[];
+  nextAppt: Appointment | null;
   contacts: Contact[];
   book: SharedStory[];
   requests: Note[];
@@ -124,11 +125,12 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries, activity, today] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
         api.appointments(userId),
+        api.nextAppointment(userId).catch((): Appointment | null => null), // older core-api
         api.contacts(userId),
         api.memoryBook(userId),
         api.caregiverRequests(userId),
@@ -141,7 +143,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           (): WellbeingToday => ({ severity: "normal", mood: "not_assessed", conversations: 0, last_summary: "", last_at: null }),
         ),
       ]);
-      setData({ user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries, activity, today });
+      setData({ user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -294,7 +296,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
   const todayReminders = data.reminders.filter((r) => sameDay(parse(r.due_at), now));
   const doneToday = todayReminders.filter((r) => r.status === "done").length;
-  const nextAppt = data.appointments.find((a) => parse(a.starts_at) >= now);
+  const nextAppt = data.nextAppt;
   const days = Array.from({ length: 7 }, (_, i) => new Date(now.getTime() - (6 - i) * DAY));
   const requestsToday = data.requests.filter((n) => sameDay(parse(n.created_at), now)).length;
   const name = user.name.replace(/\s*\(synthetic\)\s*$/i, "");
@@ -667,9 +669,13 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             <ul className="fam-list">
               {data.appointments.map((a) => (
                 <li key={a.id}>
-                  <span style={{ fontWeight: 800 }}>{a.starts_at.replace("T", " ").slice(0, 16)}</span>
+                  <span style={{ fontWeight: 800 }}>
+                    {a.weekdays === null
+                      ? a.starts_at.replace("T", " ").slice(0, 16)
+                      : `Every ${a.weekdays.map((d) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d]).join(", ")} · ${a.start_time}${a.end_time ? `-${a.end_time}` : ""}`}
+                  </span>
                   <span>
-                    {a.title} {a.location && `(${a.location})`}
+                    {a.title} {a.location && a.location !== a.title && `(${a.location})`}
                   </span>
                 </li>
               ))}

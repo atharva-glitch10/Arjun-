@@ -100,6 +100,25 @@ class AppointmentIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     starts_at: datetime
     location: str = ""
+    # Optional weekly rule: weekdays 0=Monday..6=Sunday. `starts_at` is then the first day it applies.
+    weekdays: list[int] | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+
+    _v = field_validator("start_time", "end_time")(_check_hhmm)
+
+    @model_validator(mode="after")
+    def _weekly_rule(self) -> "AppointmentIn":
+        if self.weekdays is None:
+            return self
+        if not self.weekdays or any(d < 0 or d > 6 for d in self.weekdays):
+            raise ValueError("weekdays must be a non-empty list of 0..6")
+        if not self.start_time:
+            raise ValueError("start_time is required for a weekly appointment")
+        if self.end_time and self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        self.weekdays = sorted(set(self.weekdays))
+        return self
 
 
 class AppointmentOut(AppointmentIn):
