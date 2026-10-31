@@ -21,11 +21,13 @@ from . import config
 from . import replies as rp
 from .clock import local_now
 from .core_client import CoreClient, CoreError
-from .distress import is_distress, is_emergency
-from .evon import EvonClient, sanitize_companion
+from .distress import is_distress, is_emergency, is_lonely
+from .evon import EvonClient, sanitize_companion, split_voice_tags
 from .parser import (
     MED_TAKEN_WORDS,
+    NO,
     SNOOZE_WORDS,
+    STOP,
     Draft,
     Parsed,
     Profile,
@@ -33,7 +35,7 @@ from .parser import (
     has_med_word,
     parse,
 )
-from .textutil import collapse_repeats, detect_language, has_any, normalize
+from .textutil import collapse_repeats, detect_language, has_any, normalize, tokens
 
 log = logging.getLogger("reasoning.turn")
 
@@ -49,6 +51,12 @@ _LLM_INTENTS = frozenset(
 _ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY"})
 _SAFETY_HOLD_S = 120.0  # no reminder / medicine prompt is spoken this soon after a safety reply
 _HISTORY_IDLE = timedelta(minutes=30)  # a longer silence starts a fresh conversation
+_CONVO_WINDOW_S = 300.0  # a companion chat is "active" this long after its last companion turn
+_SHORT_TURN_WORDS = 4  # a bare "झालं" / "झाला ना" is this short; a story sentence is longer
+_HISTORY_CARE_CHARS = 140  # a care turn goes into the LLM history as short text only
+# Bare answers that are not "stop talking": in a chat they are part of the chat. "नको" / "nako" stays a stop.
+_SOFT_ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO"})
+_STOP_NO = ("nako", "नको", "mat", "नही")
 
 _AI_QUESTIONS = (
     "are you human", "are you a robot", "are you real", "are you a person", "tu manus aahes ka",
@@ -71,6 +79,9 @@ class TurnResult:
     # Which Ghar screen the elder app shows: reply | story | confirm | saved | safety. Decided here, where it is
     # tested; the app only mirrors it. "safety" wins over everything.
     screen: str = "reply"
+    # What the voice says, with Timbre v3.0 voice tags the LLM chose ("<laugh> ..."). Empty = say `reply`.
+    # The screen always shows `reply` (no tags). The voice agent strips tags for TTS models without them.
+    speech: str = ""
 
 
 class TurnEngine:
@@ -82,8 +93,13 @@ class TurnEngine:
         llm_timeout_s: float = config.LLM_TIMEOUT_S,
         history_exchanges: int = config.LLM_HISTORY_EXCHANGES,
         mono: Callable[[], float] = time.monotonic,
+        ask_first: bool = config.ASK_BEFORE_ACTING,
     ) -> None:
         self.core = core
+        # False (default): act at once, read back in one line, "नको" undoes it. True: the old yes/no question.
+        self.ask_first = ask_first
+        self._last_done: dict[int, tuple[dict[str, Any], float]] = {}  # user -> (confirmed action, mono time)
+        self._asked_dose: dict[int, tuple[int, float]] = {}  # user -> (dose id just announced, mono time)
         self.evon = evon  # the hosted LLM (name kept from the Evon days); None = rules only
         self.clock = clock
         self._llm_timeout_s = llm_timeout_s
@@ -93,6 +109,7 @@ class TurnEngine:
         self._last_safety: dict[int, float] = {}  # user -> monotonic time of the last safety reply (T8)
         self._drafts: dict[int, Draft] = {}  # in-memory slot-filling state (single instance)
         self._chat_counter: dict[int, int] = {}
+        self._convo_at: dict[int, float] = {}  # user -> monotonic time of the last companion turn
         # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
         self._history: dict[int, list[tuple[datetime, str, str]]] = {}
 
@@ -143,25 +160,113 @@ class TurnEngine:
             log.error("core-api unavailable for pending lookup: %s", exc)
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
         draft = self._drafts.get(user_id)
+        recent = self._recent_done(user_id)
+        answerable = pending["action_type"] if pending else (recent["action_type"] if recent else None)
+        if answerable is None and self._recent_dose(user_id) is not None:
+            answerable = "MEDICINE_TAKEN"  # "हो" / "घेतली" right after a medicine prompt
+        conversing = pending is None and draft is None and self._conversing(user_id)
         parsed, source = self._intent(
-            text, profile, now, lang, pending is not None, draft, pending["action_type"] if pending else None
+            text, profile, now, lang, answerable is not None, draft, answerable, conversing=conversing
         )
+        if pending is None and draft is None:
+            parsed = self._reshape(user_id, text, parsed, conversing)
         trace["intent_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         if parsed.intent == "DISTRESS":
             return self._distress(user_id, lang, trace, t0)
         if pending is not None and not self._answers_pending(parsed.intent, pending):
             return self._repeat_pending(user_id, pending, lang, now, trace, t0)
+        # 3b. loneliness: only when nothing else was asked for (a care command or a pending question wins)
+        if pending is None and draft is None and parsed.intent in ("CHAT", "UNKNOWN") and is_lonely(text):
+            return self._lonely(user_id, lang, trace, t0)
 
         # 4. dispatch
         try:
             result = self._dispatch(user_id, text, parsed, pending, draft, profile, now, lang)
         except CoreError as exc:
             log.warning("core error: %s", exc)
+            # a half-built reminder must not swallow her next sentences (seen in the 2026-10-31 smoke run)
+            self._drafts.pop(user_id, None)
             result = TurnResult(r["error"], parsed.intent, "care", lang)
-        result.source = source
+        if result.source != "llm":  # a companion reply the LLM wrote already says so
+            result.source = source
         result.trace = self._t({**trace, "intent": parsed.intent}, t0)
+        if result.intent == "CHAT" and result.mode == "companion":
+            self._convo_at[user_id] = self._mono()
+        if result.mode != "safety":
+            self._remember(user_id, now, text, result)
         log.info(json.dumps({"user": user_id, "intent": parsed.intent, **result.trace}))
         return result
+
+    # ------------------------------------------------------------------ conversation mode
+    def _conversing(self, uid: int) -> bool:
+        """A companion chat is going: its last companion turn was under five minutes ago."""
+        at = self._convo_at.get(uid)
+        return at is not None and self._mono() - at < _CONVO_WINDOW_S
+
+    def _reshape(self, uid: int, text: str, p: Parsed, conversing: bool) -> Parsed:
+        """Keep a story a story. Only ever turns a guess into CHAT; safety and explicit care commands are untouched.
+
+        - "झालं" / "झाला ना" inside a story is not "mark my reminder done": COMPLETE_REMINDER needs an open
+          reminder today whose words she actually said (a bare 1-4 word "झालं" outside a chat still closes the
+          one open reminder, as before).
+        - In a chat, a bare yes / no that answers nothing (no pending question, no undo window, no medicine
+          prompt), a greeting and any short or odd turn are part of the chat. "नको" still stops the chat.
+        """
+        norm = normalize(text)
+        if p.intent == "COMPLETE_REMINDER":
+            if has_any(norm, MED_TAKEN_WORDS) and self._dose_due(uid):
+                return p  # "घेतली" while a family-set dose is due is the medicine
+            if self._names_an_open_reminder(uid, norm):
+                return p
+            bare = len(tokens(norm)) <= _SHORT_TURN_WORDS
+            if bare and not conversing and self._single_open_reminder(uid):
+                return p  # the old behaviour for a lone "झालं"
+            return Parsed("CHAT", 0.5, p.language, p.draft)
+        if not conversing:
+            return p
+        if p.intent in _SOFT_ANSWERS and not has_any(norm, _STOP_NO):
+            if self._recent_done(uid) is None and self._recent_dose(uid) is None:
+                return Parsed("CHAT", 0.5, p.language, p.draft)
+        if p.intent in ("GREETING", "UNKNOWN"):
+            return Parsed("CHAT", 0.5, p.language, p.draft)
+        return p
+
+    def _open_reminders(self, uid: int) -> list[dict[str, Any]]:
+        try:
+            return [x for x in self.core.today(uid) if x["status"] != "done"]
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not read today's reminders: %s", exc)
+            return []
+
+    def _names_an_open_reminder(self, uid: int, norm: str) -> bool:
+        said = {w for w in norm.split(" ") if len(w) > 2 and w not in STOP}
+        return any(
+            said & {w for w in normalize(x["task"]).split(" ") if len(w) > 2 and w not in STOP}
+            for x in self._open_reminders(uid)
+        )
+
+    def _single_open_reminder(self, uid: int) -> bool:
+        return len(self._open_reminders(uid)) == 1
+
+    def _dose_due(self, uid: int) -> bool:
+        try:
+            return bool(self.core.due_medicines(uid)["current"])
+        except (CoreError, httpx.HTTPError):
+            return False
+
+    def _remember(self, uid: int, now: datetime, text: str, res: TurnResult) -> None:
+        """The LLM's memory of THIS conversation: companion turns in full, care turns as short text. In memory
+        only, never stored. Medicine turns are left out (their wording comes only from SQL templates)."""
+        if res.intent in ("MED_TAKEN", "MED_SNOOZE", "MEDICAL_QUESTION", "PENDING_REPEAT", "EMERGENCY", "DISTRESS"):
+            return
+        if res.intent == "CHAT" and res.mode == "companion":
+            return  # _chat_reply already stored the exchange
+        turns = self._recent_history(uid, now)
+        turns += [
+            (now, "user", text.strip()[:_HISTORY_CARE_CHARS]),
+            (now, "assistant", res.reply.strip()[:_HISTORY_CARE_CHARS]),
+        ]
+        self._history[uid] = turns[-self._history_cap:]
 
     @staticmethod
     def _answers_pending(intent: str, pending: dict[str, Any]) -> bool:
@@ -203,7 +308,9 @@ class TurnEngine:
         )
 
     # ------------------------------------------------------------------ T8: deliveries
-    def _medicine_line(self, uid: int, dose_id: int | None, lang: str) -> str | None:
+    def _medicine_line(
+        self, uid: int, dose_id: int | None, lang: str, key: str = "deliver_medicine"
+    ) -> str | None:
         """The fixed medicine wording: name, dose and time exactly as the family entered them (from SQL)."""
         if dose_id is None:
             return None
@@ -211,8 +318,45 @@ class TurnEngine:
         for d in self.core.due_medicines(uid)["current"]:
             if d["id"] == dose_id:
                 when = rp.say_time(d["due_at"][11:16], lang)
-                return r["deliver_medicine"].format(name=d["name"], dose=d["dose"], when=when)
+                return r[key].format(name=d["name"], dose=d["dose"], when=when)
         return None
+
+    # ------------------------------------------------------------------ no-question mode
+    def _act(self, uid: int, action_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Propose, then (no-question mode) confirm at once. core-api still validates everything: the LLM
+        never writes. Returns the confirmed action, or None when the old ask-first mode wants a yes."""
+        a = self.core.propose(uid, action_type, payload)
+        if self.ask_first:
+            return None
+        try:
+            done = self.core.confirm(uid, a["id"])
+        except (CoreError, httpx.HTTPError):
+            try:  # never leave a half-done proposal behind: no question is waiting for it in this mode
+                self.core.reject(uid, a["id"])
+            except (CoreError, httpx.HTTPError):
+                pass
+            raise
+        self._last_done[uid] = (done, self._mono())
+        return done
+
+    def _recent_done(self, uid: int) -> dict[str, Any] | None:
+        hit = self._last_done.get(uid)
+        if hit is None or self._mono() - hit[1] > config.UNDO_WINDOW_S:
+            return None
+        return hit[0]
+
+    def _recent_dose(self, uid: int) -> int | None:
+        hit = self._asked_dose.get(uid)
+        if hit is None or self._mono() - hit[1] > 600:  # 10 min to say "घेतली"
+            return None
+        return hit[0]
+
+    def note_activity(self, uid: int) -> None:
+        """Tell core-api the elder just spoke (time only). Runs after the reply was sent; never raises."""
+        try:
+            self.core.mark_seen(uid, "voice")
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not record activity for user %s: %s", uid, exc)
 
     def busy(self, uid: int) -> dict[str, Any]:
         """What stops a delivery or an idle close right now: a pending yes/no, a recent safety reply, a queue."""
@@ -247,10 +391,15 @@ class TurnEngine:
                 text = self._medicine_line(uid, d["ref_id"], lang)
                 if text is None:
                     raise CoreError(409, "dose is not open")
-                self.core.propose(  # one spoken yes confirms it
-                    uid, "MEDICINE_TAKEN", {"dose_id": d["ref_id"], "asked": "delivery"}
-                )
-                screen, item, ask = "medicine", f"dose:{d['ref_id']}", True
+                if self.ask_first:
+                    self.core.propose(  # one spoken yes confirms it
+                        uid, "MEDICINE_TAKEN", {"dose_id": d["ref_id"], "asked": "delivery"}
+                    )
+                    screen, item, ask = "medicine", f"dose:{d['ref_id']}", True
+                else:  # announced only; "घेतली" / "हो" in the next minutes records it, "नाही" too
+                    text = self._medicine_line(uid, d["ref_id"], lang, key="deliver_medicine_auto") or text
+                    self._asked_dose[uid] = (d["ref_id"], self._mono())
+                    screen, item, ask = "medicine", f"dose:{d['ref_id']}", False
             else:
                 when = rp.say_time(d["due_at"][11:16], lang)
                 key = "deliver_reminder_late" if d["late"] else "deliver_reminder"
@@ -290,6 +439,7 @@ class TurnEngine:
         has_pending: bool,
         draft: Draft | None,
         pending_action: str | None = None,
+        conversing: bool = False,
     ) -> tuple[Parsed, str]:
         rules = parse(text, profile, now, lang, has_pending, pending_action)
         if pending_action == "MEDICINE_TAKEN":  # the open question is "did you take it?"
@@ -305,6 +455,8 @@ class TurnEngine:
         if draft is not None and rules.intent in ("UNKNOWN", "CHAT", "CREATE_REMINDER"):
             rules.intent = "CREATE_REMINDER"
             return rules, "rules"
+        if conversing and rules.intent == "UNKNOWN":
+            return rules, "rules"  # mid-chat an odd turn is chat (_reshape); the intent extractor is not asked
         # The LLM is asked ONLY about turns the rules cannot read. Care commands, times, medicines,
         # confirmations and safety were decided above/before and never wait for it. Nor does it hear
         # anything while a yes/no is pending: the only valid turns then are an answer or a correction.
@@ -368,6 +520,36 @@ class TurnEngine:
                 screen="confirm" if wait else ("story" if mode == "companion" else "reply"),
             )
 
+        if not self.ask_first and pending is None and draft is None:
+            if intent == "CONFIRM_NO":
+                recent = self._recent_done(uid)
+                if recent is not None:  # "नको / चुकलं" right after Arjun did something: put it back
+                    self._last_done.pop(uid, None)
+                    try:
+                        self.core.undo(uid, recent["id"])
+                    except CoreError as exc:
+                        log.warning("undo failed: %s", exc)
+                        return out(r["error"])
+                    if recent["action_type"] == "REQUEST_CAREGIVER":
+                        return out(r["undone_help"])
+                    return out(r["undone_retry"] if p.topic == "correction" else r["undone"])
+                dose = self._recent_dose(uid)
+                if dose is not None:  # "नाही" to a medicine prompt: not taken (self-reported), family told
+                    self._asked_dose.pop(uid, None)
+                    try:
+                        a = self.core.propose(uid, "MEDICINE_TAKEN", {"dose_id": dose, "asked": "delivery"})
+                        self.core.reject(uid, a["id"], answered_no=True)
+                    except CoreError as exc:
+                        log.warning("not-taken record failed: %s", exc)
+                    return out(r["med_not_taken_ack"])
+            if intent == "CONFIRM_YES":
+                dose = self._recent_dose(uid)
+                if dose is not None:
+                    self._asked_dose.pop(uid, None)
+                    return self._medicine_action(uid, text, "MED_TAKEN", lang, out, dose_id=dose)
+                if self._recent_done(uid) is not None:
+                    return out(r["ok_ack"])
+
         # "nako" with nothing to refuse is a topic decline, not a cancellation
         if intent == "CONFIRM_NO" and pending is None and draft is None:
             intent = "DECLINE_TOPIC"
@@ -412,6 +594,7 @@ class TurnEngine:
             if pending is not None:
                 self.core.reject(uid, pending["id"])
             self.core.decline(uid)  # ends proactive openers for the day; no re-ask
+            self._convo_at.pop(uid, None)
             return out(r["decline"], "companion")
 
         # Any non-reminder intent abandons an open reminder draft and stale confirmation.
@@ -467,8 +650,9 @@ class TurnEngine:
             return out(r["ask_contact"].format(names=names))
 
         if intent == "REQUEST_CAREGIVER":
-            self.core.propose(uid, "REQUEST_CAREGIVER", {"message": "Please call me."})
-            return out(r["confirm_caregiver"], wait=True)
+            if self._act(uid, "REQUEST_CAREGIVER", {"message": "Please call me."}) is None:
+                return out(r["confirm_caregiver"], wait=True)
+            return out(r["auto_caregiver"])
 
         # A bare "ghetli" while a medicine is due is the medicine, not a reminder.
         if intent == "COMPLETE_REMINDER" and has_any(normalize(text), MED_TAKEN_WORDS):
@@ -494,8 +678,9 @@ class TurnEngine:
             story = self.core.latest_story(uid)
             if not story:
                 return out(r["no_story"], "companion")
-            self.core.propose(uid, "SHARE_STORY", {"story_id": story["id"]})
-            return out(r["confirm_share"], "companion", wait=True)
+            if self._act(uid, "SHARE_STORY", {"story_id": story["id"]}) is None:
+                return out(r["confirm_share"], "companion", wait=True)
+            return out(r["auto_share"], "companion")
 
         if intent == "FORGET_MEMORY":
             if pending is not None and pending["action_type"] == "SAVE_STORY":
@@ -513,9 +698,17 @@ class TurnEngine:
             words = text.split()
             real_story = len(words) >= config.LONG_STORY_WORDS and len({normalize(w) for w in words}) / len(words) >= 0.4
             if real_story and pending is None and draft is None:
-                self.core.propose(uid, "SAVE_STORY", {"summary": text.strip()[:2000]})
-                return out(r["ask_save_story"], "companion", wait=True)
-            return out(self._chat_reply(uid, text, lang, now), "companion")
+                if self.ask_first:
+                    self.core.propose(uid, "SAVE_STORY", {"summary": text.strip()[:2000]})
+                    return out(r["ask_save_story"], "companion", wait=True)
+                # No question: kept privately (only she can share it: "हे घरच्यांना सांग"); the chat goes on.
+                self._act(uid, "SAVE_STORY", {"summary": text.strip()[:2000]})
+            reply, speech, from_llm = self._chat_reply(uid, text, lang, now)
+            res = out(reply, "companion")
+            res.speech = speech
+            if from_llm:
+                res.source = "llm"
+            return res
 
         return out(r["unknown"])
 
@@ -555,8 +748,18 @@ class TurnEngine:
             return out(r["ask_time"], wait=True)
 
         assert d.task and d.date and d.time
+        recent = self._recent_done(uid)
+        if (
+            not self.ask_first and recent is not None and recent["action_type"] == "CREATE_REMINDER"
+            and has_any(normalize(text), NO)
+        ):  # "नाही, अकरा वाजता ठेव": the new one replaces the one just saved
+            self._last_done.pop(uid, None)
+            try:
+                self.core.undo(uid, recent["id"])
+            except CoreError as exc:
+                log.warning("undo before correction failed: %s", exc)
         try:
-            self.core.propose(
+            done = self._act(
                 uid,
                 "CREATE_REMINDER",
                 {"task": d.task, "date": d.date, "time": d.time, "time_ambiguous": False},
@@ -568,7 +771,11 @@ class TurnEngine:
             raise
         self._drafts.pop(uid, None)
         when = f"{rp.say_date(d.date, now.date(), lang)} {rp.say_time(d.time, lang)}"
-        return out(r["confirm_reminder"].format(task=d.task, when=when), wait=True)
+        if done is None:
+            return out(r["confirm_reminder"].format(task=d.task, when=when), wait=True)
+        res = out(r["auto_reminder"].format(task=d.task, when=when))
+        res.screen = "saved"
+        return res
 
     def _complete(
         self, uid: int, text: str, lang: str, out: Callable[..., TurnResult]
@@ -586,8 +793,11 @@ class TurnEngine:
         else:
             items = ", ".join(x["task"] for x in (matches or open_rows))
             return out(r["which_reminder"].format(items=items))
-        self.core.propose(uid, "COMPLETE_REMINDER", {"reminder_id": target["id"]})
-        return out(r["confirm_complete"].format(task=target["task"]), wait=True)
+        if self._act(uid, "COMPLETE_REMINDER", {"reminder_id": target["id"]}) is None:
+            return out(r["confirm_complete"].format(task=target["task"]), wait=True)
+        res = out(r["auto_complete"].format(task=target["task"]))
+        res.screen = "saved"
+        return res
 
     def _day(self, uid: int) -> dict[str, Any]:
         return self.core.day(uid)
@@ -654,13 +864,17 @@ class TurnEngine:
             if key == "med_family_sets"
             else "Aaji has a question about medicine. Please call her; Arjun did not answer it."
         )
-        self.core.propose(uid, "REQUEST_CAREGIVER", {"message": message})
+        if self._act(uid, "REQUEST_CAREGIVER", {"message": message}) is not None:
+            if contacts and key == "med_deflect":
+                return out(r["auto_med_deflect_named"].format(name=contacts[0]["name"]))
+            return out(r["auto_" + key])
         if contacts and key == "med_deflect":
             return out(r["med_deflect_named"].format(name=contacts[0]["name"]), wait=True)
         return out(r[key], wait=True)
 
     def _medicine_action(
-        self, uid: int, text: str, intent: str, lang: str, out: Callable[..., TurnResult]
+        self, uid: int, text: str, intent: str, lang: str, out: Callable[..., TurnResult],
+        dose_id: int | None = None,
     ) -> TurnResult:
         r = rp.R[rp.lang_or_default(lang)]
         due = self.core.due_medicines(uid)["current"]
@@ -668,7 +882,10 @@ class TurnEngine:
             return out(r["med_none_due"])
         said = set(normalize(text).split(" "))
         named = [d for d in due if said & set(normalize(d["name"]).split(" "))]
-        if len(named) == 1:
+        announced = [d for d in due if d["id"] == dose_id]
+        if announced:  # "हो" right after the prompt for this dose
+            target = announced[0]
+        elif len(named) == 1:
             target = named[0]
         elif not named and len(due) == 1:
             target = due[0]  # still verified by a spoken yes/no below
@@ -676,22 +893,32 @@ class TurnEngine:
             names = ", ".join(d["name"] for d in (named or due))
             return out(r["med_which"].format(names=names))
         if intent == "MED_TAKEN":
-            self.core.propose(uid, "MEDICINE_TAKEN", {"dose_id": target["id"]})
-            return out(r["confirm_taken"].format(name=target["name"], dose=target["dose"]), wait=True)
+            if self._act(uid, "MEDICINE_TAKEN", {"dose_id": target["id"]}) is None:
+                return out(r["confirm_taken"].format(name=target["name"], dose=target["dose"]), wait=True)
+            res = out(r["auto_taken"].format(name=target["name"], dose=target["dose"]))
+            res.screen = "saved"
+            return res
         try:
-            self.core.propose(uid, "MEDICINE_SNOOZE", {"dose_id": target["id"]})
+            done = self._act(uid, "MEDICINE_SNOOZE", {"dose_id": target["id"]})
         except CoreError as exc:
             if exc.status != 409:
                 raise
-            self.core.propose(
-                uid, "REQUEST_CAREGIVER", {"message": "Aaji kept putting off a medicine reminder."}
-            )
-            return out(r["med_no_more_snooze"], wait=True)
-        return out(r["confirm_snooze"], wait=True)
+            msg = {"message": "Aaji kept putting off a medicine reminder."}
+            if self._act(uid, "REQUEST_CAREGIVER", msg) is None:
+                return out(r["med_no_more_snooze"], wait=True)
+            return out(r["auto_no_more_snooze"])
+        if done is None:
+            return out(r["confirm_snooze"], wait=True)
+        return out(r["auto_snooze"])
 
-    def _chat_reply(self, uid: int, text: str, lang: str, now: datetime | None = None) -> str:
+    def _chat_reply(
+        self, uid: int, text: str, lang: str, now: datetime | None = None
+    ) -> tuple[str, str, bool]:
+        """(text for the screen, text for the voice, written by the LLM?). The voice text may carry Timbre voice
+        tags the LLM chose."""
         now = now or self.clock()
         reply: str | None = None
+        speech = ""
         if self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
             recent = self._recent_history(uid, now)
             interests = self.core.user(uid).get("interests") or []
@@ -699,10 +926,15 @@ class TurnEngine:
                 text, lang, now, history=[(role, said) for _, role, said in recent], interests=interests,
                 timeout=self._llm_remaining(),
             )
+            # voice tags out first, so the boundary checks see only words
+            clean, voiced = split_voice_tags(raw) if raw else (None, "")
             # two sentences at most, and no boundary broken (human / missed you / medical / recipes, facts)
-            reply, reasons = sanitize_companion(raw, lang)
+            reply, reasons = sanitize_companion(clean, lang)
             if raw and reasons:
                 log.warning("companion reply rejected (%s); using the fixed line", ",".join(reasons))
+            if reply is not None and clean is not None and reply == clean.strip() and voiced != reply:
+                speech = voiced  # untrimmed: the tags still sit on the right words
+        from_llm = reply is not None
         if reply is None:
             n = self._chat_counter.get(uid, 0)
             self._chat_counter[uid] = n + 1
@@ -711,13 +943,29 @@ class TurnEngine:
         turns = self._recent_history(uid, now)
         turns += [(now, "user", text), (now, "assistant", reply)]
         self._history[uid] = turns[-self._history_cap:]
-        return reply
+        return reply, speech, from_llm
 
     def _recent_history(self, uid: int, now: datetime) -> list[tuple[datetime, str, str]]:
         turns = self._history.get(uid, [])
         if turns and now - turns[-1][0] > _HISTORY_IDLE:
             turns = []
         return list(turns)
+
+    def _lonely(self, uid: int, lang: str, trace: dict[str, Any], t0: float) -> TurnResult:
+        """A warm fixed reply that points to the people in her life (never "I missed you", never a feeling
+        claimed by Arjun), then keep listening. The family hears of it only with consent (core-api decides)."""
+        r = rp.R[rp.lang_or_default(lang)]
+        try:
+            names = [c["name"] for c in self.core.contacts(uid)]
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("lonely: contacts unavailable: %s", exc)
+            names = []
+        try:
+            self.core.lonely(uid)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("lonely: could not tell the family: %s", exc)
+        text = r["lonely"].format(names=", ".join(names[:3])) if names else r["lonely_no_contacts"]
+        return TurnResult(text, "LONELY", "companion", lang, trace=self._t(trace, t0), screen="story")
 
     def _distress(self, uid: int, lang: str, trace: dict[str, Any], t0: float) -> TurnResult:
         return self._safety(uid, lang, trace, t0, kind="distress")
@@ -731,6 +979,7 @@ class TurnEngine:
         self._last_safety[uid] = self._mono()  # no reminder is spoken over / right after this
         self._drafts.pop(uid, None)
         self._history.pop(uid, None)  # the story stops; nothing resumes after a crisis
+        self._convo_at.pop(uid, None)
         # Every core call is best-effort: the spoken safety reply below is returned regardless.
         try:
             pending = self.core.pending(uid)

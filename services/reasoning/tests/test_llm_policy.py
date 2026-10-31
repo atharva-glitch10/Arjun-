@@ -152,7 +152,11 @@ def test_a_slow_or_failing_provider_falls_back_to_the_fixed_line(core_http, uid)
     eng = TurnEngine(CoreClient(core_http), client, clock=lambda: NOW)
     res = eng.handle(uid, STORY)
     assert res.mode == "companion" and res.reply in rp.CHAT["mr"]
-    assert eng.handle(uid, "हं").reply == rp.R["mr"]["unknown"]  # unreadable + no provider: ask to repeat
+    # mid-chat an unreadable turn stays in the chat (conversation mode) with the fixed companion line ...
+    assert eng.handle(uid, "हं").reply in rp.CHAT["mr"]
+    # ... and with no chat going, unreadable + no provider still asks to repeat
+    fresh = TurnEngine(CoreClient(core_http), client, clock=lambda: NOW)
+    assert fresh.handle(uid, "हं").reply == rp.R["mr"]["unknown"]
 
 
 def test_only_the_last_four_exchanges_are_sent(core_http, uid):
