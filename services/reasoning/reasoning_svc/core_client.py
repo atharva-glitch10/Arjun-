@@ -95,3 +95,26 @@ class CoreClient:
 
     def opener_allowed(self, uid: int) -> bool:
         return bool(self._req("GET", f"/users/{uid}/opener-allowed")["allowed"])
+
+    def mark_seen(self, uid: int, how: str = "voice") -> None:
+        """'Last talked to Arjun' for the family: the time only, never the words."""
+        self._req("POST", f"/users/{uid}/activity", json={"how": how})
+
+    def lonely(self, uid: int) -> bool:
+        """Tells the family (with consent, once a day) that she said she feels lonely. Never her words."""
+        return bool(self._req("POST", f"/users/{uid}/lonely")["family_told"])
+
+    def health_complaint(self, uid: int, category: str) -> bool:
+        """Tells the family (with consent, once a day per kind) that she mentioned a health complaint. No advice,
+        never her words. Returns whether a note exists for the family."""
+        return bool(
+            self._req("POST", f"/users/{uid}/health-complaint", params={"category": category})["family_told"]
+        )
+
+    def undo(self, uid: int, action_id: int) -> dict[str, Any]:
+        """Put back an action Arjun just did ("नको / चुकलं"). core-api refuses after its undo window."""
+        return self._req("POST", f"/users/{uid}/actions/{action_id}/undo")  # type: ignore[no-any-return]
+
+    def wellbeing(self, uid: int, entry: dict[str, Any]) -> dict[str, Any]:
+        """One conversation summary for the family: seriousness, mood, a short paraphrase. Never a transcript."""
+        return self._req("POST", f"/users/{uid}/wellbeing", json=entry)  # type: ignore[no-any-return]

@@ -21,7 +21,7 @@ from . import config
 from . import replies as rp
 from .clock import local_now
 from .core_client import CoreClient, CoreError
-from .distress import is_distress, is_emergency, is_lonely
+from .distress import is_distress, is_emergency, is_lonely, symptom_category
 from .evon import EvonClient, sanitize_companion, split_voice_tags
 from .parser import (
     MED_TAKEN_WORDS,
@@ -175,9 +175,14 @@ class TurnEngine:
             return self._distress(user_id, lang, trace, t0)
         if pending is not None and not self._answers_pending(parsed.intent, pending):
             return self._repeat_pending(user_id, pending, lang, now, trace, t0)
-        # 3b. loneliness: only when nothing else was asked for (a care command or a pending question wins)
-        if pending is None and draft is None and parsed.intent in ("CHAT", "UNKNOWN") and is_lonely(text):
-            return self._lonely(user_id, lang, trace, t0)
+        # 3b. a health complaint, then loneliness: only when nothing else was asked for (a care command or a pending
+        # question wins). Never advice: a fixed warm line + a family note (consent) and the chat goes on.
+        if pending is None and draft is None and parsed.intent in ("CHAT", "UNKNOWN"):
+            category = symptom_category(text)
+            if category:
+                return self._symptom(user_id, text, category, lang, trace, t0, now)
+            if is_lonely(text):
+                return self._lonely(user_id, text, lang, trace, t0, now)
 
         # 4. dispatch
         try:
@@ -951,7 +956,28 @@ class TurnEngine:
             turns = []
         return list(turns)
 
-    def _lonely(self, uid: int, lang: str, trace: dict[str, Any], t0: float) -> TurnResult:
+    def _symptom(
+        self, uid: int, text: str, category: str, lang: str, trace: dict[str, Any], t0: float, now: datetime
+    ) -> TurnResult:
+        """A health complaint that is not an emergency (boundary 5): no advice, no diagnosis, no question. The family
+        sees a "watch" note only with the alert consent; the reply says so ONLY if a note really exists (boundary 14)."""
+        r = rp.R[rp.lang_or_default(lang)]
+        try:
+            told = self.core.health_complaint(uid, category)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("symptom: could not tell the family: %s", exc)
+            told = False
+        res = TurnResult(
+            r["symptom_noted" if told else "symptom_not_noted"], "SYMPTOM", "companion", lang,
+            trace=self._t({**trace, "symptom": category}, t0), screen="story",
+        )
+        self._convo_at[uid] = self._mono()  # the conversation goes on
+        self._remember(uid, now, text, res)
+        return res
+
+    def _lonely(
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float, now: datetime
+    ) -> TurnResult:
         """A warm fixed reply that points to the people in her life (never "I missed you", never a feeling
         claimed by Arjun), then keep listening. The family hears of it only with consent (core-api decides)."""
         r = rp.R[rp.lang_or_default(lang)]
@@ -965,7 +991,10 @@ class TurnEngine:
         except (CoreError, httpx.HTTPError) as exc:
             log.warning("lonely: could not tell the family: %s", exc)
         text = r["lonely"].format(names=", ".join(names[:3])) if names else r["lonely_no_contacts"]
-        return TurnResult(text, "LONELY", "companion", lang, trace=self._t(trace, t0), screen="story")
+        res = TurnResult(text, "LONELY", "companion", lang, trace=self._t(trace, t0), screen="story")
+        self._convo_at[uid] = self._mono()
+        self._remember(uid, now, text, res)
+        return res
 
     def _distress(self, uid: int, lang: str, trace: dict[str, Any], t0: float) -> TurnResult:
         return self._safety(uid, lang, trace, t0, kind="distress")

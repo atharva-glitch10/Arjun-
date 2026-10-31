@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
+import { activityLine } from "./activity";
+import { alarmState, enableAlarm, popup, startAlarm, stopAlarm } from "./alarm";
 import { recentEmergencies } from "./alerts";
+import { loadAcked, needsPopup, saveAcked, startEmergencyWatch, unacknowledged } from "./emergencyWatch";
+import { SEVERITY_LABEL, SEVERITY_RANK, SEVERITY_STYLE, connectFeed, mergeFeed } from "./feed";
+import type { FeedEvent, FeedStatus, Severity } from "./feed";
 import { deliveryRows } from "./deliveries";
 import { confirmThen } from "./guard";
 import { startPolling } from "./polling";
 import type {
+  WellbeingToday,
+  Activity,
   Anchor,
   Appointment,
   Contact,
@@ -31,6 +38,8 @@ interface Data {
   medicines: Medicine[];
   doses: Dose[];
   deliveries: Delivery[];
+  activity: Activity;
+  today: WellbeingToday;
 }
 
 const DAY = 86_400_000;
@@ -115,7 +124,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries] =
+      const [user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries, activity, today] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -127,8 +136,12 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         api.medicines(userId),
         api.medicineDoses(userId, 7),
         api.deliveries(userId, 1),
+        api.activity(userId).catch((): Activity => ({ last_seen_at: null, how: null })), // older core-api
+        api.wellbeingToday(userId).catch(
+          (): WellbeingToday => ({ severity: "normal", mood: "not_assessed", conversations: 0, last_summary: "", last_at: null }),
+        ),
       ]);
-      setData({ user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries });
+      setData({ user, reminders, appointments, contacts, book, requests, notes, medicines, doses, deliveries, activity, today });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -143,6 +156,56 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
   // Refresh every 10 s while visible, and the moment the tab or window comes back.
   useEffect(() => startPolling(() => load(true), 10_000, document, window), [load]);
+
+  // Live feed: WebSocket push, REST polling while the socket is down. A serious row refreshes everything at once.
+  const [feed, setFeed] = useState<FeedEvent[]>([]);
+  const [feedStatus, setFeedStatus] = useState<FeedStatus>("connecting");
+  useEffect(
+    () =>
+      connectFeed({
+        userId,
+        onStatus: setFeedStatus,
+        onEvents: (rows) => {
+          setFeed((have) => mergeFeed(have, rows));
+          if (rows.some((e) => SEVERITY_RANK[e.severity] >= SEVERITY_RANK.watch)) void load(true);
+        },
+      }),
+    [userId, load],
+  );
+
+  // Emergency alarm: checked every 15 s EVEN WHEN THIS TAB IS IN THE BACKGROUND (the refresh above pauses
+  // then). Rings (sound + pop-up + tab title) until someone taps "I have seen it" on this device.
+  const acked = useRef<Set<number>>(loadAcked(safeStorage()));
+  const popped = useRef<Set<number>>(new Set());
+  const [ringing, setRinging] = useState<number[]>([]);
+  const [alarm, setAlarm] = useState(() => alarmState());
+  useEffect(() => {
+    const stop = startEmergencyWatch(async () => {
+      const notes = await api.notifications(userId);
+      const open = unacknowledged(notes, acked.current, new Date());
+      for (const n of needsPopup(open, popped.current)) {
+        popup(n.id, n.body ?? "Emergency reported");
+        popped.current.add(n.id);
+      }
+      setRinging(open.map((n) => n.id));
+      if (open.length > 0) {
+        startAlarm();
+        void load(true); // show the red banner now, even if the normal refresh is paused
+      } else {
+        stopAlarm();
+      }
+    }, 15_000);
+    return () => {
+      stop();
+      stopAlarm();
+    };
+  }, [userId, load]);
+  const acknowledge = () => {
+    ringing.forEach((id) => acked.current.add(id));
+    saveAcked(safeStorage(), acked.current);
+    setRinging([]);
+    stopAlarm();
+  };
 
   const run = async (fn: () => Promise<unknown>) => {
     try {
@@ -224,6 +287,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   const requestsToday = data.requests.filter((n) => sameDay(parse(n.created_at), now)).length;
   const name = user.name.replace(/\s*\(synthetic\)\s*$/i, "");
   const emergencies = recentEmergencies(data.notes, now);
+  const seen = activityLine(data.activity.last_seen_at, now, user.wake_time, name);
 
   return (
     <div className="family">
@@ -244,8 +308,36 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           >
             {n.body}
             <div style={{ fontSize: 16, fontWeight: 400, marginTop: 4 }}>{parse(n.created_at).toLocaleString("en-IN")}</div>
+            {ringing.includes(n.id) && (
+              <button
+                className="fbtn"
+                style={{ marginTop: 10, background: "#fff", color: "var(--ghar-kumkum)", borderColor: "#fff", fontWeight: 800 }}
+                onClick={acknowledge}
+              >
+                I have seen it - stop the alarm
+              </button>
+            )}
           </div>
         ))}
+        <div className="fam-note" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+          {alarm.sound && alarm.popup ? (
+            <span>
+              <strong style={{ color: "var(--ghar-leaf)" }}>Emergency alarm is on</strong> (sound and pop-up). Keep this
+              tab open; in a background tab it can take up to a minute. No call or SMS is sent.
+            </span>
+          ) : (
+            <>
+              <button className="fbtn solid" onClick={() => void enableAlarm().then(setAlarm)}>
+                Turn on emergency alarm
+              </button>
+              <span>
+                Rings with sound and a pop-up even when this tab is in the background.
+                {alarm.sound && !alarm.popup && " Pop-ups are blocked in this browser; sound only."}
+                {!alarm.sound && " Browsers need one tap for sound after every page load."}
+              </span>
+            </>
+          )}
+        </div>
         <div className="fam-topbar">
           <Diya size={44} />
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -290,7 +382,51 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           </p>
         )}
 
+        <section
+          className="fam-card"
+          aria-label={`How is ${name} today`}
+          style={{ borderLeft: `10px solid ${SEVERITY_STYLE[data.today.severity].bg}` }}
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
+            <h2 style={{ margin: 0 }}>How is {name} today</h2>
+            <SeverityChip level={data.today.severity} />
+            {data.today.mood !== "not_assessed" && <span className="pill" style={{ fontSize: 17 }}>Mood: {data.today.mood}</span>}
+            <span className="grow" />
+            <span className="t-muted" style={{ fontSize: 15 }}>
+              {feedStatus === "live" ? "Live" : feedStatus === "polling" ? "Updating every 5 s" : "Connecting..."}
+            </span>
+          </div>
+          <p style={{ fontSize: 19, lineHeight: 1.5, margin: "10px 0 6px" }}>
+            {data.today.last_summary ||
+              (user.consent_distress_alert
+                ? "No conversation summary yet today."
+                : `Summaries and mood are off. Turn on "share how ${name} is doing" below to see them.`)}
+          </p>
+          <span className="t-muted" style={{ fontSize: 15 }}>
+            {data.today.conversations} conversation{data.today.conversations === 1 ? "" : "s"} today · summaries, never
+            her exact words
+          </span>
+          {feed.length > 0 && (
+            <ul className="fam-list" style={{ marginTop: 12 }}>
+              {feed.slice(0, 12).map((e) => (
+                <li key={`f${e.id}`}>
+                  <SeverityChip level={e.severity} small />
+                  <span style={{ fontWeight: 800, minWidth: 64 }}>{clock(parse(e.created_at))}</span>
+                  <span style={{ flex: 1 }}>
+                    <strong>{e.title}</strong> {e.body}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         <div className="tiles">
+          <div className={seen.tone === "ok" ? "tile" : "tile empty"} style={seen.tone === "quiet" ? { background: "var(--ghar-haldi-soft, #fbe7b5)" } : undefined}>
+            <span className="label">How is {name} now</span>
+            <span className="value" style={{ fontSize: 20 }}>{seen.text}</span>
+            <span className="label">from her talks and taps with Arjun only; no words are shared</span>
+          </div>
           <div className="tile">
             <span className="label">Reminders today</span>
             <span className="value">
@@ -455,7 +591,8 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               checked={user.consent_distress_alert}
               onChange={(e) => run(() => api.patchUser(userId, { consent_distress_alert: e.target.checked }))}
             />
-            Alert me if Arjun notices {name} may be distressed (no conversation content is shared)
+            Share how {name} is doing: mood, conversation summaries, and alerts if she seems distressed or says she feels
+            lonely or mentions a health complaint (never her exact words; a physical emergency and a help request always alert)
           </label>
           <MotionSetting />
         </section>
@@ -797,5 +934,33 @@ function MedicinesCard({
         keeps no streaks.
       </p>
     </section>
+  );
+}
+
+/** localStorage, or undefined where it is missing or throws (private mode, some embedded browsers). */
+function safeStorage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function SeverityChip({ level, small }: { level: Severity; small?: boolean }) {
+  const st = SEVERITY_STYLE[level];
+  return (
+    <span
+      style={{
+        background: st.bg,
+        color: st.fg,
+        borderRadius: 999,
+        padding: small ? "2px 10px" : "6px 14px",
+        fontSize: small ? 14 : 18,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {SEVERITY_LABEL[level]}
+    </span>
   );
 }

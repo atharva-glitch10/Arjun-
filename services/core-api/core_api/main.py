@@ -9,14 +9,19 @@ from sqlalchemy.orm import Session
 
 from . import models as m
 from . import schemas as s
+from .activity import router as activity_router
 from .day import router as day_router
 from .db import Base, engine, get_db
 from .deliveries import ack_item, enqueue
 from .deliveries import router as deliveries_router
 from .deps import check_api_key_configured, get_now, require_key
+from .feed import router as feed_router
+from .feed import ws_router as feed_ws_router
 from .livekit_token import router as livekit_router
 from .medicines import mark_snoozed, mark_taken, open_dose
 from .medicines import router as medicines_router
+from .ratelimit import RateLimitMiddleware
+from .wellbeing import router as wellbeing_router
 
 
 @asynccontextmanager
@@ -27,6 +32,7 @@ async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
 
 
 app = FastAPI(title="Arjun core-api", lifespan=lifespan)
+app.add_middleware(RateLimitMiddleware)
 router = APIRouter(dependencies=[Depends(require_key)])
 
 
@@ -340,6 +346,7 @@ def confirm(
 ) -> m.PendingAction:
     action = _get_pending(db, user_id, action_id, now)
     p = action.payload
+    done: dict[str, object] = {"done_at": now.isoformat()}  # kept in the payload so the action can be undone
     if action.action_type == "CREATE_REMINDER":
         due = _check_reminder(
             s.ReminderIn(
@@ -347,8 +354,13 @@ def confirm(
             ),
             now,
         )
-        db.add(m.Reminder(user_id=user_id, task=p["task"], due_at=due))
+        rem = m.Reminder(user_id=user_id, task=p["task"], due_at=due)
+        db.add(rem)
+        db.flush()
+        done["reminder_id"] = rem.id
     elif action.action_type == "COMPLETE_REMINDER":
+        prev = db.get(m.Reminder, p["reminder_id"])
+        done["prev_status"] = prev.status if prev is not None and prev.user_id == user_id else "pending"
         _complete(db, user_id, p["reminder_id"])
     elif action.action_type == "REQUEST_CAREGIVER":
         db.add(m.CaregiverRequest(user_id=user_id, message=p["message"]))
@@ -359,15 +371,74 @@ def confirm(
             raise HTTPException(404, "story no longer exists")
         story.share_status = "shared"
     elif action.action_type == "SAVE_STORY":
-        db.add(m.StoryMemory(user_id=user_id, summary=p["summary"], share_status="private"))
+        st = m.StoryMemory(user_id=user_id, summary=p["summary"], share_status="private")
+        db.add(st)
+        db.flush()
+        done["story_id"] = st.id
     elif action.action_type in ("MEDICINE_TAKEN", "MEDICINE_SNOOZE"):
         dose = open_dose(db, user_id, p["dose_id"])
+        done["prev_status"] = dose.status
         if action.action_type == "MEDICINE_TAKEN":
             mark_taken(dose, now)
         else:
             med = db.get(m.Medicine, dose.medicine_id)
             mark_snoozed(dose, now, 15, med.max_reminders if med else 3)
+    action.payload = {**p, "_done": done}  # a new dict, so the JSON column is saved
     action.status = "confirmed"
+    db.commit()
+    return action
+
+
+UNDO_TTL = timedelta(seconds=int(os.environ.get("UNDO_TTL_S", "180")))
+
+
+@router.post("/users/{user_id}/actions/{action_id}/undo", response_model=s.PendingOut)
+def undo(
+    user_id: int, action_id: int, db: Session = Depends(get_db), now: datetime = Depends(get_now)
+) -> m.PendingAction:
+    """"नको / चुकलं" right after Arjun did something: put it back. Only a confirmed action, only within UNDO_TTL.
+
+    A help request that already reached the family cannot be unsent: the family gets a second note instead."""
+    action = db.get(m.PendingAction, action_id)
+    if action is None or action.user_id != user_id:
+        raise HTTPException(404, "action not found")
+    if action.status != "confirmed":
+        raise HTTPException(409, f"action is {action.status}")
+    p = dict(action.payload)
+    done = dict(p.get("_done") or {})
+    done_at = datetime.fromisoformat(str(done["done_at"])) if done.get("done_at") else action.created_at
+    if now - done_at > UNDO_TTL:
+        raise HTTPException(409, "too late to undo")
+    kind = action.action_type
+    if kind == "CREATE_REMINDER" and done.get("reminder_id"):
+        rem = db.get(m.Reminder, done["reminder_id"])
+        if rem is not None:
+            ack_item(db, "reminder", rem.id, "done", now)  # supersede anything queued for it
+            db.delete(rem)
+    elif kind == "COMPLETE_REMINDER":
+        rem = db.get(m.Reminder, p["reminder_id"])
+        if rem is not None:
+            rem.status = str(done.get("prev_status") or "pending")
+    elif kind == "REQUEST_CAREGIVER":
+        db.add(m.Notification(
+            user_id=user_id, kind="help_cancelled",
+            body="She said she does not need help after all (right after asking). A call is still welcome.",
+        ))
+    elif kind == "SHARE_STORY":
+        story = db.get(m.StoryMemory, p["story_id"])
+        if story is not None:
+            story.share_status = "private"
+    elif kind == "SAVE_STORY" and done.get("story_id"):
+        story = db.get(m.StoryMemory, done["story_id"])
+        if story is not None:
+            db.delete(story)
+    elif kind in ("MEDICINE_TAKEN", "MEDICINE_SNOOZE"):
+        dose = db.get(m.MedicineDose, p["dose_id"])
+        if dose is not None and dose.user_id == user_id:
+            dose.status = str(done.get("prev_status") or "due")
+            if kind == "MEDICINE_TAKEN":
+                dose.taken_at = None
+    action.status = "undone"
     db.commit()
     return action
 
@@ -458,6 +529,74 @@ def record_distress(
     return s.DistressOut(caregiver_alerted=alerted)
 
 
+@router.post("/users/{user_id}/lonely")
+def record_lonely(
+    user_id: int, db: Session = Depends(get_db), now: datetime = Depends(get_now)
+) -> dict[str, bool]:
+    """She said she feels lonely. The family is told ONLY with the alert consent (same flag as emotional
+    distress), at most once a day, and never with her words."""
+    user = _user(db, user_id)
+    if not user.consent_distress_alert:
+        return {"family_told": False}
+    start = datetime.combine(now.date(), time.min)
+    already = db.scalars(
+        select(m.Notification).where(
+            m.Notification.user_id == user_id, m.Notification.kind == "lonely", m.Notification.created_at >= start
+        )
+    ).first()
+    if already is None:
+        name = user.name.replace("(synthetic)", "").strip()
+        db.add(
+            m.Notification(
+                user_id=user_id,
+                kind="lonely",
+                created_at=now,
+                body=f"{name} said she is feeling lonely today. A call or a visit would help. "
+                "(Arjun does not share what she said.)",
+            )
+        )
+        db.commit()
+    return {"family_told": True}
+
+
+_COMPLAINTS = {  # category (from reasoning's rules) -> what the family reads. No advice, never her words.
+    "head": "a headache", "stomach": "a stomach ache", "fever": "a fever", "joint": "joint, knee or back pain",
+    "sleep": "trouble sleeping", "fall_past": "a fall earlier", "unwell": "not feeling well",
+}
+
+
+@router.post("/users/{user_id}/health-complaint")
+def record_health_complaint(
+    user_id: int, category: str, db: Session = Depends(get_db), now: datetime = Depends(get_now)
+) -> dict[str, bool]:
+    """She mentioned a health complaint that is not an emergency (task C). The family gets a "watch" note ONLY with
+    the alert consent (same flag as distress and loneliness), once a day per kind of complaint, with the kind of
+    complaint and nothing she said. Arjun gave no advice."""
+    if category not in _COMPLAINTS:
+        raise HTTPException(422, "unknown complaint category")
+    user = _user(db, user_id)
+    if not user.consent_distress_alert:
+        return {"family_told": False}
+    name = user.name.replace("(synthetic)", "").strip()
+    body = (
+        f"{name} mentioned {_COMPLAINTS[category]} today. A call would help. "
+        "(Arjun gave no advice and does not share what was said.)"
+    )
+    start = datetime.combine(now.date(), time.min)
+    already = db.scalars(
+        select(m.Notification).where(
+            m.Notification.user_id == user_id,
+            m.Notification.kind == "health_complaint",
+            m.Notification.created_at >= start,
+            m.Notification.body == body,
+        )
+    ).first()
+    if already is None:
+        db.add(m.Notification(user_id=user_id, kind="health_complaint", created_at=now, body=body))
+        db.commit()
+    return {"family_told": True}
+
+
 def _decline_row(db: Session, user_id: int, day: date) -> m.TopicDecline | None:
     return db.scalars(
         select(m.TopicDecline).where(m.TopicDecline.user_id == user_id, m.TopicDecline.day == day)
@@ -523,3 +662,7 @@ app.include_router(medicines_router)
 app.include_router(day_router)
 app.include_router(deliveries_router)
 app.include_router(livekit_router)
+app.include_router(activity_router)
+app.include_router(wellbeing_router)
+app.include_router(feed_router)
+app.include_router(feed_ws_router)

@@ -1,14 +1,18 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import config
 from .core_client import CoreClient, CoreError
-from .evon import EvonClient
+from .evon import EvonClient, Limiter
+from .ratelimit import TokenBucket
 from .turn import TurnEngine
+from .wellbeing import Tracker
 
 app = FastAPI(title="Arjun reasoning")
 
 _engine: TurnEngine | None = None
+_tracker: Tracker | None = None
+_turn_bucket = TokenBucket(config.TURN_RATE_PER_S, config.TURN_RATE_BURST)
 
 
 def get_engine() -> TurnEngine:
@@ -24,6 +28,8 @@ def get_engine() -> TurnEngine:
                 provider=s.provider,
                 max_tokens=s.max_tokens,
                 timeout_s=s.timeout_s,
+                reasoning_off=s.reasoning_off,
+                limiter=Limiter(s.max_concurrent, s.per_minute),
             )
             if s.configured
             else None
@@ -32,6 +38,14 @@ def get_engine() -> TurnEngine:
             CoreClient(), llm, llm_timeout_s=s.timeout_s, history_exchanges=s.history_exchanges
         )
     return _engine
+
+
+def get_tracker() -> Tracker:
+    global _tracker
+    if _tracker is None:
+        e = get_engine()
+        _tracker = Tracker(e.core, e.evon, clock=e.clock)
+    return _tracker
 
 
 class TurnIn(BaseModel):
@@ -46,6 +60,7 @@ class TurnOut(BaseModel):
     language: str
     awaiting_confirmation: bool
     screen: str = "reply"
+    speech: str = ""  # what the voice says (may carry Timbre v3 tags); empty = say `reply`
     source: str  # rules | llm
     trace: dict[str, object]
 
@@ -58,6 +73,8 @@ def health() -> dict[str, object]:
         "llm_configured": s.configured,
         "llm_provider": s.provider if s.configured else "none",
         "evon_configured": s.configured and s.provider == "evon",  # old name, kept for the scripts that read it
+        "llm_model": s.model if s.configured else "none",
+        "ask_before_acting": config.ASK_BEFORE_ACTING,
     }
 
 
@@ -117,12 +134,27 @@ def session_busy(user_id: int) -> dict[str, object]:
 
 
 @app.post("/turn", response_model=TurnOut)
-def turn(body: TurnIn) -> TurnOut:
+def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
+    engine = get_engine()
+    # "Last talked to Arjun" for the family dashboard: recorded AFTER the reply is sent, so it adds no
+    # latency, and on every turn (safety turns included). Time only; the words are never stored.
+    wait = _turn_bucket.take(str(body.user_id))
+    if wait > 0:  # a stuck recognizer loop must not flood core-api or the LLM
+        raise HTTPException(429, "too many turns", headers={"Retry-After": str(max(1, round(wait)))})
+    background.add_task(engine.note_activity, body.user_id)
     try:
-        res = get_engine().handle(body.user_id, body.text)
+        res = engine.handle(body.user_id, body.text)
     except CoreError as exc:
         raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
+    # The family's conversation summary: buffered in memory, sent after the conversation ends.
+    background.add_task(get_tracker().record, body.user_id, body.text, res.reply, res.intent)
     return TurnOut(**res.__dict__)
+
+
+@app.post("/conversations/flush-idle")
+def flush_idle() -> dict[str, int]:
+    """Called by the scheduler every tick: send the summary of every conversation that went quiet."""
+    return {"sent": get_tracker().flush_idle(), "open": get_tracker().open_count()}
 
 
 class BriefingOut(BaseModel):

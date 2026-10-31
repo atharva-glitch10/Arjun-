@@ -36,6 +36,10 @@ R: dict[str, dict[str, str]] = {
         "appt_next": "तुमची पुढची भेट: {title}, {when}{place}.",
         "call_family": "{name} यांना फोन करण्याची ही चांगली वेळ आहे. तुम्हाला हवं तेव्हा फोन लावा.",
         "ask_contact": "कोणाला फोन करायचा आहे? {names}",
+        "lonely": "एकटं वाटणं खूप जड असतं. मी इथे ऐकायला आहे. {names} यांच्याशी फोनवर बोलायला आवडेल का? नाहीतर मला तुमच्या दिवसाबद्दल सांगा.",
+        "lonely_no_contacts": "एकटं वाटणं खूप जड असतं. मी इथे ऐकायला आहे. मला तुमच्या दिवसाबद्दल सांगा. आणि घरच्यांना एक फोन केलात तर बरं वाटेल.",
+        "symptom_noted": "ऐकलं. घरच्यांच्या स्क्रीनवर नोंद केली आहे. तुम्हाला हवं तेवढं बोला, मी इथेच आहे.",
+        "symptom_not_noted": "ऐकलं. हे डॉक्टरांना किंवा घरच्यांना सांगा. तुम्हाला हवं तेवढं बोला, मी इथेच आहे.",
         "no_contacts": "माझ्याकडे कोणाचाही नंबर नोंदवलेला नाही. तुमच्या काळजीवाहकांना तो जोडायला सांगा.",
         "confirm_caregiver": "मी तुमच्या काळजीवाहकांना कळवू का की तुम्हाला मदत हवी आहे? हो किंवा नाही.",
         "caregiver_done": "ठीक आहे, त्यांना कळवलं आहे.",
@@ -92,6 +96,10 @@ R: dict[str, dict[str, str]] = {
         "appt_next": "आपकी अगली अपॉइंटमेंट: {title}, {when}{place}।",
         "call_family": "{name} को फोन करने के लिए यह अच्छा समय है। जब चाहें फोन लगाइए।",
         "ask_contact": "किसे फोन करना है? {names}",
+        "lonely": "अकेलापन बहुत भारी लगता है। मैं यहाँ सुनने के लिए हूँ। क्या आप {names} से फोन पर बात करना चाहेंगे? या मुझे अपने दिन के बारे में बताइए।",
+        "lonely_no_contacts": "अकेलापन बहुत भारी लगता है। मैं यहाँ सुनने के लिए हूँ। मुझे अपने दिन के बारे में बताइए। और घर पर किसी को एक फोन कर लें तो अच्छा लगेगा।",
+        "symptom_noted": "सुन लिया। घरवालों की स्क्रीन पर नोट कर दिया है। आपको जितना बोलना हो बोलिए, मैं यहीं हूँ।",
+        "symptom_not_noted": "सुन लिया। यह डॉक्टर या घरवालों को बताइए। आपको जितना बोलना हो बोलिए, मैं यहीं हूँ।",
         "no_contacts": "मेरे पास कोई नंबर दर्ज नहीं है। अपने देखभाल करने वाले से जुड़वाने को कहिए।",
         "confirm_caregiver": "क्या मैं आपके देखभाल करने वाले को बता दूँ कि आपको मदद चाहिए? हाँ या नहीं।",
         "caregiver_done": "ठीक है, उन्हें बता दिया गया है।",
@@ -148,6 +156,10 @@ R: dict[str, dict[str, str]] = {
         "appt_next": "Your next appointment: {title}, {when}{place}.",
         "call_family": "This is a good time to call {name}. Call whenever you like.",
         "ask_contact": "Whom would you like to call? {names}",
+        "lonely": "Feeling lonely is hard. I am here to listen. Would you like to talk to {names} on the phone? Or tell me about your day.",
+        "lonely_no_contacts": "Feeling lonely is hard. I am here to listen. Tell me about your day. A phone call to someone in your family may help too.",
+        "symptom_noted": "I heard you. I have put a note on your family's screen. Talk as much as you like, I am right here.",
+        "symptom_not_noted": "I heard you. Please tell your doctor or your family. Talk as much as you like, I am right here.",
         "no_contacts": "I have no phone numbers saved. Please ask your caregiver to add them.",
         "confirm_caregiver": "Shall I let your caregiver know you need help? Yes or no.",
         "caregiver_done": "Okay, I have let them know.",
@@ -447,3 +459,63 @@ def item_text(item: dict, lang: str) -> str:  # type: ignore[type-arg]
     if kind == "medicine":
         return f"{item['label']}, {item['detail']}"
     return str(item["label"])
+
+
+# ---- No-question mode (default since 2026-10-31): Arjun acts at once, says what it did in one line, and
+# "नको / चुकलं" within a few minutes undoes it. Only missing details (which day? what time?) are still asked.
+# "Told the family" always means the family DASHBOARD (no call/SMS exists): the wording never claims more.
+AUTO: dict[str, dict[str, str]] = {
+    "mr": {
+        "auto_reminder": "ठेवली: {when}, {task}. बदलायचं असेल तर 'नको' म्हणा.",
+        "auto_complete": "{task} झालं, नोंदवलं.",
+        "auto_caregiver": "घरच्यांच्या स्क्रीनवर कळवलं आहे की तुम्हाला मदत हवी आहे.",
+        "auto_share": "ही गोष्ट घरच्यांसोबत शेअर केली.",
+        "auto_taken": "{name} घेतली, नोंदवलं.",
+        "auto_snooze": "ठीक आहे, १५ मिनिटांनी परत सांगतो.",
+        "auto_no_more_snooze": "आणखी पुढे ढकलता येत नाही. घरच्यांच्या स्क्रीनवर कळवलं आहे.",
+        "auto_med_deflect": "हे डॉक्टरांना विचारा. घरच्यांच्या स्क्रीनवर कळवलं आहे.",
+        "auto_med_deflect_named": "हे डॉक्टरांना विचारा. {name}ला स्क्रीनवर कळवलं आहे.",
+        "auto_med_family_sets": "औषधाच्या वेळा तुमचं कुटुंब ठरवतं. त्यांना स्क्रीनवर कळवलं आहे.",
+        "deliver_medicine_auto": "औषधाची वेळ. {name}. {dose}. वेळ {when}.",
+        "undone": "ठीक आहे, ते रद्द केलं.",
+        "undone_retry": "रद्द केलं. आता पुन्हा सांगा.",
+        "undone_help": "ठीक आहे. घरच्यांना कळवलं की आता मदत नको.",
+        "ok_ack": "ठीक आहे.",
+    },
+    "hi": {
+        "auto_reminder": "रख लिया: {when}, {task}. बदलना हो तो 'नहीं' कहिए।",
+        "auto_complete": "{task} हो गया, दर्ज कर लिया।",
+        "auto_caregiver": "घरवालों की स्क्रीन पर बता दिया है कि आपको मदद चाहिए।",
+        "auto_share": "यह बात घरवालों के साथ साझा कर दी।",
+        "auto_taken": "{name} ली, दर्ज कर लिया।",
+        "auto_snooze": "ठीक है, 15 मिनट बाद फिर बताऊँगा।",
+        "auto_no_more_snooze": "अब और आगे नहीं टाल सकते। घरवालों की स्क्रीन पर बता दिया है।",
+        "auto_med_deflect": "यह डॉक्टर से पूछिए। घरवालों की स्क्रीन पर बता दिया है।",
+        "auto_med_deflect_named": "यह डॉक्टर से पूछिए। {name} को स्क्रीन पर बता दिया है।",
+        "auto_med_family_sets": "दवा के समय आपका परिवार तय करता है। उन्हें स्क्रीन पर बता दिया है।",
+        "deliver_medicine_auto": "दवा का समय। {name}. {dose}. समय {when}.",
+        "undone": "ठीक है, वह रद्द कर दिया।",
+        "undone_retry": "रद्द कर दिया। अब फिर से बताइए।",
+        "undone_help": "ठीक है। घरवालों को बता दिया कि अब मदद नहीं चाहिए।",
+        "ok_ack": "ठीक है।",
+    },
+    "en": {
+        "auto_reminder": "Saved: {when}, {task}. Say 'no' if that is wrong.",
+        "auto_complete": "Noted, {task} is done.",
+        "auto_caregiver": "I have put a note on your family's screen that you need help.",
+        "auto_share": "I have shared this story with your family.",
+        "auto_taken": "Noted, you took {name}.",
+        "auto_snooze": "Okay, I will remind you again in 15 minutes.",
+        "auto_no_more_snooze": "I cannot put it off any more. I have told your family on their screen.",
+        "auto_med_deflect": "Please ask your doctor about that. I have told your family on their screen.",
+        "auto_med_deflect_named": "Please ask your doctor about that. I have told {name} on the screen.",
+        "auto_med_family_sets": "Your family sets medicine times. I have told them on their screen.",
+        "deliver_medicine_auto": "Medicine time. {name}. {dose}. Time {when}.",
+        "undone": "Okay, I have cancelled that.",
+        "undone_retry": "Cancelled. Please say it again.",
+        "undone_help": "Okay. I have told your family you do not need help now.",
+        "ok_ack": "Okay.",
+    },
+}
+for _lang, _keys in AUTO.items():
+    R[_lang].update(_keys)

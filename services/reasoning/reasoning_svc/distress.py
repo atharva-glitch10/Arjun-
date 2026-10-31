@@ -94,15 +94,17 @@ EMERGENCY_PHRASES: tuple[str, ...] = (
     "chest pain", "my chest hurts", "pain in my chest", "can't breathe", "cannot breathe",
     "cant breathe", "i can't breathe", "unable to breathe", "i have fallen", "i fell down",
     "can't get up", "cannot get up", "heart attack", "stroke", "i am bleeding", "i'm bleeding",
-    "i fainted", "i am fainting", "call ambulance", "ambulance",
+    "i fainted", "i am fainting", "call ambulance", "ambulance", "i feel dizzy", "i am dizzy", "feeling dizzy",
     # Marathi (Devanagari)
     "छातीत दुखतंय", "छातीत दुखत आहे", "छातीत दुखते", "छातीत कळ", "श्वास घेता येत नाही",
     "श्वास लागतोय", "दम लागतोय", "दम लागला", "उठता येत नाही", "चक्कर येतेय", "चक्कर येत आहे",
     "बेशुद्ध", "रक्त येतंय", "खूप रक्त", "हृदयविकार", "रुग्णवाहिका",
+    # dizziness is emergency-level too (2026-10-31)
+    "चक्कर आली", "चक्कर आले", "चक्कर आल्यासारखं", "चक्कर येते", "चक्कर आ रही",
     # Marathi (roman)
     "chhatit dukhtay", "chatit dukhtay", "chhatit dukhat aahe", "shwas gheta yet nahi",
     "swas gheta yet nahi", "dam lagtoy", "uthta yet nahi", "chakkar yetey", "chakkar yet aahe",
-    "rakta yetay", "khup rakta",
+    "rakta yetay", "khup rakta", "chakkar aali", "chakkar yete",
     # Hindi (Devanagari)
     "सीने में दर्द", "छाती में दर्द", "सांस नहीं ले पा", "साँस नहीं ले पा", "सांस नहीं आ रही",
     "उठ नहीं पा", "चक्कर आ रहा", "बेहोश", "खून बह रहा",
@@ -129,3 +131,150 @@ _EMERGENCY_FOLDED = tuple(fold(p) for p in EMERGENCY_PHRASES)
 def is_emergency(text: str) -> bool:
     folded = fold(text)
     return has_any(folded, _EMERGENCY_FOLDED) or any(p.search(folded) for p in _EMERGENCY_PATTERNS)
+
+
+# ---- Loneliness (NOT a safety check: it never overrides a care command or a pending question) -----------
+# "मला एकटं वाटतं", "akela mehsoos hota hai", "I feel lonely". Arjun answers warmly, offers to call someone
+# in the family (a bridge to people, CLAUDE.md principle) and, ONLY with the family-alert consent, tells the
+# family once a day that she said she feels lonely (never her words).
+# UNVERIFIED lexicon, same status as the two above: written without a native speaker or real Prisma output.
+LONELY_PHRASES: tuple[str, ...] = (
+    # English
+    "i feel lonely", "i am lonely", "i'm lonely", "feeling lonely", "so lonely", "very lonely", "all alone",
+    "i feel alone", "i am all alone", "loneliness", "i miss my family", "i miss my children", "i miss my son",
+    "i miss my daughter",
+    # Marathi (Devanagari)
+    "एकटं वाटतं", "एकटं वाटतंय", "एकटं वाटत आहे", "एकटेपणा", "एकटेपणा वाटतो", "कोणी बोलत नाही",
+    "कुणी बोलत नाही", "कोणी भेटायला येत नाही", "कुणी भेटायला येत नाही", "माझ्याशी कोणी बोलत नाही",
+    # Marathi (roman)
+    "ekta vatta", "ekta vattay", "ekta vatat aahe", "ekatepana", "ektepana", "koni bolat nahi",
+    "kuni bolat nahi", "koni bhetayla yet nahi",
+    # Hindi (Devanagari)
+    "अकेलापन", "अकेला महसूस", "अकेली महसूस", "अकेला लगता", "अकेली लगती", "कोई बात नहीं करता",
+    "कोई मिलने नहीं आता", "मुझसे कोई बात नहीं करता",
+    # Hindi (roman)
+    "akelapan", "akela mehsoos", "akeli mehsoos", "akela lagta", "akeli lagti", "koi baat nahi karta",
+    "koi milne nahi aata",
+)
+
+_LONELY_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p)
+    for p in (
+        # Marathi: एकटं / एकटा / एकटी + वाटतं / आहे (now), not "एकटी होते" (a story about the past)
+        r"(?<!\S)एकट(?:ं|ा|ी|े)\s+(?:वाट|आह)\S*",
+        r"\bekt(?:a|i|e)\s+(?:vat|aah)\w*",
+        # Hindi: अकेला / अकेली + महसूस / लग / हूँ (folded: ँ -> ं); not "अकेले जाऊँगी" (going alone)
+        r"(?<!\S)अकेल(?:ा|ी|े)\s+(?:महसूस|लग|हूं|हू)\S*",
+        r"\bakel(?:a|i|e)\s+(?:mehsoos|mahsoos|lag|hoon|hun|hu)\w*",
+        # English
+        r"\blonel(?:y|iness)\b",
+        r"\b(?:no ?one|nobody)\s+(?:talks|speaks|comes|visits)\b",
+    )
+)
+_LONELY_FOLDED = tuple(fold(p) for p in LONELY_PHRASES)
+
+
+def is_lonely(text: str) -> bool:
+    folded = fold(text)
+    return has_any(folded, _LONELY_FOLDED) or any(p.search(folded) for p in _LONELY_PATTERNS)
+
+
+# ---- Health complaints that are NOT an emergency (task C, boundary 5) --------------------------------------------
+# "डोकं दुखतं", "ताप आलाय", "झोप येत नाही", "मी काल पडले होते". Arjun gives NO advice: a fixed warm reply, a family note
+# (only with the family-alert consent) and the conversation goes on. Checked AFTER emergency / distress, and only when
+# the turn is not an explicit care command. UNVERIFIED lexicon, same status as the three above: written without a
+# native speaker or real Prisma output, so it must be reviewed before any public demo. Patterns are written in natural
+# spelling and folded by _pat (ि -> ी, ु -> ू, ँ -> ं), because they run on fold()ed text.
+def _pat(text: str) -> re.Pattern[str]:
+    return re.compile(unicodedata.normalize("NFC", text).translate(_DROP).translate(_FOLD))
+
+
+_PAIN = r"(?:दुख|दुःख|ठणक|ठसठस|कळ)\S*"  # hurts / throbs / aches
+_SYMPTOM_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "head": tuple(
+        _pat(p)
+        for p in (
+            rf"(?<!\S)डोक\S*\s+(?:\S+\s+)?{_PAIN}",
+            r"(?<!\S)डोकेदुख\S*",
+            r"(?<!\S)(?:सिर|सर)\s+(?:में\s+)?(?:दर्द|दुख)\S*",
+            r"(?<!\S)सिरदर्द\S*",
+            r"\bheadache\b|\bhead\s+(?:hurts|aches|is\s+paining|is\s+aching)\b",
+            r"\bdoka\s+(?:\w+\s+)?dukh\w*|\bsir\s*dard\b",
+        )
+    ),
+    "stomach": tuple(
+        _pat(p)
+        for p in (
+            rf"(?<!\S)पोट(?:ात)?\s+(?:\S+\s+)?{_PAIN}",
+            r"(?<!\S)पेट\s+(?:में\s+)?(?:दर्द|दुख)\S*",
+            r"\bstomach\s?ache\b|\btummy\s?ache\b|\bstomach\s+(?:pain|hurts)\b",
+            r"\bpot(?:at)?\s+(?:\w+\s+)?dukh\w*",
+        )
+    ),
+    "fever": tuple(
+        _pat(p)
+        for p in (
+            r"(?<!\S)ताप\s+(?:आ\S*|आहे|येत\S*)",
+            r"(?<!\S)बुखार\S*",
+            r"\bfever\b",
+            r"\btaap\s+(?:aal\w*|aahe|yet\w*)",
+        )
+    ),
+    "joint": tuple(
+        _pat(p)
+        for p in (
+            rf"(?<!\S)(?:गुडघ\S*|कंबर|पाठ|पाठी\S*|पाय|पायात|मान|खांद\S*|कोपर|हात)\s+(?:\S+\s+)?{_PAIN}",
+            r"(?<!\S)(?:गुडघे|कंबर|पाठ)दुख\S*",
+            r"(?<!\S)(?:घुटन\S*|कमर|पीठ|कंधे|कंधा|पैर|टांग)\s+(?:में\s+)?(?:दर्द|दुख)\S*",
+            r"\b(?:knees?|back|legs?|shoulders?|neck|joints?)\s+(?:hurts?|aches?|is\s+paining|are\s+paining)\b",
+            r"\b(?:knee|back|joint|leg)\s+pain\b|\bbackache\b",
+            r"\bgudgh\w*\s+(?:\w+\s+)?dukh\w*|\bkambar\s+(?:\w+\s+)?dukh\w*",
+        )
+    ),
+    "sleep": tuple(
+        _pat(p)
+        for p in (
+            r"(?<!\S)झोप\s+(?:\S+\s+)?(?:येत|लागत)\S*\s+नाही",
+            r"(?<!\S)नींद\s+(?:\S+\s+)?(?:नहीं|नही)",
+            r"\bcan.?t\s+sleep\b|\bsleepless\b|\bno\s+sleep\b",
+            r"\bjhop\s+(?:\w+\s+)?nahi\b",
+        )
+    ),
+    "fall_past": tuple(
+        _pat(p)
+        for p in (
+            r"(?<!\S)(?:मी\s+)?पडल(?:े|ो|ी)\s+होत\S*",
+            r"(?<!\S)(?:मैं\s+)?गिर\s+ग(?:या|ई|यी)\s+थ\S*",
+            r"\bmi\s+padl(?:e|o|i)\s+hot\w*",
+        )
+    ),
+    "unwell": tuple(
+        _pat(p)
+        for p in (
+            r"(?<!\S)बरं\s+(?:\S+\s+)?वाटत\S*\s+नाही",
+            r"(?<!\S)बरं\s+नाही\s+वाटत\S*",
+            r"(?<!\S)बरे\s+वाटत\S*\s+नाही",
+            r"(?<!\S)तब्येत\s+(?:\S+\s+)?(?:ठीक|बरी|चांगली)\s+नाही",
+            r"(?<!\S)तबीयत\s+(?:ठीक\s+नहीं|ठीक\s+नही|खराब)",
+            r"(?<!\S)(?:मळमळ|उलटी|उल्टी|खोकला|खांसी|अशक्तपणा|कमजोरी)\S*",
+            r"\bnot\s+feeling\s+well\b|\bfeel(?:ing)?\s+(?:sick|unwell|weak|nauseous)\b|\bnausea\b",
+            r"\bbara\s+vatat\s+nahi\b",
+        )
+    ),
+}
+# A childhood story about falling is a memory, not a complaint.
+_PAST_STORY = _pat(
+    r"(?<!\S)(?:लहानपणी|लहानपण|बालपणी|बचपन|childhood|as\s+a\s+child|when\s+i\s+was\s+(?:small|young|little))(?!\S)"
+)
+
+
+def symptom_category(text: str) -> str | None:
+    """The kind of health complaint in this turn ("head", "stomach", "fever", "joint", "sleep", "fall_past",
+    "unwell"), or None. Never a diagnosis: only the words she said, grouped. Run AFTER is_emergency / is_distress."""
+    folded = fold(text)
+    for category, patterns in _SYMPTOM_PATTERNS.items():
+        if category == "fall_past" and _PAST_STORY.search(folded):
+            continue
+        if any(p.search(folded) for p in patterns):
+            return category
+    return None
