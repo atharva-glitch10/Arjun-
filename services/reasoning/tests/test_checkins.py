@@ -62,6 +62,18 @@ def test_a_due_meal_is_spoken_with_its_fixed_prompt(core_http, uid, engine):
     assert item["text"] == MR["checkin_prompt_breakfast"]
 
 
+def test_the_daily_walk_has_its_own_fixed_prompt_and_answer(core_http, uid, engine):
+    make_checkin_user(core_http, uid, walk_time="07:30", breakfast_time="10:00")
+    tick(core_http, NOW.replace(hour=7, minute=30))
+    item = engine.deliver_next(uid, "s1")
+    assert item["kind"] == "checkin" and item["text"] == MR["checkin_prompt_walk"]
+    engine.deliver_spoken(uid, item["delivery_id"], "s1")
+
+    res = engine.handle(uid, "हो, फिरायला गेले")
+    assert res.intent == "CHECKIN_DONE" and res.reply == MR["checkin_done_walk"]
+    assert checkins(core_http, uid)[0]["status"] == "done"
+
+
 def test_the_snack_prompt_also_mentions_a_class_that_evening(core_http, uid, engine):
     make_checkin_user(core_http, uid, breakfast_time="10:00", snack_time="08:00")
     set_core_now(NOW - timedelta(hours=3))

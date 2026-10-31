@@ -64,6 +64,24 @@ def test_the_tick_asks_only_the_meal_that_is_due_and_never_twice(client):
     assert client.get(f"/users/{uid}/checkins/open").json()["kind"] == "breakfast"
 
 
+def test_the_daily_walk_is_asked_at_the_family_set_time_only_when_set(client):
+    uid = _user(client, walk_time="07:30", breakfast_time="10:00")
+    box = _clock(NOW)
+    out = _tick(client, box, datetime(2026, 10, 6, 7, 30))
+    assert [x["kind"] for x in out["asked"]] == ["walk"]
+    walk = [c for c in _all(client, uid) if c["kind"] == "walk"][0]
+    assert walk["status"] == "asked" and walk["due_at"].endswith("T07:30:00")
+    assert [d["label"] for d in _deliveries(client, uid)] == ["walk"]
+
+    cid = client.get(f"/users/{uid}/checkins/open").json()["id"]
+    assert client.post(f"/users/{uid}/checkins/{cid}/answer", json={"answer": "done"}).status_code == 200
+    body = client.get(f"/users/{uid}/notifications").json()[0]["body"]
+    assert "walk" in body.lower() and "done" in body.lower()
+
+    no_walk = _user(client, walk_time=None)
+    assert "walk" not in {c["kind"] for c in _all(client, no_walk)}
+
+
 def test_no_rows_and_no_prompts_when_the_family_switched_checkins_off(client):
     uid = _user(client, daily_checkins=False, breakfast_time="09:00")
     box = _clock(NOW)

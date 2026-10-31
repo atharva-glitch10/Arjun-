@@ -1,13 +1,13 @@
-"""Family-switched-on meal check-ins (breakfast / lunch / snack).
+"""Family-switched-on meal, walk and BP check-ins.
 
 The family turns `daily_checkins` on; the scheduler's tick creates today's rows at the family-set
-meal times and QUEUES one spoken prompt for each meal when it comes due. A prompt is a `checkin`
-delivery (deliveries.py) exactly like a reminder, so it is spoken by an open voice session and only
-`spoken_at` means it was heard.
+times and QUEUES one spoken prompt for each one when it comes due (a meal; the walk and BP check
+only when the family put them in her day). A prompt is a `checkin` delivery (deliveries.py) exactly
+like a reminder, so it is spoken by an open voice session and only `spoken_at` means it was heard.
 
 Rules:
-- a meal that waited more than ASK_WINDOW is `missed`: never asked late, never nagged about;
-- an asked meal gets ONE follow-up 30 minutes after the first ask, never a third;
+- a check-in that waited more than ASK_WINDOW is `missed`: never asked late, never nagged about;
+- an asked one gets ONE follow-up 30 minutes after the first ask, never a third;
 - an ask nobody answered by the end of the window is `unanswered`;
 - the elder's spoken answer (done / skipped) is self-reported and stored as such; the family sees
   ONE plain line in the feed. No score, no streak, no advice, no "you should have eaten".
@@ -28,7 +28,8 @@ from .deps import get_now, require_key
 router = APIRouter(dependencies=[Depends(require_key)])
 
 MEALS = ("breakfast", "lunch", "snack")  # dinner is a day marker only for now
-ASK_WINDOW = timedelta(minutes=90)  # after this a meal is `missed`; it is never asked late
+OPTIONAL = ("walk", "bp")  # only when the family put them in her day (walk_time / bp_check_time)
+ASK_WINDOW = timedelta(minutes=90)  # after this a check-in is `missed`; it is never asked late
 FOLLOW_UP_AFTER = timedelta(minutes=30)  # exactly one follow-up per check-in
 HEARD = ("spoken", "shown_only")  # really reached the elder (or the screen), never just queued
 
@@ -40,17 +41,29 @@ def _user(db: Session, user_id: int) -> m.User:
     return user
 
 
-def _meal_time(user: m.User, kind: str) -> str:
-    return {"breakfast": user.breakfast_time, "lunch": user.lunch_time, "snack": user.snack_time}[kind]
+def _kind_time(user: m.User, kind: str) -> str:
+    return {
+        "breakfast": user.breakfast_time,
+        "lunch": user.lunch_time,
+        "snack": user.snack_time,
+        "walk": user.walk_time,
+        "bp": user.bp_check_time,
+    }[kind] or "00:00"
 
 
 def _due_at(user: m.User, kind: str, now: datetime) -> datetime:
-    h, mi = (int(x) for x in _meal_time(user, kind).split(":"))
+    h, mi = (int(x) for x in _kind_time(user, kind).split(":"))
     return datetime(now.year, now.month, now.day, h, mi)
 
 
+def _kinds(user: m.User) -> tuple[str, ...]:
+    """The meals always; the walk / BP check only when the family gave them a time."""
+    optional = tuple(k for k in OPTIONAL if (user.walk_time if k == "walk" else user.bp_check_time))
+    return (*MEALS, *optional)
+
+
 def ensure_checkins(db: Session, user: m.User, now: datetime) -> None:
-    """Create today's meal check-in rows (idempotent). Nothing is written when the family is off."""
+    """Create today's check-in rows (idempotent). Nothing is written when the family is off."""
     if not user.daily_checkins:
         return
     existing = {
@@ -59,7 +72,7 @@ def ensure_checkins(db: Session, user: m.User, now: datetime) -> None:
             select(m.Checkin).where(m.Checkin.user_id == user.id, m.Checkin.for_date == now.date())
         )
     }
-    for kind in MEALS:
+    for kind in _kinds(user):
         if kind in existing:
             continue
         db.add(
