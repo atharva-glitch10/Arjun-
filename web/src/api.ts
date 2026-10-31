@@ -170,6 +170,17 @@ export interface BpReading {
   source: "voice" | "watch" | "manual";
 }
 
+/** One raw sample from the SYNTHETIC watch. No target and no alert is derived. */
+export interface WatchSample {
+  id: number;
+  user_id: number;
+  kind: "heart_rate" | "steps" | "sleep_minutes";
+  value: number;
+  unit: "bpm" | "steps" | "minutes";
+  measured_at: string;
+  source: string;
+}
+
 export interface LivekitToken {
   url: string;
   token: string;
@@ -227,6 +238,7 @@ export const api = {
   activity: (id: number) => core<Activity>(`/users/${id}/activity`),
   wellbeingToday: (id: number) => core<WellbeingToday>(`/users/${id}/wellbeing/today`),
   bpReadings: (id: number) => core<BpReading[]>(`/users/${id}/bp-readings`),
+  watchSamples: (id: number) => core<WatchSample[]>(`/users/${id}/watch-samples/latest`),
   medicines: (id: number) => core<Medicine[]>(`/users/${id}/medicines`),
   addMedicine: (id: number, body: MedicineInput) =>
     core<Medicine>(`/users/${id}/medicines`, post(body)),

@@ -225,6 +225,20 @@ class BpReading(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class WatchSample(Base):
+    """One raw sample from the SYNTHETIC watch. No device is paired and no target or alert is derived."""
+
+    __tablename__ = "watch_samples"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # heart_rate | steps | sleep_minutes
+    value: Mapped[int] = mapped_column(Integer)
+    unit: Mapped[str] = mapped_column(String(10))  # bpm | steps | minutes
+    measured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    source: Mapped[str] = mapped_column(String(20), default="synthetic-watch")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Medicine(Base):
     """Created and edited by the family only (dashboard). Name and dose are stored exactly as
     entered and are only ever spoken or shown verbatim - never paraphrased or translated."""

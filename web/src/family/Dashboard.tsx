@@ -25,6 +25,7 @@ import type {
   Reminder,
   SharedStory,
   User,
+  WatchSample,
 } from "../api";
 import { CheckIcon, ClockIcon, CrossIcon, Diya } from "../ghar/Motifs";
 
@@ -43,6 +44,7 @@ interface Data {
   activity: Activity;
   today: WellbeingToday;
   bp: BpReading[];
+  watch: WatchSample[];
 }
 
 const DAY = 86_400_000;
@@ -127,7 +129,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -145,8 +147,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           (): WellbeingToday => ({ severity: "normal", mood: "not_assessed", conversations: 0, last_summary: "", last_at: null }),
         ),
         api.bpReadings(userId).catch((): BpReading[] => []), // older core-api
+        api.watchSamples(userId).catch((): WatchSample[] => []), // older core-api
       ]);
-      setData({ user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp });
+      setData({ user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -301,6 +304,11 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   const doneToday = todayReminders.filter((r) => r.status === "done").length;
   const nextAppt = data.nextAppt;
   const latestBp = data.bp[0] ?? null;
+  const watchLabel: Record<WatchSample["kind"], string> = {
+    heart_rate: "Heart rate",
+    steps: "Steps",
+    sleep_minutes: "Sleep",
+  };
   const days = Array.from({ length: 7 }, (_, i) => new Date(now.getTime() - (6 - i) * DAY));
   const requestsToday = data.requests.filter((n) => sameDay(parse(n.created_at), now)).length;
   const name = user.name.replace(/\s*\(synthetic\)\s*$/i, "");
@@ -560,6 +568,31 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
                 <span>○ cross = not confirmed</span>
                 <span>– = nothing set</span>
               </div>
+            </section>
+
+            <section className="fam-card">
+              <h2>Synthetic watch</h2>
+              {data.watch.length === 0 ? (
+                <p className="fam-note">No samples yet. This is a synthetic feed; no watch is paired.</p>
+              ) : (
+                <ul className="fam-list">
+                  {data.watch.map((x) => (
+                    <li key={x.id}>
+                      <span style={{ fontWeight: 800, minWidth: 110 }}>{watchLabel[x.kind]}</span>
+                      <span style={{ flex: 1 }}>
+                        {x.value} {x.unit}
+                      </span>
+                      <span className="t-muted">
+                        {clock(parse(x.measured_at))} · {x.source}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="fam-note">
+                Raw samples from a made-up watch feed for the demo. There is no target, score or alert, and nothing here
+                is a medical reading.
+              </p>
             </section>
 
             <section className="fam-card">

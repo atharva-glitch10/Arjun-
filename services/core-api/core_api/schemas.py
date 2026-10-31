@@ -297,6 +297,24 @@ class BpReadingOut(BpReadingIn):
     measured_at: datetime
 
 
+class WatchSampleIn(BaseModel):
+    """A raw sample from the synthetic watch. The unit is derived from the kind, never sent or judged."""
+
+    kind: Literal["heart_rate", "steps", "sleep_minutes"]
+    value: int = Field(ge=0, le=200_000)
+
+
+class WatchSampleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: int
+    kind: str
+    value: int
+    unit: str
+    measured_at: datetime
+    source: str
+
+
 class DayItem(BaseModel):
     kind: Literal["reminder", "appointment", "medicine", "meal", "wake", "walk", "bp"]
     at: datetime
