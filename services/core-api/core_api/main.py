@@ -11,7 +11,7 @@ from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
 from .day import router as day_router
-from .db import Base, engine, get_db
+from .db import Base, engine, ensure_columns, get_db
 from .deliveries import ack_item, enqueue
 from .deliveries import router as deliveries_router
 from .deps import check_api_key_configured, get_now, require_key
@@ -28,6 +28,7 @@ from .wellbeing import router as wellbeing_router
 async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
     check_api_key_configured()  # refuse to start with auth silently disabled
     Base.metadata.create_all(engine)
+    ensure_columns(engine)  # no migrations: add columns that newer code needs to old databases
     yield
 
 
@@ -66,7 +67,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> m.User:
 def patch_user(user_id: int, body: s.UserPatch, db: Session = Depends(get_db)) -> m.User:
     user = _user(db, user_id)
     for key, value in body.model_dump(exclude_unset=True).items():
-        if value is not None:
+        if value is not None or key in ("walk_time", "bp_check_time"):  # an explicit null removes a walk / BP check
             setattr(user, key, value)
     db.commit()
     return user

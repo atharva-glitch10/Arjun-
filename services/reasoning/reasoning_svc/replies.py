@@ -265,8 +265,12 @@ _TIME = {
         "next_up": "पुढे {when}: {label}.",
         "next_none": "आज आणखी काही ठरलेलं नाही.",
         "open_now": "आत्ता बाकी आहे: {items}.",
+        "meal_breakfast": "नाश्ता",
         "meal_lunch": "दुपारचं जेवण",
+        "meal_snack": "संध्याकाळचा नाश्ता",
         "meal_dinner": "रात्रीचं जेवण",
+        "walk_label": "फिरायला जाण्याची वेळ",
+        "bp_label": "बीपी तपासण्याची वेळ",
         "wake_label": "उठण्याची वेळ",
         "greet_morning": "शुभ सकाळ",
         "greet_afternoon": "शुभ दुपार",
@@ -304,8 +308,12 @@ _TIME = {
         "next_up": "आगे {when}: {label}।",
         "next_none": "आज और कुछ तय नहीं है।",
         "open_now": "अभी बाकी है: {items}।",
+        "meal_breakfast": "नाश्ता",
         "meal_lunch": "दोपहर का खाना",
+        "meal_snack": "शाम का नाश्ता",
         "meal_dinner": "रात का खाना",
+        "walk_label": "सैर पर जाने का समय",
+        "bp_label": "बीपी जाँचने का समय",
         "wake_label": "उठने का समय",
         "greet_morning": "सुप्रभात",
         "greet_afternoon": "नमस्कार",
@@ -343,8 +351,12 @@ _TIME = {
         "next_up": "Next, {when}: {label}.",
         "next_none": "Nothing else is planned for today.",
         "open_now": "Still pending: {items}.",
+        "meal_breakfast": "breakfast",
         "meal_lunch": "lunch",
+        "meal_snack": "evening snack",
         "meal_dinner": "dinner",
+        "walk_label": "time for your walk",
+        "bp_label": "time to check your BP",
         "wake_label": "wake-up time",
         "greet_morning": "Good morning",
         "greet_afternoon": "Good afternoon",
@@ -456,6 +468,8 @@ def item_text(item: dict, lang: str) -> str:  # type: ignore[type-arg]
         return r[f"meal_{item['label']}"]
     if kind == "wake":
         return r["wake_label"]
+    if kind in ("walk", "bp"):
+        return r[f"{kind}_label"]
     if kind == "medicine":
         return f"{item['label']}, {item['detail']}"
     return str(item["label"])

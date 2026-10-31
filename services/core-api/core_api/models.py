@@ -34,6 +34,14 @@ class User(Base):
     wake_time: Mapped[str] = mapped_column(String(5), default="07:00")
     lunch_time: Mapped[str] = mapped_column(String(5), default="13:00")
     dinner_time: Mapped[str] = mapped_column(String(5), default="20:00")
+    # Family-set day markers (task A). walk / BP check are optional: None means "not part of her day".
+    breakfast_time: Mapped[str] = mapped_column(String(5), default="08:00")
+    snack_time: Mapped[str] = mapped_column(String(5), default="17:00")
+    walk_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    bp_check_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    # Meal / walk / BP check-ins are spoken only when the family switched them on.
+    daily_checkins: Mapped[bool] = mapped_column(Boolean, default=False)
+    honorific: Mapped[str] = mapped_column(String(60), default="")  # how Arjun addresses her ("" = the name)
     interests: Mapped[list[str]] = mapped_column(JSON, default=list)
     opener_start: Mapped[str] = mapped_column(String(5), default="10:00")
     opener_end: Mapped[str] = mapped_column(String(5), default="18:00")
@@ -67,6 +75,11 @@ class Appointment(Base):
     title: Mapped[str] = mapped_column(String(200))
     starts_at: Mapped[datetime] = mapped_column(DateTime)
     location: Mapped[str] = mapped_column(String(200), default="")
+    # Optional weekly rule (task B): weekdays 0=Monday..6=Sunday, start/end "HH:MM". `starts_at` is then the first
+    # day the rule applies (its time is the default start). None = a one-off appointment.
+    weekdays: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+    start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    end_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
 
 
 class StoryMemory(Base):

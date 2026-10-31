@@ -43,9 +43,10 @@ def due_at_for(user: m.User, med: m.Medicine, day: date) -> datetime:
         hhmm = med.time or "08:00"
         offset = 0
     else:
-        hhmm = {"wake": user.wake_time, "lunch": user.lunch_time, "dinner": user.dinner_time}[
-            med.anchor
-        ]
+        hhmm = {
+            "wake": user.wake_time, "breakfast": user.breakfast_time, "lunch": user.lunch_time,
+            "dinner": user.dinner_time,
+        }[med.anchor]
         offset = med.offset_min
     h, mi = (int(x) for x in hhmm.split(":"))
     return datetime(day.year, day.month, day.day, h, mi) + timedelta(minutes=offset)

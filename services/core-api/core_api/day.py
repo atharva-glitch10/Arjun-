@@ -113,9 +113,17 @@ def day_view(
                     status="scheduled",
                 )
             )
+    # Family-set markers (the times are edited on the dashboard); optional ones appear only when the family set them.
     items.append(s.DayItem(kind="wake", at=_at(start, user.wake_time), label="wake", status="scheduled"))
-    items.append(s.DayItem(kind="meal", at=_at(start, user.lunch_time), label="lunch", status="scheduled"))
-    items.append(s.DayItem(kind="meal", at=_at(start, user.dinner_time), label="dinner", status="scheduled"))
+    for label, hhmm in (
+        ("breakfast", user.breakfast_time), ("lunch", user.lunch_time), ("snack", user.snack_time),
+        ("dinner", user.dinner_time),
+    ):
+        items.append(s.DayItem(kind="meal", at=_at(start, hhmm), label=label, status="scheduled"))
+    if user.walk_time:
+        items.append(s.DayItem(kind="walk", at=_at(start, user.walk_time), label="walk", status="scheduled"))
+    if user.bp_check_time:
+        items.append(s.DayItem(kind="bp", at=_at(start, user.bp_check_time), label="bp", status="scheduled"))
 
     items.sort(key=lambda i: (i.at, i.kind))
     open_now = [

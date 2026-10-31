@@ -22,14 +22,21 @@ class UserIn(BaseModel):
     wake_time: str = "07:00"
     lunch_time: str = "13:00"
     dinner_time: str = "20:00"
+    breakfast_time: str = "08:00"
+    snack_time: str = "17:00"
+    walk_time: str | None = None  # optional: None = no daily walk in her day
+    bp_check_time: str | None = None
+    daily_checkins: bool = False  # meal / walk / BP check-ins are spoken only when the family switches this on
+    honorific: str = Field(default="", max_length=60)
     interests: list[str] = []
     opener_start: str = "10:00"
     opener_end: str = "18:00"
     consent_distress_alert: bool = False
 
-    _v = field_validator("wake_time", "lunch_time", "dinner_time", "opener_start", "opener_end")(
-        _check_hhmm
-    )
+    _v = field_validator(
+        "wake_time", "lunch_time", "dinner_time", "breakfast_time", "snack_time", "walk_time", "bp_check_time",
+        "opener_start", "opener_end",
+    )(_check_hhmm)
 
 
 class UserPatch(BaseModel):
@@ -37,14 +44,21 @@ class UserPatch(BaseModel):
     wake_time: str | None = None
     lunch_time: str | None = None
     dinner_time: str | None = None
+    breakfast_time: str | None = None
+    snack_time: str | None = None
+    walk_time: str | None = None
+    bp_check_time: str | None = None
+    daily_checkins: bool | None = None
+    honorific: str | None = Field(default=None, max_length=60)
     interests: list[str] | None = None
     opener_start: str | None = None
     opener_end: str | None = None
     consent_distress_alert: bool | None = None
 
-    _v = field_validator("wake_time", "lunch_time", "dinner_time", "opener_start", "opener_end")(
-        _check_hhmm
-    )
+    _v = field_validator(
+        "wake_time", "lunch_time", "dinner_time", "breakfast_time", "snack_time", "walk_time", "bp_check_time",
+        "opener_start", "opener_end",
+    )(_check_hhmm)
 
 
 class UserOut(UserIn):
@@ -136,7 +150,7 @@ class DistressOut(BaseModel):
     caregiver_alerted: bool
 
 
-Anchor = Literal["fixed", "wake", "lunch", "dinner"]
+Anchor = Literal["fixed", "wake", "breakfast", "lunch", "dinner"]
 
 
 class MedicineIn(BaseModel):
@@ -223,9 +237,9 @@ class SnoozeIn(BaseModel):
 
 
 class DayItem(BaseModel):
-    kind: Literal["reminder", "appointment", "medicine", "meal", "wake"]
+    kind: Literal["reminder", "appointment", "medicine", "meal", "wake", "walk", "bp"]
     at: datetime
-    label: str  # task / title / medicine name verbatim; meal|wake: lunch, dinner, wake
+    label: str  # task / title / medicine name verbatim; meal: breakfast|lunch|snack|dinner; wake|walk|bp
     detail: str = ""  # medicine dose verbatim, or appointment place
     status: str  # pending|fired|done, scheduled, due|reminded|taken|unconfirmed
     ref_id: int | None = None
