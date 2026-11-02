@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import applog
+from audiowarm import warm_audio_resampler
 from bridge import (
     claim_next_delivery,
     closing_text,
@@ -174,8 +175,15 @@ class Arjun(Agent):
         raise StopResponse()  # suppress the default LLM reply
 
 
+def prewarm(proc: agents.JobProcess) -> None:
+    """Once per job process, before any session: warm the resampler and load the VAD model."""
+    warm_audio_resampler()
+    proc.userdata["vad"] = silero.VAD.load()
+
+
 async def entrypoint(ctx: agents.JobContext) -> None:
-    applog.setup_file_log()  # the CLI may have reset logging after import; make sure the file handler is on
+    warm_audio_resampler()  # idempotent, a safety net
+    applog.setup_file_log() # the CLI may have reset logging after import; make sure the file handler is on
     await ctx.connect()
     timbre, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
     logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
@@ -188,7 +196,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     session = AgentSession(
         stt=gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING, **STT_OPTIONS),  # Prisma
         tts=timbre,  # key from GNANI_API_KEY
-        vad=silero.VAD.load(),
+        vad=ctx.proc.userdata.get("vad") or silero.VAD.load(),
         turn_handling=handling,
     )
     user_started = asyncio.Event()  # set whenever she starts speaking (the conjunction hold waits on it)
@@ -346,4 +354,4 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint, agent_name=AGENT_NAME))
+    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name=AGENT_NAME))
