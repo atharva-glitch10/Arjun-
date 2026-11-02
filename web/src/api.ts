@@ -48,6 +48,26 @@ export interface Contact {
   phone: string;
 }
 
+export interface AppLink {
+  id: number;
+  kind: "youtube_query" | "youtube_video" | "youtube_playlist" | "youtube_channel_live" | "rss" | "whatsapp" | "link";
+  label: string;
+  /** whatsapp: the contact id (numbers stay in contacts). */
+  value: string;
+  spoken_names: string[];
+  sort: number;
+  /** The family approved a website that is not on the known list: shown with a warning. */
+  other_host: boolean;
+}
+
+export interface AppLinkInput {
+  kind: AppLink["kind"];
+  label: string;
+  value: string;
+  spoken_names: string[];
+  allow_other_host?: boolean;
+}
+
 export interface SharedStory {
   id: number;
   summary: string;
@@ -231,6 +251,9 @@ export const api = {
   contacts: (id: number) => core<Contact[]>(`/users/${id}/contacts`),
   addContact: (id: number, name: string, relation: string, phone: string) =>
     core<Contact>(`/users/${id}/contacts`, post({ name, relation, phone })),
+  appLinks: (id: number) => core<AppLink[]>(`/users/${id}/app-links`),
+  addAppLink: (id: number, body: AppLinkInput) => core<AppLink>(`/users/${id}/app-links`, post(body)),
+  deleteAppLink: (id: number, linkId: number) => core<void>(`/users/${id}/app-links/${linkId}`, { method: "DELETE" }),
   // Caregiver view: ONLY stories the elder explicitly shared. Never calls /stories.
   memoryBook: (id: number) => core<SharedStory[]>(`/users/${id}/memory-book`),
   caregiverRequests: (id: number) => core<Note[]>(`/users/${id}/caregiver-requests`),

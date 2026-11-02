@@ -3,6 +3,8 @@ import type { Participant, RemoteParticipant } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
+import { parseAction } from "./action";
+import type { ArjunAction } from "./action";
 import { parseAttributes } from "./state";
 import type { AgentScreen, AgentState, Failure, Phase, VoiceSnapshot } from "./state";
 
@@ -36,6 +38,10 @@ export interface ArjunVoice {
   dismissSafety: () => void;
   /** Arjun is working out the answer (reasoning / the LLM): show the "thinking" marker. */
   thinking: boolean;
+  /** The newest "arjun.action" (open a video / WhatsApp / a link, or a media control). Run each once, by `turn`. */
+  action: ArjunAction | null;
+  /** Tell the agent whether the video player is playing ("arjun.media"): it ignores the video's own audio meanwhile. */
+  reportMedia: (state: "playing" | "stopped") => void;
   /** Arjun's voice volume, 0..1 (the slider on the elder screen). Kept on this device. */
   volume: number;
   setVolume: (v: number) => void;
@@ -66,6 +72,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [item, setItem] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [action, setAction] = useState<ArjunAction | null>(null);
   const [volume, setVolumeState] = useState(savedVolume);
   const volumeRef = useRef(volume);
   const audioEls = useRef(new Set<HTMLMediaElement>());
@@ -110,6 +117,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     setItem("");
     setAudioBlocked(false);
     setThinking(false);
+    setAction(null);
   }, []);
 
   const fail = useCallback(
@@ -135,6 +143,8 @@ export function useArjunVoice(userId: number): ArjunVoice {
       setThinking(p.attributes["arjun.thinking"] === "1" || a.agentState === "thinking");
       if (a.screen) setScreen(a.screen);
       if (a.item) setItem(a.item);
+      const act = parseAction(p.attributes["arjun.action"]);
+      if (act) setAction((prev) => (prev && prev.turn >= act.turn ? prev : act));
       if (a.turn > turnRef.current) {
         turnRef.current = a.turn;
         setTurn(a.turn);
@@ -324,6 +334,14 @@ export function useArjunVoice(userId: number): ArjunVoice {
 
   const dismissSafety = useCallback(() => setSafetyDismissedTurn(turnRef.current), []);
 
+  const reportMedia = useCallback((state: "playing" | "stopped") => {
+    const r = room.current;
+    if (!r || r.state !== "connected") return;
+    void r.localParticipant.setAttributes({ "arjun.media": state }).catch(() => {
+      // a failed report only means the agent keeps its own guess (it assumes "playing" after an open action)
+    });
+  }, []);
+
   const setVolume = useCallback((v: number) => {
     const next = Math.min(1, Math.max(0.1, v));
     volumeRef.current = next;
@@ -353,6 +371,6 @@ export function useArjunVoice(userId: number): ArjunVoice {
   };
   return {
     snapshot, reply, heard, readyMs, item, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
-    thinking, volume, setVolume,
+    thinking, volume, setVolume, action, reportMedia,
   };
 }

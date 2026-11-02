@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
 import { activityLine } from "./activity";
+import { AppLinksCard } from "./AppLinksCard";
 import { alarmState, enableAlarm, popup, startAlarm, stopAlarm } from "./alarm";
 import { recentEmergencies } from "./alerts";
 import { loadAcked, needsPopup, saveAcked, startEmergencyWatch, unacknowledged } from "./emergencyWatch";
@@ -14,6 +15,7 @@ import type {
   WellbeingToday,
   Activity,
   Anchor,
+  AppLink,
   Appointment,
   BpReading,
   Contact,
@@ -35,6 +37,7 @@ interface Data {
   appointments: Appointment[];
   nextAppt: Appointment | null;
   contacts: Contact[];
+  appLinks: AppLink[];
   book: SharedStory[];
   requests: Note[];
   notes: Note[];
@@ -129,7 +132,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -148,8 +151,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         ),
         api.bpReadings(userId).catch((): BpReading[] => []), // older core-api
         api.watchSamples(userId).catch((): WatchSample[] => []), // older core-api
+        api.appLinks(userId).catch((): AppLink[] => []), // older core-api
       ]);
-      setData({ user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch });
+      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -753,6 +757,13 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </ul>
             <AddContact onAdd={(n, r, p) => run(() => api.addContact(userId, n, r, p))} />
           </section>
+
+          <AppLinksCard
+            links={data.appLinks}
+            contacts={data.contacts}
+            onAdd={(body) => run(() => api.addAppLink(userId, body))}
+            onDelete={(id) => run(() => api.deleteAppLink(userId, id))}
+          />
 
           <section className="fam-card" style={{ flex: "1 1 420px" }}>
             <h2>Memory Book</h2>

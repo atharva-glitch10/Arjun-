@@ -194,3 +194,17 @@ h1, h2, p { margin: 0; }
 @keyframes hf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes hf-bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
 @media (prefers-reduced-motion: reduce) { .hf-dot, .thinking-marker .dots i { animation: none; } }
+
+/* ---- apps by voice: full-screen video, big buttons (>= 80 px), everything also by voice ---- */
+.media-screen { position: fixed; inset: 0; z-index: 50; background: #000; display: flex; flex-direction: column; }
+.media-frame { flex: 1; width: 100%; border: 0; }
+.media-bar { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 14px; background: var(--ghar-indigo); }
+.media-btn { min-height: 88px; min-width: 200px; padding: 0 28px; border: 0; border-radius: 20px; font-size: 32px; font-weight: 700;
+  background: var(--ghar-surface); color: var(--ghar-ink, #1d1b3a); cursor: pointer; }
+.media-btn.media-close { background: var(--ghar-haldi, #f2b632); color: #1d1b3a; }
+.media-start { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); min-height: 120px; padding: 0 56px;
+  border: 0; border-radius: 28px; font-size: 44px; font-weight: 800; background: var(--ghar-haldi, #f2b632); color: #1d1b3a; cursor: pointer; }
+.media-error { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); max-width: 80%; padding: 20px 28px; border-radius: 20px;
+  background: var(--ghar-surface); font-size: 30px; text-align: center; }
+.link-prompt { background: var(--ghar-khadi, #f6f0e4); align-items: center; justify-content: center; gap: 28px; }
+.link-prompt .media-start { position: static; transform: none; }

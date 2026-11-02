@@ -21,6 +21,8 @@ import type { UpcomingItem } from "../ghar/Screens";
 import { FAILURE_TEXT, shownFor } from "../voice/state";
 import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
+import { LinkPrompt, MediaScreen } from "./MediaScreen";
+import { useAppActions } from "./useAppActions";
 import {
   dateLine,
   dayBand,
@@ -101,6 +103,10 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const [restedTurn, setRestedTurn] = useState(0);
   const shown = restingScreen(shownFor(snapshot), voice.snapshot.turn, restedTurn, HANDS_FREE);
   const { phase } = voice.snapshot;
+  // Apps by voice: a video, WhatsApp or a family link opens on this page (agent attribute "arjun.action").
+  const apps = useAppActions(voice, shown === "safety", () => {
+    if (voice.snapshot.phase !== "live") void voice.start();
+  });
 
   // Hands-free: open the voice session as the page opens and keep it open; reconnect by itself after a drop.
   const attempts = useRef({ last: null as number | null, count: 0 });
@@ -583,6 +589,18 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         </div>
       )}
       {body()}
+      {apps.media && shown !== "safety" && (
+        <MediaScreen
+          key={apps.media.turn}
+          action={apps.media}
+          control={apps.control}
+          onReport={apps.reportMedia}
+          onClosed={apps.onMediaClosed}
+        />
+      )}
+      {apps.blocked && shown !== "safety" && (
+        <LinkPrompt title={apps.blocked.title} onOpen={apps.openBlocked} onCancel={apps.cancelBlocked} />
+      )}
       {HANDS_FREE && (
         <label className="volume" title="आवाज">
           <span aria-hidden>🔈</span>
