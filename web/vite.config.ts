@@ -8,6 +8,7 @@ const apiKey = process.env.CORE_API_KEY ?? "";
 export default defineConfig({
   plugins: [react()],
   server: {
+    allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/core": {
         target: coreTarget,
