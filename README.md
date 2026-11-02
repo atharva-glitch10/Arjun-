@@ -49,6 +49,7 @@ then `pytest` inside each service and `ruff check .` at the root.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
+- **2026-11-02 Windows crash fix not yet confirmed live**: "Assertion failed LSX_FFT_BR == NULL" (livekit_ffi.dll / soxr) should be fixed by warming the resampler once per process (`audiowarm.py`, `prewarm_fnc`); unit tests pass, but no live session has run on it.
 - **2026-10-31 night (conversation mode, symptoms, endpointing) is tested and measured on text only**: a 15-turn Marathi run with the
   real Sarvam key (11/15 answered by the LLM, 0 "not understood"), but NO spoken session on the new code. Chat turns now wait 1.6 s of
   silence (0.8 s for commands), so a chat reply arrives about 0.9 s later; the symptom and health-advice word lists are unverified.
@@ -115,7 +116,7 @@ then `pytest` inside each service and `ruff check .` at the root.
   that provider**, so the demo uses synthetic data only. CLAUDE.md open question 5 (is a non-Gnani LLM allowed in
   the entry?) is still unanswered on Discord: say plainly in the posts which model does what. No provider is
   configured yet, so nothing has run through it live. Reply quality in Marathi is unmeasured (`eval/llm_compare.py`
-  measures it once a provider is set). Limits: one ~4 s budget per turn, 120 tokens, last eight exchanges, no name
+  measures it once a provider is set). Limits: one ~4 s budget per turn, 80 tokens, last eight exchanges, no name
   or contact details sent; replies that claim to be human, say "I missed you", give medical advice, or recite
   recipes/facts are replaced by a fixed line.
 - Companion conversation: the elder screen now keeps listening after a CHAT reply (ends on silence, "nako", or the

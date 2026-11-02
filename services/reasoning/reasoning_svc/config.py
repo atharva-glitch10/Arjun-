@@ -5,8 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 EXTRACTION_TEMPERATURE = 0.0  # care mode / intent extraction / distress: always 0
-# UNVERIFIED: Gnani's model-card recommendation. Must be chosen by our own testing before launch.
-COMPANION_TEMPERATURE = 0.6
+# Lowered 0.6 -> 0.3 (2026-11-02) after long, guessing replies at 0.6. UNVERIFIED with a real voice.
+COMPANION_TEMPERATURE = 0.3
 COMPANION_TOP_P = 0.95
 
 
@@ -28,7 +28,7 @@ class LlmSettings:
     provider: str = "none"
     send_template_kwargs: bool = True
     timeout_s: float = 4.0  # one budget for ALL LLM calls in a turn (the voice path waits ~5 s for reasoning)
-    max_tokens: int = 120
+    max_tokens: int = 80
     history_exchanges: int = 8  # last eight user/assistant exchanges (task B, 2026-10-31); was 4
     reasoning_off: bool = False  # send reasoning_effort=null (Sarvam): no hidden "thinking" before the answer
     max_concurrent: int = 4  # LLM calls in flight at once (concurrency limit)
@@ -75,7 +75,7 @@ def llm_settings(env: Mapping[str, str] | None = None) -> LlmSettings:
         provider=provider,
         send_template_kwargs=template != "0",
         timeout_s=float(number("LLM_TIMEOUT_S", 4.0, float)),
-        max_tokens=int(number("LLM_MAX_TOKENS", 120, int)),
+        max_tokens=int(number("LLM_MAX_TOKENS", 80, int)),
         history_exchanges=int(number("LLM_HISTORY_EXCHANGES", 8, int)),
         # Sarvam-105B "thinks" by default; in a voice turn that is pure latency, so it is switched off.
         reasoning_off=sarvam and get("LLM_REASONING") != "1",

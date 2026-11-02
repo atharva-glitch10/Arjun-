@@ -23,7 +23,13 @@ from .checkins import answer_from_text
 from .clock import local_now
 from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency, is_lonely, symptom_category
-from .evon import EvonClient, sanitize_companion, split_voice_tags
+from .evon import (
+    EvonClient,
+    sanitize_companion,
+    split_voice_tags,
+    strip_filler,
+    strip_filler_voiced,
+)
 from .parser import (
     MED_TAKEN_WORDS,
     NO,
@@ -554,6 +560,8 @@ class TurnEngine:
         if draft is not None and rules.intent in ("UNKNOWN", "CHAT", "CREATE_REMINDER"):
             rules.intent = "CREATE_REMINDER"
             return rules, "rules"
+        if rules.intent == "UNKNOWN" and symptom_category(text):
+            return rules, "rules"  # a health complaint gets the fixed template; the LLM never hears it
         if conversing and rules.intent == "UNKNOWN":
             return rules, "rules"  # mid-chat an odd turn is chat (_reshape); the intent extractor is not asked
         # The LLM is asked ONLY about turns the rules cannot read. Care commands, times, medicines,
@@ -1034,6 +1042,8 @@ class TurnEngine:
             )
             # voice tags out first, so the boundary checks see only words
             clean, voiced = split_voice_tags(raw) if raw else (None, "")
+            if clean is not None:  # same words on the screen and in the voice (the leading tag stays on the voice)
+                clean, voiced = strip_filler(clean), strip_filler_voiced(voiced)
             # two sentences at most, and no boundary broken (human / missed you / medical / recipes, facts)
             reply, reasons = sanitize_companion(clean, lang)
             if raw and reasons:

@@ -189,7 +189,7 @@ def _pat(text: str) -> re.Pattern[str]:
     return re.compile(unicodedata.normalize("NFC", text).translate(_DROP).translate(_FOLD))
 
 
-_PAIN = r"(?:दुख|दुःख|ठणक|ठसठस|कळ)\S*"  # hurts / throbs / aches
+_PAIN = r"(?:दुख|दुःख|ठणक|ठसठस|कळ)\S*(?!\S)(?!\s+(?:नाही|नहीं|नही))"  # hurts / throbs / aches
 _SYMPTOM_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "head": tuple(
         _pat(p)
@@ -257,6 +257,9 @@ _SYMPTOM_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
             r"(?<!\S)तब्येत\s+(?:\S+\s+)?(?:ठीक|बरी|चांगली)\s+नाही",
             r"(?<!\S)तबीयत\s+(?:ठीक\s+नहीं|ठीक\s+नही|खराब)",
             r"(?<!\S)(?:मळमळ|उलटी|उल्टी|खोकला|खांसी|अशक्तपणा|कमजोरी)\S*",
+            r"(?<!\S)सर्दी\s+(?:झाली|झालीय|झालीये|आहे)\S*",
+            r"(?<!\S)डोक\S*\s+जड\S*",
+            r"\bcough(?:ing)?\b",
             r"\bnot\s+feeling\s+well\b|\bfeel(?:ing)?\s+(?:sick|unwell|weak|nauseous)\b|\bnausea\b",
             r"\bbara\s+vatat\s+nahi\b",
         )

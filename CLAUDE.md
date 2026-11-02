@@ -72,7 +72,7 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 |---|---|---|
 | Prisma | STT, ears (streaming, code-mixed) | Gnani API via LiveKit Gnani plugin (credits) |
 | Timbre | TTS, Arjun's male voice | Gnani API via plugin. API accepts ONLY `timbre-v2.5` / `timbre-v3.0` and needs a voice (we use `Omkar`, verified 2026-10-21) |
-| Hosted LLM (**non-Gnani**) | Open conversation ONLY: companion/chat replies, and turns the rules cannot read (UNKNOWN) | Any OpenAI-compatible API: `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_PROVIDER_NAME` (key read only by reasoning). What the elder says in those turns is sent to the provider, so demo data is synthetic. Limits: ~4 s per turn, 120 tokens (measured: Marathi replies use 20-42), last 8 exchanges |
+| Hosted LLM (**non-Gnani**) | Open conversation ONLY: companion/chat replies, and turns the rules cannot read (UNKNOWN) | Any OpenAI-compatible API: `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_PROVIDER_NAME` (key read only by reasoning). What the elder says in those turns is sent to the provider, so demo data is synthetic. Limits: ~4 s per turn, 80 tokens (2026-11-02; measured: Marathi replies use 20-42), last 8 exchanges |
 | Evon v3.3 | NOT USED (decision T9, 2026-10-24) | Not on the API platform, not covered by credits; would need an 80 GB GPU. The `EVON_*` names still work as aliases of `LLM_*` if it is ever used. Never run it on the dev laptop |
 
 **Truthful write-up:** speech in = Gnani Prisma, speech out = Gnani Timbre, the conversation LLM = the hosted non-Gnani provider named in `LLM_PROVIDER_NAME` (none configured yet), Evon = not used.
@@ -88,8 +88,7 @@ Layered brain so the app works with no LLM at all: safety rules -> rules + Marat
 LLM, asked only for companion/chat replies and for turns the rules return UNKNOWN (it may then only suggest
 CREATE_REMINDER / LIST_TODAY / GET_APPOINTMENT / CALL_FAMILY_REMINDER / REQUEST_CAREGIVER / CHAT; everything
 still needs the pending action and a spoken yes). Care mode, times, medicines, confirmations and safety never
-wait for it. Intent extraction: temperature 0. Companion: one fixed value (0.6, Gnani's suggestion for Evon;
-not yet chosen by our testing). Send `chat_template_kwargs` only to vLLM/Evon (`LLM_SEND_TEMPLATE_KWARGS=0`
+wait for it. Intent extraction: temperature 0. Companion: one fixed value (0.3 since 2026-11-02, lowered from 0.6 after long, guessing replies; not yet chosen by a proper test). Send `chat_template_kwargs` only to vLLM/Evon (`LLM_SEND_TEMPLATE_KWARGS=0`
 for hosted providers).
 
 ## Voice path facts (verified)

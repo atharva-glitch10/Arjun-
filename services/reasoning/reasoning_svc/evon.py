@@ -58,7 +58,9 @@ _VIOLATIONS: dict[str, re.Pattern[str]] = {
         r"|डॉक्टर\s+(?:के\s+पास|को)\s+(?:\S+\s+)?(?:जा|दिखा|मिल)\S*"
         r"|\b(?:you\s+should|please|try\s+to|better)\s+(?:\w+\s+)?(?:rest|lie\s+down)\b|\blie\s+down\b|\btake\s+(?:a|some)\s+rest\b"
         r"|\bdrink\s+(?:some\s+|a\s+glass\s+of\s+|plenty\s+of\s+)?water\b|\bstay\s+hydrated\b"
-        r"|\b(?:go|see|visit|consult)\s+(?:and\s+)?(?:see\s+)?(?:a|your|the)\s+(?:doctor|hospital)\b",
+        r"|\b(?:go|see|visit|consult)\s+(?:and\s+)?(?:see\s+)?(?:a|your|the)\s+(?:doctor|hospital)\b"
+        r"|दवाखान्यात\s+(?:\S+\s+)?जा\S*|झोप\s+(?:घ्या|घे)\S*"
+        r"|\btake\s+rest\b|\bsee\s+a\s+doctor\b",
         re.IGNORECASE,
     ),
     # recipes and facts from memory (the companion asks to be taught instead)
@@ -68,7 +70,7 @@ _VIOLATIONS: dict[str, re.Pattern[str]] = {
         re.IGNORECASE,
     ),
 }
-_MAX_REPLY_CHARS = 300
+_MAX_REPLY_CHARS = 160
 
 
 def companion_violations(text: str, language: str) -> list[str]:
@@ -81,14 +83,51 @@ def companion_violations(text: str, language: str) -> list[str]:
     return reasons
 
 
+# Leading fillers the model likes to open with ("मला वाटतं ...", "अरेरे", "वा, छान"). A lookahead, NOT \b: \b fails right
+# after a Devanagari vowel sign such as "ं". Longest first, so "मला वाटतं" is not cut at "मला".
+_FILLERS = (
+    "मला वाटतं", "मला वाटते", "मला वाटतंय", "मला वाटतय", "मला समजलं", "मला समजले", "मला कळलं", "मला आनंद झाला",
+    "मुझे लगता है", "अरेरे", "अरे वा", "वा", "ओह", "अच्छा", "बरं", "हो", "हां", "ठीक आहे",
+    "i think", "i feel", "i understand", "i see", "oh", "wow", "okay", "ok", "sure",
+)
+_FILLER_RX = re.compile(
+    r"^[\s,.!?।-]*(?:" + "|".join(re.escape(f) for f in sorted(_FILLERS, key=len, reverse=True)) + r")(?=[\s,.!?।-]|$)",
+    re.IGNORECASE,
+)
+
+
+def strip_filler(text: str) -> str:
+    """Remove leading fillers and opinion openers, repeatedly, from the START only."""
+    out = text.strip()
+    while True:
+        cut = _FILLER_RX.sub("", out, count=1)
+        if cut == out:
+            return out.lstrip(" ,.!?।-")
+        out = cut.lstrip(" ,.!?।-")
+
+
 def sanitize_companion(text: str | None, language: str) -> tuple[str | None, list[str]]:
-    """Keep at most two sentences, then reject the reply if it breaks a boundary."""
+    """Strip leading fillers, keep at most two sentences, then reject the reply if it breaks a boundary."""
     if not text or not text.strip():
+        return None, ["empty"]
+    text = strip_filler(text)
+    if not text:
         return None, ["empty"]
     sentences = re.split(r"(?<=[.?!।])\s+", text.strip())
     cut = " ".join(sentences[:2]).strip()
     reasons = companion_violations(cut, language)
     return (None, reasons) if reasons else (cut, [])
+
+
+_LEADING_TAGS = re.compile(r"^((?:\s*<\s*[a-z][a-z ]{1,20}\s*>)*)\s*(.*)$", re.IGNORECASE | re.DOTALL)
+
+
+def strip_filler_voiced(voiced: str) -> str:
+    """strip_filler for the TTS text: the leading voice tags stay, the filler after them goes."""
+    m = _LEADING_TAGS.match(voiced.strip())
+    tags, rest = (m.group(1).strip(), m.group(2)) if m else ("", voiced)
+    rest = strip_filler(rest)
+    return f"{tags} {rest}".strip() if tags else rest
 
 
 # ---- Sarvam "thinking" output -------------------------------------------------------------------------------
@@ -188,7 +227,7 @@ class EvonClient:
         api_key: str = "",
         send_template_kwargs: bool = True,
         provider: str = "evon",
-        max_tokens: int = 120,
+        max_tokens: int = 80,
         timeout_s: float = 4.0,
         reasoning_off: bool = False,
         limiter: Limiter | None = None,
@@ -340,17 +379,27 @@ class EvonClient:
         system = (
             f"You are Arjun, an AI voice companion (not a human) talking with an elderly person. "
             f"Always answer in {lang_name}, written in {script} script, the way they speak. "
-            f"Reply in at most two short, warm sentences. Listen more than you talk: react briefly, "
-            f"then ask ONE gentle follow-up question about what they just said. "
-            f"Never give medical advice, a diagnosis, or anything about medicines or doses; if asked, "
-            f"say you cannot advise and suggest asking their doctor or family. "
-            f"Never recite recipes, facts, news or history from your own knowledge: if asked, say "
-            f"you would love to learn it from them and ask them to teach you. "
-            f"Never claim to be human, or to have feelings, a body, a family or experiences. "
-            f"Never say you missed them, never make them feel guilty for being away, and never "
-            f"discourage them from talking to their family or friends. "
-            f"Build on what they said earlier in this conversation (shown below), but never refer "
-            f"to anything from another day. Do not repeat a question you already asked. {clock}"
+            f"Rules, in priority order: "
+            f"1. Reply with ONE short sentence (at most 12 words) and optionally ONE short question (at most 8 words). "
+            f"Nothing more. "
+            f"2. Talk about HER, never about yourself. Never start with or use \"मला वाटतं\", \"मला समजलं\", "
+            f"\"मला आनंद झाला\", \"I think\", \"I feel\", \"I understand\". No opinions, no exclamations like "
+            f"\"अरेरे\". "
+            f"3. Never guess or invent facts about people or places she mentions (who someone is, what a voice "
+            f"sounds like, what a bank will say). If something is unclear say: \"नीट ऐकू आलं नाही, परत सांगाल?\" "
+            f"4. No health or medical advice of any kind (no rest, water, medicine, doctor visits, doses, "
+            f"diagnosis). If she mentions pain or illness, do not advise; ask how she feels now. "
+            f"5. Never recite recipes, facts, news or history from your own knowledge: ask her to teach you. "
+            f"6. Never claim to be human, or to have feelings, a body, a family or experiences. "
+            f"7. Never say you missed her, never make her feel guilty, never discourage talking to family or "
+            f"friends. "
+            f"8. Ask about what she just said; never change the topic. Do not repeat a question you already "
+            f"asked; never refer to anything from another day. "
+            f"GOOD replies: \"चिकन छान झालं! कोणी बनवलं?\" / \"गाणं कोणतं शिकलात आज?\" / "
+            f"\"घरच्यांना कळवलं आहे. आता कसं वाटतंय?\" "
+            f"BAD replies (never): \"मला समजलं, तो आवाज संदीपसारखाच वाटतोय. तुम्ही अविनाशला याआधी कधी भेटला आहात का?\" "
+            f"(guesses, long) / \"हो, हे तर बँकेशी बोलूनच ठरवता येईल. पण हे सगळं मॅन्युअली चेक करताना...\" "
+            f"(opinion, long) / \"डोक्याला त्रास होत असेल तर थोडा वेळ शांत पडून राहा\" (health advice). {clock}"
         )
         if self.voice_tags:
             system += (

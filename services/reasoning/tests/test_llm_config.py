@@ -52,11 +52,11 @@ def test_template_kwargs_flag_for_non_vllm_providers():
 
 def test_limits_have_the_agreed_defaults_and_ignore_nonsense():
     s = config.llm_settings(HOSTED)
-    assert (s.timeout_s, s.max_tokens, s.history_exchanges) == (4.0, 120, 8)
-    t = config.llm_settings({**HOSTED, "LLM_TIMEOUT_S": "2.5", "LLM_MAX_TOKENS": "80"})
-    assert (t.timeout_s, t.max_tokens) == (2.5, 80)
+    assert (s.timeout_s, s.max_tokens, s.history_exchanges) == (4.0, 80, 8)
+    t = config.llm_settings({**HOSTED, "LLM_TIMEOUT_S": "2.5", "LLM_MAX_TOKENS": "60"})
+    assert (t.timeout_s, t.max_tokens) == (2.5, 60)
     bad = config.llm_settings({**HOSTED, "LLM_TIMEOUT_S": "abc", "LLM_MAX_TOKENS": "-5"})
-    assert (bad.timeout_s, bad.max_tokens) == (4.0, 120)
+    assert (bad.timeout_s, bad.max_tokens) == (4.0, 80)
 
 
 def test_the_key_never_shows_in_repr_or_health():

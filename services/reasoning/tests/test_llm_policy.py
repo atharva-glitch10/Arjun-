@@ -167,7 +167,8 @@ def test_only_the_last_four_exchanges_are_sent(core_http, uid):
     last = llm.calls[-1]["messages"]
     assert [m["role"] for m in last] == ["system"] + ["user", "assistant"] * 4 + ["user"]
     assert last[1]["content"].endswith(" 2")  # exchanges 0-2 were dropped
-    assert llm.calls[-1]["max_tokens"] == 120
+    assert llm.calls[-1]["max_tokens"] == 80
+    assert llm.calls[-1]["temperature"] == 0.3
 
 
 def test_nothing_that_identifies_the_elder_is_sent(core_http, uid):
@@ -183,7 +184,7 @@ def test_the_companion_prompt_states_every_boundary(core_http, uid):
     llm = Llm()
     make_engine(core_http, llm).handle(uid, STORY)
     system = llm.calls[0]["messages"][0]["content"].lower()
-    for needle in ("marathi", "devanagari", "two short", "listen", "question", "not a human", "medical",
+    for needle in ("marathi", "devanagari", "at most 12 words", "question", "मला वाटतं", "never guess", "not a human", "medical",
                    "recipes", "facts", "teach", "never say you missed"):
         assert needle in system, needle
 

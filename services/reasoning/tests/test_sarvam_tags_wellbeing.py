@@ -103,8 +103,8 @@ def test_companion_speech_carries_the_tag_but_the_screen_does_not(core_http, uid
 
     eng = TurnEngine(CoreClient(core_http), _client(handler), clock=lambda: NOW, ask_first=False)
     res = eng.handle(uid, "आज मी नातवासोबत खूप गप्पा मारल्या आणि आम्ही बागेत फिरायला गेलो होतो")
-    assert res.reply == "वा, छान! मग काय झालं?"
-    assert res.speech == "<laugh> वा, छान! मग काय झालं?"
+    assert res.reply == "छान! मग काय झालं?"  # the leading filler "वा" is stripped from screen and voice
+    assert res.speech == "<laugh> छान! मग काय झालं?"
 
 
 # ---- family summary ------------------------------------------------------------------------------------------

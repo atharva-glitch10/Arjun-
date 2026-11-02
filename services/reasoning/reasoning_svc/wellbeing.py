@@ -61,7 +61,7 @@ DID = {
     "EMERGENCY": "reported a physical emergency",
     "DISTRESS": "sounded very upset",
     "LONELY": "said she feels lonely",
-    "SYMPTOM": "mentioned a health complaint",
+    "SYMPTOM": "said she is not feeling well (no advice given)",
 }
 
 

@@ -1,3 +1,22 @@
+# STATUS (2026-11-02)
+
+## Built 2026-11-02: shorter, listening companion replies (tests + 10 scripted /turn calls with the real Sarvam key; NOT heard with a real voice)
+- **Prompt** (`evon.py: companion_reply`): ONE sentence (max 12 words) + optionally ONE short question (max 8 words), about HER; no "मला वाटतं /
+  मला समजलं / I think", no opinions, no guessing about people or places ("नीट ऐकू आलं नाही, परत सांगाल?"), no health advice, no recipes,
+  good and bad examples taken from the 22:47 transcripts. Voice-tag and interests paragraphs kept.
+- **Numbers**: companion temperature 0.6 -> 0.3, `LLM_MAX_TOKENS` 120 -> 80, a reply over 160 characters (was 300) is replaced by the fixed line.
+- **`strip_filler`** removes leading fillers (वा, अरेरे, हो, मला वाटतं, I think, ...) from screen AND voice text (the voice tag stays); an
+  all-filler reply becomes the fixed line. Advice phrases added to the "medical" boundary check (झोप घ्या, दवाखान्यात जा, take rest, ...).
+- **Health complaints**: the fixed reply is now "घरच्यांना कळवलं आहे. आता कसं वाटतंय?" (family note exists) or "हे घरच्यांना किंवा डॉक्टरांना
+  नक्की सांगा. आता कसं वाटतंय?" (no consent / no note); same in hi/en. New words (सर्दी झाली, डोकं जड, cough); "दुखत नाही" is not a symptom.
+  The LLM is no longer asked to read a turn the rules already know is a symptom. Wellbeing text: "said she is not feeling well (no advice given)".
+- Already built earlier and left as is (the brief asked for it again): conversation mode `_reshape` (stories not hijacked by COMPLETE_REMINDER, bare
+  नाही / odd turns stay chat, "नको" still stops it), the `health-complaint` endpoint (once per day per kind, not per hour) and the feed entry.
+- Tests: core-api 160 passed + 2 FAILED in the untracked `tests/test_issue.py` (an `/issue` endpoint that does not exist yet; not part of this work),
+  reasoning 586, voice-agent 150, scheduler 8; ruff clean; eval 42/42 intent, 12/12 slot, 5/5 distress.
+- **NOT verified**: how these replies sound through Timbre, any elderly speaker, the word lists with a native speaker. In the 10-sentence run 9/10
+  replies came from the LLM, max 11 words, no filler openers, no advice; but some still guess ("चिकन छान झालं असेल!", "अथर्व कसा बनवतो?").
+
 # STATUS (2026-10-31, night)
 
 ## Built 2026-10-31 night: long Marathi conversations (tasks A-G; tested, ONE 15-turn run with the real Sarvam key; NOT run with a real voice)
@@ -153,3 +172,5 @@ Known gaps: no quiet hours, no "repeat last line", an emergency alert is dashboa
    when the elder page opens, closing an idle voice session (credits), a "repeat last line" RPC.
 5. Demo: main post ~Nov 1, submission by Nov 8 (deadline Nov 10). Native-speaker review of the safety lexicons (T12),
    production proxy + auth (T14), disclose the models truthfully in the posts.
+
+2026-11-02: Windows crash "Assertion failed LSX_FFT_BR == NULL" (livekit_ffi.dll / soxr) fixed by warming the resampler once per process (audiowarm.py, prewarm_fnc); tests pass; confirm with a live session.
