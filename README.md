@@ -13,6 +13,16 @@ replacement for them. No medical advice; physical-emergency and distress phrases
 - Engineering notes (latency, concurrency, rate limiting, polling/WS, error handling, boundaries, identity):
   [docs/ENGINEERING.md](docs/ENGINEERING.md).
 
+## Apps by voice (2026-11-02; tests + scripted runs, NOT heard with a real voice or seen in the elder page)
+YouTube (songs, bhajans, live news), headlines read aloud, WhatsApp, and family-approved links, all by voice.
+- "मला यूट्यूब बघायचं आहे" opens the family's favourite; "भीमसेन जोशींचं भजन लावा" searches YouTube and plays the first match; "बातम्या बघायच्या
+  आहेत" plays the family's live news channel; "बातम्या ऐकवा" reads 5 headlines aloud from the family's RSS feeds, verbatim, source first (no LLM);
+  "चंद्रकांतला व्हॉट्सॲप कर" opens her WhatsApp chat (she taps the green button); "नातवाचे फोटो दाखव" opens the family link of that name.
+- While a video plays: "अर्जुन, थांबव / बंद कर / आवाज कमी कर / पुढचं गाणं". Everything else the mic hears is ignored (media mode), except safety phrases.
+- The family adds, tests and removes entries in the dashboard section "Apps and links" (https only; a website off the known list needs an explicit tick
+  and shows a warning). `python scripts/seed_apps.py --apply` seeds the synthetic household through core-api.
+- Needs `YOUTUBE_API_KEY` in `.env` (read only by core-api) for the first-match search; without it the YouTube results page opens instead.
+
 ## What works today (verified by tests / smoke run)
 Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Marathi / Hindi / English.
 
@@ -49,6 +59,16 @@ then `pytest` inside each service and `ruff check .` at the root.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
+- **Apps by voice (2026-11-02) is tested, not hand-tested**: no real voice session, and the elder page was never opened in a browser with the new
+  MediaScreen (the Chrome extension was not connected). Word lists are UNVERIFIED (no native speaker, no real Prisma output).
+- **WhatsApp needs one tap**: Arjun only opens her chat with the contact; she presses the green call / send button. A pop-up blocker turns the open
+  into one big tap button. Numbers are made up in the demo.
+- **Media mode needs the wake word**: while a video plays, a new request must start with "अर्जुन" (or be a bare stop / next / volume phrase). The page's
+  own report (`arjun.media`) and the agent's guess can disagree for a few seconds. Arjun's voice plays OVER the video (no ducking yet).
+- **YouTube quota**: search.list costs 100 of 10,000 daily units; results are cached 24 h and uncached searches are capped at 80/day
+  (`YOUTUBE_MAX_SEARCHES_PER_DAY`). No key or no quota = the results page opens. Embeds can be refused by a video's owner (the page shows an error).
+- **Kiosk autoplay**: sound autoplay works in the kiosk profile (`scripts/elder-kiosk.ps1`); in a normal browser the first video shows one big
+  "▶ सुरू करा" tap. A long headline is cut at a whole word at 120 characters.
 - **2026-11-02 Windows crash fix not yet confirmed live**: "Assertion failed LSX_FFT_BR == NULL" (livekit_ffi.dll / soxr) should be fixed by warming the resampler once per process (`audiowarm.py`, `prewarm_fnc`); unit tests pass, but no live session has run on it.
 - **2026-10-31 night (conversation mode, symptoms, endpointing) is tested and measured on text only**: a 15-turn Marathi run with the
   real Sarvam key (11/15 answered by the LLM, 0 "not understood"), but NO spoken session on the new code. Chat turns now wait 1.6 s of

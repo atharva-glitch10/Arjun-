@@ -1,3 +1,22 @@
+# STATUS (2026-11-02, apps)
+
+## Built 2026-11-02: voice-controlled apps (tests + scripted runs; NOT heard with a real voice, NOT seen in the elder page in a browser)
+- core-api `app_links` + validation + dashboard "Apps and links"; `GET /media/youtube/search` (cache, quota guard), `GET /media/news` (verbatim headlines).
+- reasoning: intents OPEN_MEDIA / NEWS_READ / OPEN_WHATSAPP / OPEN_LINK / MEDIA_CONTROL, fixed lines, `action` in `/turn`, `POST /media/gate`; the
+  FREEZE on RSS news was lifted by the owner for this work. Medicines, safety and reminders keep priority (a reminder that mentions the news stays a reminder).
+- voice-agent: `arjun.action` attribute, media mode filter (wake word / bare controls / safety never ignored), `ignored_media` rows without words.
+- web: `MediaScreen` (YouTube IFrame API, "▶ सुरू करा" when autoplay is refused, big बंद करा / पुढचं / volume), WhatsApp + link windows with a pop-up fallback.
+- URLs verified once on 2026-11-02 (HTTP, from this machine): ABP Majha feed `https://marathi.abplive.com/home/feed` 200 application/xml, 21 titles parsed;
+  BBC Marathi `https://feeds.bbci.co.uk/marathi/rss.xml` 200, 29 titles parsed. REJECTED: loksatta.com/feed (HTML, not a feed), maharashtratimes
+  rssfeedsdefault.cms 404, esakal.com/rss 404, lokmat 403. Live channel ABP MAJHA `UCH7nv1A9xIrAifZJNvt7cgA`: page title "ABP MAJHA", its /live page says
+  `isLive: true`, `playableInEmbed: true` (embedding in the real page NOT tried). Playlist `PL01mceoBxHCiCj28l-viryuhBh7nXsqZN` ("Super Hit Pahateche Bhakti |
+  Prabhat Geet | Marathi Bhaktigeete", Wings Marathi Bhakti): YouTube oEmbed 200 (public); embeddability NOT tried. The photos link is a placeholder.
+- No `YOUTUBE_API_KEY` is configured on this machine, so the real first-match search was NOT run: the scripted run showed the no-key fallback (YouTube results
+  page). Mocked-API tests cover the key path.
+- **Not done**: the manual browser run (the Chrome extension was not connected), so what actually played is unknown. A dev-only preview exists for it:
+  `/?preview&video=<id>` | `&playlist=<id>` | `&channel=<UC...>` logs `[arjun.media] playing|stopped` to the console.
+- Tests (2026-11-02): core-api 189 passed + 2 FAILED in the untracked `tests/test_issue.py` (an `/issue` endpoint that is not built; not part of this work), reasoning 654, voice-agent 173, scheduler 8, vitest 88; ruff, `tsc`, `npm run build`, no-browser-speech check clean; eval 42/42 intent, 12/12 slot, 5/5 distress.
+
 # STATUS (2026-11-02)
 
 ## Built 2026-11-02: shorter, listening companion replies (tests + 10 scripted /turn calls with the real Sarvam key; NOT heard with a real voice)

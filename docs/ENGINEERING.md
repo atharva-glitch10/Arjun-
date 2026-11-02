@@ -131,3 +131,26 @@ never the only signal: every level has words ("All well", "Keep an eye", "Call h
 Tests first for every decision that must not be wrong (pure functions: `shownFor`, `restingScreen`, `mergeFeed`,
 `split_voice_tags`, `Tracker.entry`, token buckets), one commit per task, lint (ruff) + strict TypeScript, and
 "verified" only for what was actually run (STATUS.md keeps the line between tested and hand-tested).
+
+## 13. Apps by voice (2026-11-02)
+
+**Who decides what.** The family owns `app_links` (core-api: kind, label, value, spoken names; https only; a host off the allowlist needs an explicit
+approval and is flagged; WhatsApp rows point at a contact, numbers stay in `contacts`). Reasoning only CHOOSES among those rows (`turn.py: _app_command`);
+the LLM may suggest an intent and a label (`shared/schemas/intent.json`: `media_query`, `link_label`, `media_control`) and can never produce a URL.
+Every spoken line is a fixed template (`app_replies.py`); headlines are copied verbatim by core-api (HTML stripped, whole word at 120 characters).
+
+**Action contract.** `TurnResult.action = {type: open|control|none, kind, value, title}` -> `/turn` JSON -> `BridgeReply.action` -> participant attribute
+`arjun.action` = JSON `{type, kind, value, title, turn}` (`screenstate.py`; "" clears it; never set on a safety reply). The page (`voice/action.ts`)
+re-validates (YouTube id shapes, `wa.me`, https) and performs each action ONCE (`turn` newer than the last performed). Kinds: `youtube_video |
+youtube_playlist | youtube_channel_live | whatsapp | link`; controls: `stop | pause | resume | next | volume_up | volume_down`.
+The page reports its player as attribute `arjun.media` = `playing | stopped`.
+
+**Media-mode filter** (`voice-agent/mediamode.py`). While `playing` (page report, or the agent's guess after publishing a video action; reset when the page
+leaves): a transcript passes if it starts with the wake word, or reasoning's `POST /media/gate` says `control` (bare stop / next / volume) or `safety`
+(emergency / distress lexicons). Otherwise it is dropped, logged as `ignored_media` WITHOUT its words. If the gate cannot answer, the transcript passes:
+safety is never ignored. The lexicons stay in reasoning (services share contracts, not code).
+
+**Quota and caching.** YouTube `search.list` = 100 units of 10,000/day. Cache 24 h per normalised query (SQLite `youtube_search_cache`); uncached calls
+capped per day (`YOUTUBE_MAX_SEARCHES_PER_DAY`, default 80); a Google quota error blocks further calls until the next day; 503 `youtube_not_configured` /
+429 `youtube_quota` make reasoning open the YouTube results page. News: feeds fetched in parallel (5 s timeout), top 5 interleaved, cached 15 min in
+memory, a total failure is not cached. Not measured: real latency of search or feed fetch from the voice path.

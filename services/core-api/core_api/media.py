@@ -127,7 +127,12 @@ def clean_title(raw: str | None) -> str:
     """Plain text: tags removed, entities decoded, whitespace collapsed, at most 120 characters. Nothing else changes."""
     text = html.unescape(_TAG.sub(" ", html.unescape(raw or "")))
     text = " ".join(text.split())
-    return text if len(text) <= TITLE_MAX else text[: TITLE_MAX - 1].rstrip() + "…"
+    if len(text) <= TITLE_MAX:
+        return text
+    cut = text[: TITLE_MAX - 1]
+    if " " in cut[TITLE_MAX // 2:]:  # end at a whole word, never mid-word (she would hear half a word)
+        cut = cut[: cut.rindex(" ")]
+    return cut.rstrip(" ,;:-") + "…"
 
 
 def parse_feed_titles(content: bytes) -> list[str]:

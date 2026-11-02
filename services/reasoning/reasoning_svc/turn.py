@@ -68,6 +68,14 @@ _LLM_INTENTS = frozenset(
 )
 _YT_MUSIC = ("youtube_playlist", "youtube_video", "youtube_query")  # what a song request may open (family favourites)
 _YT_ALL = _YT_MUSIC + ("youtube_channel_live",)
+
+
+def _sentence(title: str) -> str:
+    """A headline as one spoken sentence: unchanged words, and a full stop only when it has no ending of its own."""
+    t = title.strip()
+    return t if t.endswith((".", "!", "?", "।", "…")) else t + "."
+
+
 NO_ACTION: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": ""}
 # Intents that may follow a pending question: answer it, or cancel it. A restated reminder is a correction of
 # a pending reminder (see _answers_pending). Nothing else may touch, replace or sit on top of the question.
@@ -341,7 +349,7 @@ class TurnEngine:
             items = []
         if not items:
             return res(a["news_none"])
-        lines = [a["news_item"].format(source=i["source_label"], title=i["title"].rstrip(".!?।… ")) for i in items[:5]]
+        lines = [a["news_item"].format(source=i["source_label"], title=_sentence(i["title"])) for i in items[:5]]
         return res(" ".join([a["news_intro"], *lines]))  # verbatim titles, source first, one per sentence; no LLM
 
     def _open_whatsapp(

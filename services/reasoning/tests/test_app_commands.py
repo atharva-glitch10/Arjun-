@@ -386,3 +386,14 @@ def test_the_gate_lets_safety_and_controls_through_and_nothing_else():
     assert gate("आवाज कमी कर") == {"safety": False, "control": True}
     assert gate("जय जय रघुवीर समर्थ") == {"safety": False, "control": False}
     assert gate("भीमसेन जोशींचं भजन लावा") == {"safety": False, "control": False}  # a new request needs the wake word
+
+
+def test_a_headline_keeps_its_own_ending_and_gets_a_full_stop_only_when_it_has_none(core_http, uid, household, monkeypatch):
+    feed = ("<rss><channel><item><title>पाऊस कधी थांबणार?</title></item><item><title>धक्कादायक निकाल!</title></item>"
+            "<item><title>नवी योजना</title></item></channel></rss>")
+    with_feeds(monkeypatch, {"https://marathi.abplive.com/x": feed})
+    core_http.delete(f"/users/{uid}/app-links/{[x for x in core_http.get(f'/users/{uid}/app-links').json() if x['label'] == 'सकाळ'][0]['id']}")
+    core_http.delete(f"/users/{uid}/app-links/{[x for x in core_http.get(f'/users/{uid}/app-links').json() if x['label'] == 'लोकसत्ता'][0]['id']}")
+    link(core_http, uid, kind="rss", label="एबीपी माझा", value="https://marathi.abplive.com/x")
+    res = engine(core_http).handle(uid, "बातम्या ऐकवा")
+    assert res.reply == "आजच्या बातम्या. एबीपी माझा: पाऊस कधी थांबणार? एबीपी माझा: धक्कादायक निकाल! एबीपी माझा: नवी योजना."

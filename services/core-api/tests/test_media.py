@@ -200,3 +200,10 @@ def test_no_feeds_or_all_failing_gives_an_empty_list_and_is_not_cached(client, u
     assert client.get("/media/news", params={"user_id": uid}).json() == []
     monkeypatch.setattr(media, "http_get", feeds({"https://www.loksatta.com/feed": FEED_A}))
     assert len(client.get("/media/news", params={"user_id": uid}).json()) == 4
+
+
+def test_a_long_title_ends_at_a_whole_word():
+    words = ["शेतकऱ्यांसाठी", "नवी", "योजना", "जाहीर"] * 12
+    cleaned = media.clean_title(" ".join(words))
+    assert len(cleaned) <= 120 and cleaned.endswith("…")
+    assert cleaned[:-1].split(" ")[-1] in words  # the last word is complete, not half of one

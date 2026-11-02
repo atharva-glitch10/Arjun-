@@ -1,4 +1,8 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
+
+import { MediaScreen } from "../elder/MediaScreen";
+import { parseAction } from "../voice/action";
 
 import {
   ConfirmScreen,
@@ -25,9 +29,27 @@ function Frame({ title, children, night = false, listening = false }: { title: s
   );
 }
 
+// Live check of the video screen without a voice session: /?preview&video=<id> | &playlist=<id> | &channel=<UC...>.
+// The player reports to the console ("[arjun.media] playing|stopped"), the same words the page sends the agent.
+function MediaPreview() {
+  const q = new URLSearchParams(window.location.search);
+  const [open, setOpen] = useState(true);
+  const pick: [string, string] | null = q.get("video")
+    ? ["youtube_video", q.get("video") ?? ""]
+    : q.get("playlist")
+      ? ["youtube_playlist", q.get("playlist") ?? ""]
+      : q.get("channel")
+        ? ["youtube_channel_live", q.get("channel") ?? ""]
+        : null;
+  const action = pick && parseAction(JSON.stringify({ type: "open", kind: pick[0], value: pick[1], title: "preview", turn: 1 }));
+  if (!action || !open) return null;
+  return <MediaScreen action={action} control={null} onReport={(s) => console.info("[arjun.media]", s)} onClosed={() => setOpen(false)} />;
+}
+
 export function Gallery() {
   return (
     <div className="gallery">
+      <MediaPreview />
       <Frame title="Home (morning)">
         <HomeScreen
           evening={false}
