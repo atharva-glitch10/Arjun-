@@ -300,3 +300,27 @@ class MedicineDose(Base):
     last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     snoozed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     taken_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AppLink(Base):
+    """A family-chosen app or link the elder may open by voice (YouTube, news feeds, WhatsApp, a web link)."""
+
+    __tablename__ = "app_links"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # youtube_query | youtube_video | youtube_playlist | youtube_channel_live | rss | whatsapp | link
+    kind: Mapped[str] = mapped_column(String(24))
+    label: Mapped[str] = mapped_column(String(100))
+    value: Mapped[str] = mapped_column(String(500))  # whatsapp: the CONTACT id (numbers stay in contacts)
+    spoken_names: Mapped[list[str]] = mapped_column(JSON, default=list)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    other_host: Mapped[bool] = mapped_column(Boolean, default=False)  # the family approved a host off the allowlist
+
+
+class YoutubeSearchCache(Base):
+    """YouTube search.list costs 100 of the 10,000 daily quota units: results are kept 24 h per normalised query."""
+
+    __tablename__ = "youtube_search_cache"
+    query_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    results: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

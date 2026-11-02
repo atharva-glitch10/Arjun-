@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
+from .applinks import router as applinks_router
 from .checkins import router as checkins_router
 from .day import router as day_router
 from .db import Base, engine, ensure_columns, get_db
@@ -19,6 +20,7 @@ from .deps import check_api_key_configured, get_now, require_key
 from .feed import router as feed_router
 from .feed import ws_router as feed_ws_router
 from .livekit_token import router as livekit_router
+from .media import router as media_router
 from .medicines import mark_snoozed, mark_taken, open_dose
 from .medicines import router as medicines_router
 from .ratelimit import RateLimitMiddleware
@@ -674,5 +676,7 @@ app.include_router(livekit_router)
 app.include_router(activity_router)
 app.include_router(readings_router)
 app.include_router(wellbeing_router)
+app.include_router(applinks_router)
+app.include_router(media_router)
 app.include_router(feed_router)
 app.include_router(feed_ws_router)

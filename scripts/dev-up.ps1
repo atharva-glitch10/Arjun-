@@ -32,7 +32,8 @@ function Get-Setting([string]$name) { if ($local.ContainsKey($name)) { $local[$n
 $services = [ordered]@{
     "core-api"    = @{ Dir = "services\core-api"; Cmd = "& '$py' -m uvicorn core_api.main:app --port 8000"
                        Vars = "DATABASE_URL", "CORE_API_KEY", "ARJUN_TZ", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "ARJUN_AGENT_NAME",
-                       "CORE_RATE_LIMIT", "CORE_RATE_PER_S", "CORE_RATE_BURST", "UNDO_TTL_S", "FEED_RECHECK_S" }
+                       "CORE_RATE_LIMIT", "CORE_RATE_PER_S", "CORE_RATE_BURST", "UNDO_TTL_S", "FEED_RECHECK_S", "YOUTUBE_API_KEY",
+                       "YOUTUBE_MAX_SEARCHES_PER_DAY" }
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
                        "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
