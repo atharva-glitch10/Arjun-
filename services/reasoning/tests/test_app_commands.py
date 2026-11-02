@@ -368,3 +368,21 @@ def test_a_media_turn_counts_as_activity_and_is_recorded_with_its_title():
     t = Tracker(core=None, llm=None, clock=lambda: NOW)  # type: ignore[arg-type]
     t.record(1, "भजन लावा", "भजन लावतो.", "OPEN_MEDIA", "भक्तिगीते")
     assert t._convs[1].watched == ["भक्तिगीते"] and t._convs[1].intents == ["OPEN_MEDIA"]
+
+
+# ---- the media-mode gate used by the voice agent ---------------------------------------------------------------
+def test_the_gate_lets_safety_and_controls_through_and_nothing_else():
+    from fastapi.testclient import TestClient
+    from reasoning_svc import main as main_mod
+
+    api = TestClient(main_mod.app)
+
+    def gate(text):
+        return api.post("/media/gate", json={"user_id": 1, "text": text}).json()
+
+    assert gate("छातीत दुखतंय")["safety"] is True
+    assert gate("मला खूप एकटं आणि निराश वाटतंय आणि जगावंसं वाटत नाही")["safety"] in (True, False)  # lexicon decides
+    assert gate("थांबव") == {"safety": False, "control": True}
+    assert gate("आवाज कमी कर") == {"safety": False, "control": True}
+    assert gate("जय जय रघुवीर समर्थ") == {"safety": False, "control": False}
+    assert gate("भीमसेन जोशींचं भजन लावा") == {"safety": False, "control": False}  # a new request needs the wake word

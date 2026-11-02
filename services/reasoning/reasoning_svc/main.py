@@ -4,9 +4,12 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import config
+from .appcmd import MEDIA_CONTROL, parse_app_command
 from .core_client import CoreClient, CoreError
+from .distress import is_distress, is_emergency
 from .evon import EvonClient, Limiter
 from .ratelimit import TokenBucket
+from .textutil import collapse_repeats
 from .turn import TurnEngine
 from .wellbeing import Tracker
 
@@ -170,6 +173,23 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
         get_tracker().record, body.user_id, body.text, res.reply, res.intent, res.action.get("title", "")
     )
     return TurnOut(**res.__dict__)
+
+
+class GateIn(BaseModel):
+    user_id: int
+    text: str = Field(max_length=2000)
+
+
+@app.post("/media/gate")
+def media_gate(body: GateIn) -> dict[str, bool]:
+    """Media mode filter (voice agent): while a video plays, only a SAFETY phrase or a bare control phrase gets through
+    without the wake word. Rules only, no core-api, no LLM: it works when everything else is down."""
+    text = collapse_repeats(body.text)
+    cmd = parse_app_command(text)
+    return {
+        "safety": is_emergency(text) or is_distress(text),
+        "control": cmd is not None and cmd.intent == MEDIA_CONTROL,
+    }
 
 
 @app.post("/conversations/flush-idle")

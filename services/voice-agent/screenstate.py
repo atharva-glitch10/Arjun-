@@ -5,6 +5,7 @@ current screen at once, nothing arrives out of order or twice, and LiveKit alrea
 own state ("lk.agent.state": listening / thinking / speaking) the same way.
 """
 
+import json
 import logging
 
 from bridge import BridgeReply
@@ -15,6 +16,7 @@ SCREEN = "arjun.screen"  # reply | story | confirm | saved | safety
 TURN = "arjun.turn"  # increases with every spoken reply, so the app can tell a new reply from the same screen
 REPLY = "arjun.reply"  # the exact line being spoken, for the reply / story / safety screens
 ITEM = "arjun.item"  # reminder:<id> | dose:<id> for a delivered reminder / medicine prompt, else empty
+ACTION = "arjun.action"  # JSON {type: open|control, kind, value, title, turn} for the page to perform; "" = none
 THINKING = "arjun.thinking"  # "1" while reasoning works out the answer: the elder screen shows "विचार करतोय…"
 MAX_REPLY_CHARS = 600
 
@@ -22,7 +24,20 @@ MAX_REPLY_CHARS = 600
 def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
     # Safety wins over every other screen: whatever reasoning labelled it, a safety-mode reply is "safety".
     screen = "safety" if reply.mode == "safety" else reply.screen
-    return {SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS], ITEM: "", THINKING: "0"}
+    return {
+        SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS], ITEM: "", THINKING: "0",
+        ACTION: action_json(reply, turn),
+    }
+
+
+def action_json(reply: BridgeReply, turn: int) -> str:
+    """The action as one JSON attribute, tagged with the turn number so the page performs it exactly once. Never on a
+    safety reply: nothing opens in the middle of an emergency. "" clears the previous action."""
+    action = reply.action or {}
+    if reply.mode == "safety" or action.get("type") not in ("open", "control"):
+        return ""
+    return json.dumps({**{k: str(action.get(k, "")) for k in ("type", "kind", "value", "title")}, "turn": turn},
+                      ensure_ascii=False)
 
 
 def delivery_attributes(item: dict, turn: int) -> dict[str, str]:  # type: ignore[type-arg]

@@ -20,6 +20,7 @@ from bridge import (
     closing_text,
     fallback_text,
     mark_delivery_spoken,
+    media_gate,
     release_delivery,
     reply_or_fallback,
     session_busy,
@@ -40,6 +41,7 @@ from livekit.agents import (
 from livekit.agents import tts as lk_tts
 from livekit.plugins import gnani, silero
 from livekit.plugins.gnani.tts import SSEChunkedStream
+from mediamode import ATTR_MEDIA, MediaMode
 from responder import Responder
 from screenstate import publish_closed, publish_delivery, publish_screen, publish_thinking
 from sessionstate import SessionState
@@ -151,9 +153,11 @@ async def working_tts():  # type: ignore[no-untyped-def]
 
 class Arjun(Agent):
     def __init__(
-        self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy, hold: ConjunctionHold
+        self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy, hold: ConjunctionHold,
+        media: MediaMode,
     ) -> None:
         self.turns = turns
+        self.media = media
         self.hold = hold
         self.responder = responder
         self.state = state
@@ -164,6 +168,12 @@ class Arjun(Agent):
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:  # type: ignore[no-untyped-def]
         """Send the transcript to reasoning and speak its templated reply (no built-in LLM)."""
         transcript = new_message.text_content or ""
+        if self.media.playing:  # a video is on: most of what the mic hears is the video, not her
+            verdict, reason = await self.media.decide(transcript)
+            if verdict == "ignore":
+                logger.info("ignored_media (%d characters; the words are not kept)", len(transcript))
+                self.turns.ignore_collected(reason)
+                raise StopResponse()
         self.policy.touch()
         # A sentence that ends in "आणि / पण / म्हणजे / की" is not finished: wait for the rest (endpointing.py).
         text = await self.hold.settle(transcript)
@@ -250,11 +260,29 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 raise RuntimeError("the speech did not play")
             return True
 
+    async def media_gate_ask(text: str):  # type: ignore[no-untyped-def]
+        return await asyncio.to_thread(media_gate, user_id, text)
+
+    media = MediaMode(media_gate_ask)  # media mode: while a video plays, only "अर्जुन ..." / stop / safety phrases get through
+
+    async def publish(reply, turn) -> None:  # type: ignore[no-untyped-def]
+        await publish_screen(ctx.room.local_participant, reply, turn)  # screen + "arjun.action" for the page
+        media.on_action(reply.action)
+
+    @ctx.room.on("participant_attributes_changed")
+    def _on_page_attributes(changed, participant) -> None:  # type: ignore[no-untyped-def]
+        if ATTR_MEDIA in changed:  # the elder page says whether its player is playing
+            media.on_page_state(changed[ATTR_MEDIA])
+
+    @ctx.room.on("participant_disconnected")
+    def _on_page_left(participant) -> None:  # type: ignore[no-untyped-def]
+        media.reset()
+
     responder = Responder(
         turns,
         ask,
         say_locked,
-        lambda reply, turn: publish_screen(ctx.room.local_participant, reply, turn),
+        publish,
         lambda: fallback_text(STT_LANGUAGE),
         thinking=lambda on: publish_thinking(ctx.room.local_participant, on),  # "विचार करतोय…"
         speakable=lambda reply: tts_text(reply.text, reply.speech, active_model),  # tags only for Timbre v3
@@ -307,7 +335,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Arjun(turns, responder, state, policy, hold),
+        agent=Arjun(turns, responder, state, policy, hold, media),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
 

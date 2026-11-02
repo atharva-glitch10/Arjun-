@@ -154,6 +154,14 @@ class TurnLog:
         """True when the user has said something newer than turn `idx` (a later final transcript)."""
         return self.index > idx
 
+    def ignore_collected(self, reason: str) -> None:
+        """A transcript that was not for Arjun (the video's own audio in media mode): write the row WITHOUT the words."""
+        cur = self._collecting()
+        if cur is not None:
+            cur["transcript"] = ""
+            cur["skipped"] = cur["outcome"] = reason
+            self.flush(int(cur["turn"]))
+
     def skip(self, idx: int, reason: str) -> None:
         if idx in self._open:
             self._open[idx]["skipped"] = reason

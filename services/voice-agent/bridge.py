@@ -45,6 +45,7 @@ class BridgeReply:
     intent: str = ""
     speech: str = ""  # what to say, may carry Timbre v3 tags; empty = say `text`
     source: str = ""  # rules | llm: who wrote the answer (for the turn log)
+    action: dict | None = None  # type: ignore[type-arg]  # what the elder screen opens / does: {type, kind, value, title}
 
 
 def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = None) -> BridgeReply:
@@ -63,6 +64,7 @@ def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = Non
         intent=data.get("intent", ""),
         speech=data.get("speech", "") or "",
         source=data.get("source", "") or "",
+        action=data.get("action") or None,
     )
 
 
@@ -133,6 +135,19 @@ def session_busy(user_id: int, http: httpx.Client | None = None) -> dict | None:
         r.raise_for_status()
         return r.json()  # type: ignore[no-any-return]
     except (httpx.HTTPError, ValueError):
+        return None
+
+
+def media_gate(user_id: int, text: str, http: httpx.Client | None = None) -> dict | None:  # type: ignore[type-arg]
+    """While a video plays: is this transcript a safety phrase or a bare control phrase? None when it cannot be asked
+    (the caller then passes the transcript on: safety is never ignored)."""
+    client = http or _shared_client()
+    try:
+        r = client.post(f"{REASONING_URL}/media/gate", json={"user_id": user_id, "text": text})
+        r.raise_for_status()
+        return r.json()  # type: ignore[no-any-return]
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("media gate unavailable (%s)", type(exc).__name__)
         return None
 
 
