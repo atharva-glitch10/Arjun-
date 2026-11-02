@@ -79,6 +79,7 @@ class TurnOut(BaseModel):
     awaiting_confirmation: bool
     screen: str = "reply"
     speech: str = ""  # what the voice says (may carry Timbre v3 tags); empty = say `reply`
+    action: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": ""}  # what the elder screen opens / does
     source: str  # rules | llm
     trace: dict[str, object]
 
@@ -165,7 +166,9 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
     except CoreError as exc:
         raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
     # The family's conversation summary: buffered in memory, sent after the conversation ends.
-    background.add_task(get_tracker().record, body.user_id, body.text, res.reply, res.intent)
+    background.add_task(
+        get_tracker().record, body.user_id, body.text, res.reply, res.intent, res.action.get("title", "")
+    )
     return TurnOut(**res.__dict__)
 
 

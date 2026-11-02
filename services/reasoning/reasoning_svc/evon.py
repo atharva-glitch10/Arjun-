@@ -339,7 +339,10 @@ class EvonClient:
             f"User wake time {wake}, lunch {lunch}, dinner "
             f"{dinner}. Resolve relative dates/times from these. If AM/PM is unclear set "
             f"time_ambiguous=true and time=null. Never invent a task, date or time that was not "
-            f"said. Do not give medical advice."
+            f"said. Do not give medical advice. For app requests (songs / YouTube, news, WhatsApp, a saved family "
+            f"link, stop / next / volume) use OPEN_MEDIA, NEWS_READ, OPEN_WHATSAPP, OPEN_LINK or MEDIA_CONTROL: put "
+            f"only the song or singer words in media_query, the spoken name of a link or person in link_label, and "
+            f"the control word in media_control. Never output a URL."
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
         for _ in range(2):  # initial try + one retry

@@ -125,6 +125,18 @@ class CoreClient:
             self._req("POST", f"/users/{uid}/health-complaint", params={"category": category})["family_told"]
         )
 
+    def app_links(self, uid: int) -> list[dict[str, Any]]:
+        """The apps and links the family allowed (YouTube favourites, news feeds, WhatsApp, web links)."""
+        return self._req("GET", f"/users/{uid}/app-links")  # type: ignore[no-any-return]
+
+    def youtube_search(self, uid: int, q: str) -> list[dict[str, str]]:
+        """[{video_id, title, channel}] from core-api (the YouTube key never leaves it). 503 = no key, 429 = quota."""
+        return self._req("GET", "/media/youtube/search", params={"q": q, "user_id": uid})  # type: ignore[no-any-return]
+
+    def news(self, uid: int) -> list[dict[str, str]]:
+        """Top headlines [{source_label, title}] from the family's feeds, verbatim; [] when none could be read."""
+        return self._req("GET", "/media/news", params={"user_id": uid})  # type: ignore[no-any-return]
+
     def undo(self, uid: int, action_id: int) -> dict[str, Any]:
         """Put back an action Arjun just did ("नको / चुकलं"). core-api refuses after its undo window."""
         return self._req("POST", f"/users/{uid}/actions/{action_id}/undo")  # type: ignore[no-any-return]

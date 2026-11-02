@@ -62,6 +62,10 @@ DID = {
     "DISTRESS": "sounded very upset",
     "LONELY": "said she feels lonely",
     "SYMPTOM": "said she is not feeling well (no advice given)",
+    "OPEN_MEDIA": "watched or listened to something",
+    "NEWS_READ": "listened to the news headlines",
+    "OPEN_WHATSAPP": "opened WhatsApp",
+    "OPEN_LINK": "opened a family link",
 }
 
 
@@ -71,6 +75,7 @@ class Conversation:
     last: datetime
     turns: list[tuple[str, str]] = field(default_factory=list)  # (role, text); memory only
     intents: list[str] = field(default_factory=list)
+    watched: list[str] = field(default_factory=list)  # titles of videos she asked for (no transcript)
 
 
 def _max(*levels: str) -> str:
@@ -90,7 +95,7 @@ class Tracker:
         self._convs: dict[int, Conversation] = {}
         self._lock = threading.Lock()
 
-    def record(self, uid: int, said: str, reply: str, intent: str) -> None:
+    def record(self, uid: int, said: str, reply: str, intent: str, detail: str = "") -> None:
         """One finished turn. Never raises (it runs after the reply was sent)."""
         now = self.clock()
         finished: Conversation | None = None
@@ -105,6 +110,8 @@ class Tracker:
             conv.turns += [("user", said), ("assistant", reply)]
             conv.turns = conv.turns[-40:]
             conv.intents.append(intent)
+            if intent == "OPEN_MEDIA" and detail and detail not in conv.watched:
+                conv.watched.append(detail[:80])
         if finished is not None:
             self._send(uid, finished)
 
@@ -137,6 +144,8 @@ class Tracker:
         counts = Counter(i for i in conv.intents if i in DID and (consent or not FLOOR.get(i, ("", False))[1]))
         did = ", ".join(f"{DID[i]}{f' ({c}x)' if c > 1 else ''}" for i, c in counts.most_common(5))
         summary = f"Talked with Arjun ({n} turn{'s' if n != 1 else ''})" + (f": {did}." if did else ".")
+        if conv.watched:  # what she watched / listened to: the titles only, never her words
+            summary = summary[:-1] + f" (watched/listened to {'; '.join(conv.watched[:3])})."
         row: dict[str, Any] = {
             "kind": "conversation", "severity": floor, "mood": moods[-1] if moods else "not_assessed",
             "summary": summary[:400], "turns": n, "source": "rules", "started_at": conv.started.isoformat(),

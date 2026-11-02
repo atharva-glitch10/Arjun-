@@ -14,11 +14,23 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable
+from urllib.parse import quote
 
 import httpx
 
 from . import config
 from . import replies as rp
+from .app_replies import A
+from .appcmd import (
+    APP_INTENTS,
+    CONTROLS,
+    MEDIA_CONTROL,
+    NEWS_READ,
+    OPEN_LINK,
+    OPEN_WHATSAPP,
+    covers,
+    name_matches,
+)
 from .checkins import answer_from_text
 from .clock import local_now
 from .core_client import CoreClient, CoreError
@@ -52,8 +64,11 @@ _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not 
 # sharing are deliberately absent: those come only from the deterministic parser.
 _LLM_INTENTS = frozenset(
     {"CREATE_REMINDER", "LIST_TODAY", "GET_APPOINTMENT", "CALL_FAMILY_REMINDER", "REQUEST_CAREGIVER", "CHAT",
-     "DISTRESS"}
+     "DISTRESS"} | APP_INTENTS
 )
+_YT_MUSIC = ("youtube_playlist", "youtube_video", "youtube_query")  # what a song request may open (family favourites)
+_YT_ALL = _YT_MUSIC + ("youtube_channel_live",)
+NO_ACTION: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": ""}
 # Intents that may follow a pending question: answer it, or cancel it. A restated reminder is a correction of
 # a pending reminder (see _answers_pending). Nothing else may touch, replace or sit on top of the question.
 _ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY"})
@@ -90,6 +105,9 @@ class TurnResult:
     # What the voice says, with Timbre v3.0 voice tags the LLM chose ("<laugh> ..."). Empty = say `reply`.
     # The screen always shows `reply` (no tags). The voice agent strips tags for TTS models without them.
     speech: str = ""
+    # What the elder screen should OPEN or do: {type: open|control|none, kind, value, title}. Decided here from the family's
+    # app_links (never from the LLM); the voice agent publishes it as "arjun.action", the page performs it.
+    action: dict[str, str] = field(default_factory=lambda: dict(NO_ACTION))
 
 
 class TurnEngine:
@@ -187,6 +205,7 @@ class TurnEngine:
         )
         if pending is None and draft is None:
             parsed = self._reshape(user_id, text, parsed, conversing)
+            parsed = self._unmatched_link_is_chat(user_id, text, parsed)
         trace["intent_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         if parsed.intent == "DISTRESS":
             return self._distress(user_id, lang, trace, t0)
@@ -252,6 +271,161 @@ class TurnEngine:
         if p.intent in ("GREETING", "UNKNOWN"):
             return Parsed("CHAT", 0.5, p.language, p.draft)
         return p
+
+    # ------------------------------------------------------------------ apps by voice
+    def _unmatched_link_is_chat(self, uid: int, text: str, p: Parsed) -> Parsed:
+        """A generic "... दाखव" that names nothing the family added is just talk, not "I could not find that"."""
+        if p.intent != OPEN_LINK:
+            return p
+        try:
+            links = self.core.app_links(uid)
+        except (CoreError, httpx.HTTPError):
+            links = []
+        if self._named_links(links, text, p.query, kinds=("link",) + _YT_ALL):
+            return p
+        return Parsed("CHAT" if len(tokens(normalize(text))) >= 5 else "UNKNOWN", 0.4, p.language, p.draft)
+
+    @staticmethod
+    def _link_names(link: dict[str, Any]) -> list[str]:
+        return [link["label"], *link.get("spoken_names", [])]
+
+    def _named_links(
+        self, links: list[dict[str, Any]], text: str, query: str, kinds: tuple[str, ...]
+    ) -> list[dict[str, Any]]:
+        """Family links of these kinds whose label / spoken name she said (with any ending), or the LLM's `query` label."""
+        found = []
+        for link in links:
+            if link["kind"] not in kinds:
+                continue
+            if any(name_matches(n, text) or (query and name_matches(n, query)) for n in self._link_names(link)):
+                found.append(link)
+        return found
+
+    @staticmethod
+    def _open_link(link: dict[str, Any]) -> dict[str, str]:
+        """The action for one of the family's rows: an id or an https URL, both validated by core-api."""
+        return {"type": "open", "kind": link["kind"], "value": link["value"], "title": link["label"]}
+
+    def _app_command(self, uid: int, text: str, p: Parsed, lang: str) -> TurnResult:
+        """YouTube, news aloud, WhatsApp, a family link, stop/next/volume. Fixed lines; what opens comes from the family's
+        app_links, never from the LLM. Every failure is a fixed line too (never silence, never a claim that it opened)."""
+        a = A[rp.lang_or_default(lang)]
+
+        def res(line: str, action: dict[str, str] | None = None) -> TurnResult:
+            return TurnResult(line, p.intent, "care", lang, screen="reply", action=action or dict(NO_ACTION))
+
+        if p.intent == MEDIA_CONTROL:
+            kind = p.topic if p.topic in CONTROLS else "stop"
+            return res(a[kind], {"type": "control", "kind": kind, "value": "", "title": ""})
+        try:
+            if p.intent == NEWS_READ:
+                return self._read_news(uid, a, res)
+            links = self.core.app_links(uid)
+            if p.intent == OPEN_WHATSAPP:
+                return self._open_whatsapp(uid, text, p, links, a, res)
+            if p.intent == OPEN_LINK:
+                found = self._named_links(links, text, p.query, kinds=("link",) + _YT_ALL)
+                if not found:
+                    return res(a["link_none"])
+                return res(a["link_open"].format(label=found[0]["label"]), self._open_link(found[0]))
+            return self._open_media(uid, text, p, links, a, res)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("app command failed: %s", exc)
+            return res(a["app_unavailable"])
+
+    def _read_news(self, uid: int, a: dict[str, str], res: Callable[..., TurnResult]) -> TurnResult:
+        try:
+            items = self.core.news(uid)
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("news unavailable: %s", exc)
+            items = []
+        if not items:
+            return res(a["news_none"])
+        lines = [a["news_item"].format(source=i["source_label"], title=i["title"].rstrip(".!?।… ")) for i in items[:5]]
+        return res(" ".join([a["news_intro"], *lines]))  # verbatim titles, source first, one per sentence; no LLM
+
+    def _open_whatsapp(
+        self, uid: int, text: str, p: Parsed, links: list[dict[str, Any]], a: dict[str, str],
+        res: Callable[..., TurnResult],
+    ) -> TurnResult:
+        contacts = {str(c["id"]): c for c in self.core.contacts(uid)}
+        cands = [
+            (link, contacts[link["value"]]) for link in links if link["kind"] == "whatsapp" and link["value"] in contacts
+        ]
+        if not cands:
+            return res(a["whatsapp_none"])
+        named = [
+            (link, c) for link, c in cands
+            if any(
+                name_matches(n, text) or (p.query and name_matches(n, p.query))
+                for n in [*self._link_names(link), c["name"]]
+            )
+        ]
+        if len(named) == 1:
+            link, contact = named[0]
+        elif not named and not p.query and len(cands) == 1:
+            link, contact = cands[0]
+        else:  # nobody named, or the name matches nobody: never guess
+            return res(a["whatsapp_which"].format(names=", ".join(link["label"] for link, _ in cands)))
+        digits = "".join(ch for ch in contact.get("phone", "") if ch.isdigit())
+        if not digits:
+            return res(a["whatsapp_no_number"].format(name=link["label"]))
+        if len(digits) == 10:
+            digits = "91" + digits  # an Indian mobile number without the country code
+        return res(
+            a["whatsapp_open"].format(name=link["label"]),
+            {"type": "open", "kind": "whatsapp", "value": f"https://wa.me/{digits}", "title": link["label"]},
+        )
+
+    def _open_media(
+        self, uid: int, text: str, p: Parsed, links: list[dict[str, Any]], a: dict[str, str],
+        res: Callable[..., TurnResult],
+    ) -> TurnResult:
+        if p.topic == "news_live":
+            lives = [x for x in links if x["kind"] == "youtube_channel_live"]
+            named_live = self._named_links(links, text, "", ("youtube_channel_live",))
+            pick = named_live[0] if named_live else (lives[0] if lives else None)
+            if pick is None:
+                return res(a["news_live_none"])
+            return res(a["news_live"], self._open_link(pick))
+        query = p.query.strip()
+        named = self._named_links(links, text, "", _YT_MUSIC)
+        # A name she said picks that favourite only when it covers everything she asked for: "भजन" is the family's
+        # bhajan list, but "भीमसेन जोशींचं भजन" is a search.
+        named = [x for x in named if not query or covers(self._link_names(x), query)]
+        pick = named[0] if named else None
+        if pick is None and not query:  # "गाणी लावा" / "यूट्यूब": the family's first favourite
+            pick = next((x for x in sorted(links, key=lambda x: (x["sort"], x["id"])) if x["kind"] in _YT_MUSIC), None)
+        if pick is not None and pick["kind"] != "youtube_query":
+            return res(a["youtube_open"] if p.topic == "youtube" else a["play"], self._open_link(pick))
+        if pick is not None:
+            query = pick["value"]  # a saved search ("जुनी मराठी भजनं")
+        if not query:  # "यूट्यूब" with no favourite saved: open YouTube itself
+            home = {"type": "open", "kind": "link", "value": "https://www.youtube.com/", "title": "YouTube"}
+            return res(a["youtube_open"], home)
+        return self._search_and_open(uid, text, query, a, res)
+
+    def _search_and_open(
+        self, uid: int, text: str, query: str, a: dict[str, str], res: Callable[..., TurnResult]
+    ) -> TurnResult:
+        norm = normalize(text)
+        if "भजन" in norm or "bhajan" in norm:
+            line = a["play_bhajan"]
+        elif any(t.startswith(("गाण", "song")) for t in tokens(norm)):
+            line = a["play_song"]
+        else:
+            line = a["play"]
+        try:
+            found = self.core.youtube_search(uid, query)
+        except CoreError as exc:
+            if exc.status in (503, 429):  # no API key / today's quota used: the YouTube results page does the search
+                url = "https://www.youtube.com/results?search_query=" + quote(query)
+                return res(a["play_results"], {"type": "open", "kind": "link", "value": url, "title": query})
+            raise
+        if not found:
+            return res(a["play_none"])
+        top = found[0]
+        return res(line, {"type": "open", "kind": "youtube_video", "value": top["video_id"], "title": top["title"]})
 
     def _open_reminders(self, uid: int) -> list[dict[str, Any]]:
         try:
@@ -601,6 +775,10 @@ class TurnEngine:
             "TIME_QUERY", "NEXT_UP", "GREETING", "HEARING_CHECK",
         ):
             return rules, "rules"
+        if intent in APP_INTENTS:  # only a spoken name or a control word; the link itself comes from the family's rows
+            topic = data.get("media_control") if intent == MEDIA_CONTROL else rules.topic
+            query = (data.get("link_label") or data.get("media_query") or "") if intent != MEDIA_CONTROL else ""
+            return Parsed(intent, float(data["confidence"]), lang, rules.draft, topic=topic, query=str(query)[:100]), "llm"
         return (
             Parsed(intent, float(data["confidence"]), lang, rules.draft, rules.contact_hint, rules.topic),
             "llm",
@@ -707,6 +885,9 @@ class TurnEngine:
         # Any non-reminder intent abandons an open reminder draft and stale confirmation.
         if intent != "CREATE_REMINDER":
             self._drafts.pop(uid, None)
+
+        if intent in APP_INTENTS:
+            return self._app_command(uid, text, p, lang)
 
         if intent == "CREATE_REMINDER":
             return self._create_reminder(uid, text, p, draft, profile, now, lang, out)

@@ -9,6 +9,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
+from .appcmd import parse_app_command
 from .textutil import has_any, normalize, tokens
 
 # ---- intent keywords (roman + Devanagari) -----------------------------------------------------
@@ -263,6 +264,7 @@ class Parsed:
     draft: Draft = field(default_factory=Draft)
     contact_hint: str | None = None
     topic: str | None = None
+    query: str = ""  # OPEN_MEDIA / OPEN_WHATSAPP / OPEN_LINK: the words left after the command words
 
 
 def _add_minutes(hhmm: str, minutes: int) -> str:
@@ -440,6 +442,14 @@ def parse(
     if has_any(norm, MINUTE_WORDS) and not has_any(norm, REMIND):
         return done("MED_SNOOZE", 0.6)  # "१५ मिनिटांनी सांग"; dispatch checks a dose is due
 
+    # Apps by voice (YouTube, news, WhatsApp, a family link, stop / next / volume). After safety and medicines, before the
+    # bare yes/no rules ("बंद कर" would otherwise read as a yes because "कर" is one).
+    app = parse_app_command(text, remind=has_any(norm, REMIND))
+    if app is not None:
+        p = done(app.intent, 0.85)
+        p.topic, p.query = app.control or app.topic, app.query
+        return p
+
     if not has_any(norm, REMIND):
         if _HEARING.search(norm):
             return done("HEARING_CHECK", 0.85)
@@ -513,6 +523,13 @@ def parse(
         return done("GREETING", 0.8)
 
     # bare single-word replies without pending context are not enough to act on
+    # "<family link> दाखव" (a generic show/open sentence): the last rule, so every care command wins over it.
+    link = parse_app_command(text, remind=False, links=True)
+    if link is not None:
+        p = done(link.intent, 0.7)
+        p.query = link.query
+        return p
+
     if n >= 5:
         return done("CHAT", 0.5)
     return done("UNKNOWN", 0.3)

@@ -10,9 +10,13 @@
         "CREATE_REMINDER", "LIST_TODAY", "COMPLETE_REMINDER", "GET_APPOINTMENT",
         "CALL_FAMILY_REMINDER", "REQUEST_CAREGIVER", "CONFIRM_YES", "CONFIRM_NO",
         "CHAT", "SHARE_STORY_WITH_FAMILY", "FORGET_MEMORY", "DECLINE_TOPIC",
-        "MED_TAKEN", "MED_SNOOZE", "MEDICAL_QUESTION", "TIME_QUERY", "NEXT_UP", "DISTRESS", "UNKNOWN"
+        "MED_TAKEN", "MED_SNOOZE", "MEDICAL_QUESTION", "TIME_QUERY", "NEXT_UP", "DISTRESS", "UNKNOWN",
+        "OPEN_MEDIA", "NEWS_READ", "OPEN_WHATSAPP", "OPEN_LINK", "MEDIA_CONTROL"
       ]
     },
+    "media_query": {"type": ["string", "null"], "maxLength": 100},
+    "link_label": {"type": ["string", "null"], "maxLength": 100},
+    "media_control": {"enum": ["stop", "pause", "resume", "next", "volume_up", "volume_down", null]},
     "task": {"type": ["string", "null"]},
     "date": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "time": {"type": ["string", "null"], "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"},
