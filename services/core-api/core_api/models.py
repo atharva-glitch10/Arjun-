@@ -316,6 +316,11 @@ class AppLink(Base):
     sort: Mapped[int] = mapped_column(Integer, default=0)
     other_host: Mapped[bool] = mapped_column(Boolean, default=False)  # the family approved a host off the allowlist
 
+    @property
+    def approved_by_family(self) -> bool:
+        """The dashboard's name for `other_host`: an rss/link host outside the known list, approved explicitly."""
+        return self.other_host
+
 
 class YoutubeSearchCache(Base):
     """YouTube search.list costs 100 of the 10,000 daily quota units: results are kept 24 h per normalised query."""

@@ -19,8 +19,11 @@ from .db import get_db
 from .deps import require_key
 
 Kind = Literal[
-    "youtube_query", "youtube_video", "youtube_playlist", "youtube_channel_live", "rss", "whatsapp", "link"
+    "youtube_query", "youtube_video", "youtube_playlist", "youtube_channel_live", "youtube_live",
+    "rss", "whatsapp", "link"
 ]
+# "youtube_live" is the short name a caller may send; the stored/played kind is the channel-live one the screen knows.
+_CANONICAL = {"youtube_live": "youtube_channel_live"}
 
 YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
 # Hosts that need no warning. A suffix match: "marathi.abplive.com" is "abplive.com".
@@ -112,7 +115,7 @@ class AppLinkIn(BaseModel):
     kind: Kind
     label: str = Field(min_length=1, max_length=100)
     value: str = Field(min_length=1, max_length=500)
-    spoken_names: list[str] = Field(default_factory=list, max_length=12)
+    spoken_names: list[str] = Field(default_factory=list, max_length=10)
     sort: int = 0
     allow_other_host: bool = False
 
@@ -120,7 +123,7 @@ class AppLinkIn(BaseModel):
 class AppLinkPatch(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=100)
     value: str | None = Field(default=None, min_length=1, max_length=500)
-    spoken_names: list[str] | None = Field(default=None, max_length=12)
+    spoken_names: list[str] | None = Field(default=None, max_length=10)
     sort: int | None = None
     allow_other_host: bool = False
 
@@ -134,18 +137,20 @@ class AppLinkOut(BaseModel):
     spoken_names: list[str]
     sort: int
     other_host: bool  # the dashboard shows a warning for these
+    approved_by_family: bool  # same fact, the name the family dashboard uses
 
 
 router = APIRouter(dependencies=[Depends(require_key)])
 
 
 def _names(names: list[str]) -> list[str]:
+    """Lower-cased spoken names, de-duplicated, at most 10 (the elder says them; matching is never case-sensitive)."""
     seen: list[str] = []
     for n in names:
-        n = n.strip()[:60]
+        n = n.strip().lower()[:60]
         if n and n not in seen:
             seen.append(n)
-    return seen
+    return seen[:10]
 
 
 def _check(db: Session, user_id: int, kind: str, value: str, allow_other: bool) -> tuple[str, bool]:
@@ -163,6 +168,7 @@ def _check(db: Session, user_id: int, kind: str, value: str, allow_other: bool) 
 
 
 @router.get("/users/{user_id}/app-links", response_model=list[AppLinkOut])
+@router.get("/users/{user_id}/apps", response_model=list[AppLinkOut])
 def list_app_links(user_id: int, db: Session = Depends(get_db)) -> list[m.AppLink]:
     if db.get(m.User, user_id) is None:
         raise HTTPException(404, "user not found")
@@ -171,10 +177,12 @@ def list_app_links(user_id: int, db: Session = Depends(get_db)) -> list[m.AppLin
 
 
 @router.post("/users/{user_id}/app-links", response_model=AppLinkOut, status_code=201)
+@router.post("/users/{user_id}/apps", response_model=AppLinkOut, status_code=201)
 def add_app_link(user_id: int, body: AppLinkIn, db: Session = Depends(get_db)) -> m.AppLink:
-    value, other = _check(db, user_id, body.kind, body.value, body.allow_other_host)
+    kind = _CANONICAL.get(body.kind, body.kind)
+    value, other = _check(db, user_id, kind, body.value, body.allow_other_host)
     row = m.AppLink(
-        user_id=user_id, kind=body.kind, label=body.label.strip(), value=value,
+        user_id=user_id, kind=kind, label=body.label.strip(), value=value,
         spoken_names=_names(body.spoken_names), sort=body.sort, other_host=other,
     )
     db.add(row)
@@ -189,9 +197,10 @@ def _row(db: Session, user_id: int, link_id: int) -> m.AppLink:
     return row
 
 
-@router.patch("/users/{user_id}/app-links/{link_id}", response_model=AppLinkOut)
-def patch_app_link(user_id: int, link_id: int, body: AppLinkPatch, db: Session = Depends(get_db)) -> m.AppLink:
-    row = _row(db, user_id, link_id)
+@router.patch("/users/{user_id}/app-links/{app_id}", response_model=AppLinkOut)
+@router.patch("/users/{user_id}/apps/{app_id}", response_model=AppLinkOut)
+def patch_app_link(user_id: int, app_id: int, body: AppLinkPatch, db: Session = Depends(get_db)) -> m.AppLink:
+    row = _row(db, user_id, app_id)
     if body.value is not None:
         row.value, row.other_host = _check(db, user_id, row.kind, body.value, body.allow_other_host)
     if body.label is not None:
@@ -204,7 +213,39 @@ def patch_app_link(user_id: int, link_id: int, body: AppLinkPatch, db: Session =
     return row
 
 
-@router.delete("/users/{user_id}/app-links/{link_id}", status_code=204)
-def delete_app_link(user_id: int, link_id: int, db: Session = Depends(get_db)) -> None:
-    db.delete(_row(db, user_id, link_id))
+@router.delete("/users/{user_id}/app-links/{app_id}", status_code=204)
+@router.delete("/users/{user_id}/apps/{app_id}", status_code=204)
+def delete_app_link(user_id: int, app_id: int, db: Session = Depends(get_db)) -> None:
+    db.delete(_row(db, user_id, app_id))
     db.commit()
+
+
+# ---- "did she just name one of the family's apps?" ------------------------------------------------------------
+# Split on punctuation only: Devanagari vowel signs and the virama are part of a word and must stay in it.
+_PUNCT = re.compile(r"[,.?!।;:\"'“”‘’()\[\]{}…–—-]+")
+
+
+def _words(text: str) -> list[str]:
+    return _PUNCT.sub(" ", text.lower()).split()
+
+
+@router.get("/users/{user_id}/apps/match", response_model=AppLinkOut | None)
+def match_app(user_id: int, q: str, db: Session = Depends(get_db)) -> m.AppLink | None:
+    """The family's best app whose label or spoken name appears whole in `q`, or null (never a guess).
+
+    Whole-word after the same normalisation reasoning uses: lower-case, Devanagari kept, punctuation dropped.
+    The most specific (longest) name wins; ties follow the family's sort order.
+    """
+    if db.get(m.User, user_id) is None:
+        raise HTTPException(404, "user not found")
+    said = set(_words(q))
+    best: m.AppLink | None = None
+    best_len = 0
+    for row in db.scalars(
+        select(m.AppLink).where(m.AppLink.user_id == user_id).order_by(m.AppLink.sort, m.AppLink.id)
+    ):
+        for name in [row.label, *row.spoken_names]:
+            words = _words(name)
+            if words and len(words) > best_len and all(w in said for w in words):
+                best, best_len = row, len(words)
+    return best

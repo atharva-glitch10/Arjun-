@@ -60,12 +60,75 @@ def test_search_sends_the_safe_parameters_and_returns_clean_rows(client, uid, mo
     assert r.json()[0] == {"video_id": "AAAAAAAAAAA", "title": "भीमसेन जोशी भजन & more", "channel": "Ch '1'"}
     _, p = g.calls[0]
     assert p["type"] == "video" and p["videoEmbeddable"] == "true" and p["safeSearch"] == "strict"
-    assert p["relevanceLanguage"] == "mr" and p["regionCode"] == "IN" and p["maxResults"] == 5
+    assert p["relevanceLanguage"] == "mr" and p["regionCode"] == "IN" and p["maxResults"] == 8
+
+
+def test_ranking_prefers_the_title_with_most_query_words(client, uid, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    body = {"items": [
+        {"id": {"videoId": "AAAAAAAAAAA"}, "snippet": {"title": "भजन", "channelTitle": "Ch"}},
+        {"id": {"videoId": "BBBBBBBBBBB"}, "snippet": {"title": "भीमसेन जोशी भजन", "channelTitle": "Ch"}},
+    ]}
+    monkeypatch.setattr(media, "http_get", FakeGoogle(body=body))
+    r = client.get("/media/youtube/search", params={"q": "भीमसेन जोशी भजन", "user_id": uid})
+    assert [x["video_id"] for x in r.json()] == ["BBBBBBBBBBB", "AAAAAAAAAAA"]
+
+
+def test_shorts_and_titles_with_none_of_the_words_are_skipped(client, uid, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    body = {"items": [
+        {"id": {"videoId": "AAAAAAAAAAA"}, "snippet": {"title": "भजन #shorts", "channelTitle": "Ch"}},
+        {"id": {"videoId": "BBBBBBBBBBB"}, "snippet": {"title": "क्रिकेट सामना", "channelTitle": "Ch"}},
+        {"id": {"videoId": "CCCCCCCCCCC"}, "snippet": {"title": "भीमसेन जोशी भजन", "channelTitle": "Ch"}},
+    ]}
+    g = FakeGoogle(body=body)
+    monkeypatch.setattr(media, "http_get", g)
+    r = client.get("/media/youtube/search", params={"q": "भजन", "user_id": uid})
+    assert [x["video_id"] for x in r.json()] == ["CCCCCCCCCCC"]
+    # a non-empty answer is cached
+    assert client.get("/media/youtube/search", params={"q": "भजन", "user_id": uid}).json() == r.json()
+    assert len(g.calls) == 1
+
+
+def test_an_empty_answer_is_not_cached(client, uid, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    body = {"items": [
+        {"id": {"videoId": "AAAAAAAAAAA"}, "snippet": {"title": "भजन #shorts", "channelTitle": "Ch"}},
+        {"id": {"videoId": "BBBBBBBBBBB"}, "snippet": {"title": "क्रिकेट सामना", "channelTitle": "Ch"}},
+    ]}
+    g = FakeGoogle(body=body)
+    monkeypatch.setattr(media, "http_get", g)
+    assert client.get("/media/youtube/search", params={"q": "भजन", "user_id": uid}).json() == []
+    assert client.get("/media/youtube/search", params={"q": "भजन", "user_id": uid}).json() == []
+    assert len(g.calls) == 2
+
+
+def test_news_search_is_live_and_keeps_a_live_title_with_no_query_match(client, uid, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    body = {"items": [
+        {"id": {"videoId": "AAAAAAAAAAA"}, "snippet": {"title": "मुंबईत पाऊस", "channelTitle": "Ch"}},
+        {"id": {"videoId": "BBBBBBBBBBB"}, "snippet": {"title": "मराठी बातम्या LIVE", "channelTitle": "Ch"}},
+        {"id": {"videoId": "CCCCCCCCCCC"}, "snippet": {"title": "मराठी बातम्या #shorts", "channelTitle": "Ch"}},
+    ]}
+    g = FakeGoogle(body=body)
+    monkeypatch.setattr(media, "http_get", g)
+    r = client.get("/media/youtube/search", params={"q": "", "kind": "news_video", "user_id": uid})
+    assert [x["video_id"] for x in r.json()] == ["BBBBBBBBBBB", "AAAAAAAAAAA"]
+    _, p = g.calls[0]
+    assert p["eventType"] == "live" and p["q"] == "मराठी बातम्या live" and p["maxResults"] == 8
+
+
+def test_media_status_reports_the_key_and_the_last_error(client, uid, monkeypatch):
+    assert client.get("/media/status").json() == {"youtube_key": False, "last_error": None}
+    client.get("/media/youtube/search", params={"q": "भजन", "user_id": uid})  # no key
+    assert client.get("/media/status").json()["last_error"] == "503 youtube_not_configured"
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    assert client.get("/media/status").json()["youtube_key"] is True
 
 
 def test_a_repeated_query_is_served_from_the_cache(client, uid, monkeypatch):
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
-    g = FakeGoogle(body=google_ok([("AAAAAAAAAAA", "x")]))
+    g = FakeGoogle(body=google_ok([("AAAAAAAAAAA", "Lata Mangeshkar song")]))
     monkeypatch.setattr(media, "http_get", g)
     for q in ("Lata  Mangeshkar", "lata mangeshkar", " LATA mangeshkar "):  # normalised: one key
         assert client.get("/media/youtube/search", params={"q": q, "user_id": uid}).status_code == 200
@@ -78,7 +141,7 @@ def test_the_cache_expires_after_24_hours(client, uid, monkeypatch):
     from core_api.main import app, get_now
 
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
-    g = FakeGoogle(body=google_ok([("AAAAAAAAAAA", "x")]))
+    g = FakeGoogle(body=google_ok([("AAAAAAAAAAA", "भजन")]))
     monkeypatch.setattr(media, "http_get", g)
     base = app.dependency_overrides[get_now]()
     client.get("/media/youtube/search", params={"q": "भजन", "user_id": uid})
@@ -104,7 +167,7 @@ def test_google_quota_error_stops_further_calls_for_the_day(client, uid, monkeyp
 def test_our_own_daily_cap_is_enforced(client, uid, monkeypatch):
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
     monkeypatch.setenv("YOUTUBE_MAX_SEARCHES_PER_DAY", "2")
-    g = FakeGoogle(body=google_ok([("AAAAAAAAAAA", "x")]))
+    g = FakeGoogle(body=google_ok([("AAAAAAAAAAA", "गाणं")]))
     monkeypatch.setattr(media, "http_get", g)
     codes = [client.get("/media/youtube/search", params={"q": f"गाणं {i}", "user_id": uid}).status_code
              for i in range(4)]

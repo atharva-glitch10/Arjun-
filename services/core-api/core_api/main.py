@@ -494,6 +494,15 @@ def caregiver_requests(user_id: int, db: Session = Depends(get_db)) -> list[dict
     return [{"id": r.id, "message": r.message, "created_at": r.created_at} for r in rows]
 
 
+@router.post("/users/{user_id}/issue", status_code=201)
+def report_issue(user_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
+    user = _user(db, user_id)
+    body = f"issue {user.name}: she said she is facing an issue. no call or message was sent."
+    db.add(m.Notification(user_id=user_id, kind="issue", body=body))
+    db.commit()
+    return {"family_told": True}
+
+
 # ---- safety / companion state -----------------------------------------------------------------
 def _emergency_body(user: m.User, contacts: list[m.Contact], now: datetime) -> str:
     """The dashboard alert text. Honest about delivery: it is a dashboard alert only (CLAUDE.md boundary 14)."""

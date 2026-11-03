@@ -40,6 +40,7 @@ _KINDS: dict[str, tuple[str, str]] = {
     "emergency": ("emergency", "Emergency"),
     "distress": ("urgent", "She may be upset"),
     "caregiver_request": ("urgent", "She asked for help"),
+    "issue": ("urgent", "She is facing an issue"),
     "lonely": ("watch", "She said she feels lonely"),
     "health_complaint": ("watch", "A health complaint was mentioned"),
     "medicine_not_taken": ("watch", "Medicine not taken"),

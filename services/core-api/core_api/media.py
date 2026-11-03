@@ -8,6 +8,7 @@ summarised or written by a model.
 """
 
 import html
+import logging
 import os
 import re
 import time
@@ -16,9 +17,11 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,6 +30,7 @@ from .db import get_db
 from .deps import get_now, require_key
 
 router = APIRouter(dependencies=[Depends(require_key)])
+log = logging.getLogger("core_api.media")
 
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 CACHE_TTL = timedelta(hours=24)
@@ -34,8 +38,11 @@ NEWS_TTL_S = 15 * 60.0
 NEWS_TOP = 5
 TITLE_MAX = 120
 FEED_TIMEOUT_S = 5.0
+YOUTUBE_MAX_RESULTS = 8
+YOUTUBE_NEWS_QUERY = "मराठी बातम्या live"
 
 _daily: dict[str, Any] = {"day": None, "calls": 0, "blocked": False}
+_last_error: str | None = None  # for /media/status: "403 quotaExceeded", never the key or the query
 _news_cache: dict[tuple[Any, ...], tuple[float, list[dict[str, str]]]] = {}
 _clock = time.monotonic  # replaced in tests
 
@@ -58,8 +65,33 @@ def _max_searches_per_day() -> int:
 
 
 def reset_quota_for_tests() -> None:
+    global _last_error
     _daily.update(day=None, calls=0, blocked=False)
+    _last_error = None
     _news_cache.clear()
+
+
+def _query_words(q: str) -> list[str]:
+    """Words that count when ranking a title: the same NFC/casefold normalisation, short words ignored."""
+    words = normalise_query(q).split()
+    return [w for w in words if len(w) >= 2] or words
+
+
+def rank_results(items: list[dict[str, str]], q: str, *, news: bool = False) -> list[dict[str, str]]:
+    """Best title match first. #shorts is never played; a normal search also drops titles with none of the query words.
+    For news the live filter matters more than every word being in the title, so nothing is dropped for no match."""
+    words = _query_words(q)
+    scored: list[tuple[int, dict[str, str]]] = []
+    for item in items:
+        title = normalise_query(item["title"])
+        if "#shorts" in title:
+            continue
+        hits = sum(1 for w in words if w in title)
+        if not news and words and hits == 0:
+            continue
+        scored.append((hits, item))
+    scored.sort(key=lambda pair: pair[0], reverse=True)  # stable: equal matches keep Google's order
+    return [item for _, item in scored]
 
 
 def _spend_quota(today: date) -> None:
@@ -70,37 +102,70 @@ def _spend_quota(today: date) -> None:
     _daily["calls"] += 1
 
 
-@router.get("/media/youtube/search")
+def _fallback_url(q: str) -> str:
+    """The YouTube results page reasoning opens when the API cannot answer (no key, network, quota)."""
+    return "https://www.youtube.com/results?search_query=" + quote(q.strip()[:100])
+
+
+def _unavailable(status: int, detail: str, q: str) -> JSONResponse:
+    """An error the caller can recover from: still the error status, plus the page to open instead."""
+    return JSONResponse({"detail": detail, "fallback_url": _fallback_url(q)}, status_code=status)
+
+
+@router.get("/media/youtube/search", response_model=None)
 def youtube_search(
-    q: str, user_id: int, db: Session = Depends(get_db), now: datetime = Depends(get_now)
-) -> list[dict[str, str]]:
+    q: str, user_id: int, kind: str | None = None, db: Session = Depends(get_db), now: datetime = Depends(get_now)
+) -> list[dict[str, str]] | JSONResponse:
+    global _last_error
     if db.get(m.User, user_id) is None:
         raise HTTPException(404, "user not found")
-    key = normalise_query(q)
-    if not key:
+    news = kind == "news_video"
+    base = q.strip()
+    if not base and not news:
         raise HTTPException(422, "empty search")
+    search_q = (f"{base} {YOUTUBE_NEWS_QUERY}".strip() if news else base)[:100]
+    key = normalise_query(base or search_q)
+    if news:
+        key = ("news " + key)[:200]
     row = db.get(m.YoutubeSearchCache, key)
     if row is not None and now - row.created_at < CACHE_TTL:
         return row.results
     api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not api_key:
-        raise HTTPException(503, "youtube_not_configured")
-    _spend_quota(now.date())
-    params = {
-        "part": "snippet", "q": q.strip()[:100], "type": "video", "videoEmbeddable": "true", "safeSearch": "strict",
-        "relevanceLanguage": "mr", "regionCode": "IN", "maxResults": 5, "key": api_key,
+        _last_error = "503 youtube_not_configured"
+        log.warning("youtube search: 503 youtube_not_configured")
+        return _unavailable(503, "youtube_not_configured", base or search_q)
+    try:
+        _spend_quota(now.date())
+    except HTTPException as exc:
+        _last_error = f"{exc.status_code} {exc.detail}"
+        log.warning("youtube search: %s %s", exc.status_code, exc.detail)
+        return _unavailable(exc.status_code, str(exc.detail), base or search_q)
+    params: dict[str, Any] = {
+        "part": "snippet", "q": search_q, "type": "video", "videoEmbeddable": "true", "safeSearch": "strict",
+        "relevanceLanguage": "mr", "regionCode": "IN", "maxResults": YOUTUBE_MAX_RESULTS, "key": api_key,
     }
+    if news:
+        params["eventType"] = "live"
     try:
         r = http_get(YOUTUBE_SEARCH_URL, params, 5.0)
     except httpx.HTTPError as exc:
-        raise HTTPException(502, "youtube_unreachable") from exc
+        _last_error = "502 youtube_unreachable"
+        log.warning("youtube search: 502 youtube_unreachable (%s)", type(exc).__name__)
+        return _unavailable(502, "youtube_unreachable", base or search_q)
     if r.status_code in (403, 429):
         if "quota" in r.text.lower():
             _daily["blocked"] = True  # no more calls today
-            raise HTTPException(429, "youtube_quota")
-        raise HTTPException(502, "youtube_refused")
+            _last_error = f"{r.status_code} youtube_quota"
+            log.warning("youtube search: %s youtube_quota", r.status_code)
+            return _unavailable(429, "youtube_quota", base or search_q)
+        _last_error = f"{r.status_code} youtube_refused"
+        log.warning("youtube search: %s youtube_refused", r.status_code)
+        return _unavailable(502, "youtube_refused", base or search_q)
     if r.status_code >= 400:
-        raise HTTPException(502, "youtube_error")
+        _last_error = f"{r.status_code} youtube_error"
+        log.warning("youtube search: %s youtube_error", r.status_code)
+        return _unavailable(502, "youtube_error", base or search_q)
     results = []
     for item in r.json().get("items", []):
         vid = (item.get("id") or {}).get("videoId")
@@ -111,12 +176,21 @@ def youtube_search(
                 "title": html.unescape(snippet.get("title", ""))[:TITLE_MAX],
                 "channel": html.unescape(snippet.get("channelTitle", ""))[:80],
             })
-    if row is None:
-        db.add(m.YoutubeSearchCache(query_key=key, results=results, created_at=now))
-    else:
-        row.results, row.created_at = results, now
-    db.commit()
+    results = rank_results(results, search_q, news=news)
+    _last_error = None
+    if results:  # an empty answer is not cached: the next ask tries Google again
+        if row is None:
+            db.add(m.YoutubeSearchCache(query_key=key, results=results, created_at=now))
+        else:
+            row.results, row.created_at = results, now
+        db.commit()
     return results
+
+
+@router.get("/media/status")
+def media_status() -> dict[str, Any]:
+    """For the family dashboard: is the YouTube key present, and what did the last search fail with?"""
+    return {"youtube_key": bool(os.environ.get("YOUTUBE_API_KEY", "").strip()), "last_error": _last_error}
 
 
 # ---- news ---------------------------------------------------------------------------------------------------
@@ -192,3 +266,9 @@ def news(user_id: int, db: Session = Depends(get_db)) -> list[dict[str, str]]:
     if items:  # a total failure is not cached: the next ask tries again
         _news_cache[key] = (_clock(), items)
     return items
+
+
+@router.get("/users/{user_id}/news")
+def user_news(user_id: int, db: Session = Depends(get_db)) -> list[dict[str, str]]:
+    """The same five headlines under the household's own path, with the field names `source` / `title`."""
+    return [{"source": item["source_label"], "title": item["title"]} for item in news(user_id, db)]
