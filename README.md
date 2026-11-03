@@ -52,6 +52,34 @@ compose-only hosts. `-Only <service>` starts one. The scheduler is not started b
 `LIVEKIT_*` from `.env` itself and exits naming any missing required variable. Tests: create a venv, `pip install -r services/core-api/requirements.txt -r services/reasoning/requirements.txt`,
 then `pytest` inside each service and `ruff check .` at the root.
 
+### Run on phone (Cloudflare quick tunnel)
+
+The phone needs an HTTPS origin for the microphone. On Windows:
+
+```
+scripts\dev-up.ps1 -Phone
+```
+
+- Starts the normal stack and a Cloudflare quick tunnel from `web\`
+  (`npx cloudflared tunnel --url http://localhost:5173`) in its own window, output also in
+  `logs\tunnel.log`.
+- Waits up to 30 s for the `https://<random>.trycloudflare.com` URL, writes it to `BASE_URL` in `.env`
+  (only that line changes; comments, order and line endings stay as they were), then starts/restarts
+  core-api so family-call links use it.
+- If a tunnel is already running and its URL in `logs\tunnel.log` answers HTTP 200, it is reused instead
+  of starting a second one. If the stack is already running, the other services are left alone and only
+  core-api is restarted. That restart clears core-api's in-memory room map, so open the elder URL once
+  afterwards before testing a family-call link.
+- Prints the two URLs to open on the phone:
+  - Elder: `https://<random>.trycloudflare.com/?user=1`
+  - Family: `https://<random>.trycloudflare.com/?view=family&user=1`
+- The tunnel exposes the Vite dev proxy and its API key: use synthetic demo data only, and close the
+  "arjun tunnel" window when finished. Node/npm is required; the first run may download `cloudflared`.
+- `-Only web -Phone` does not restart core-api (the warning says so); use `-Only core-api -Phone` or no
+  `-Only` to apply the new `BASE_URL`.
+- The URL parser / `.env` line replacer is `scripts\tunnel_url.py`; its standard-library unit tests run
+  with `.venv\Scripts\python scripts\test_tunnel_url.py` (pytest also collects them).
+
 ## Demo user: Heerabai
 
 Seed synthetic user 1 through core-api. The first command is a dry run; add `--apply` to write the changes.
@@ -188,11 +216,12 @@ the script reports that limitation while seeding the other requested data.
   used anywhere (`scripts/check_no_browser_speech.py`, also a test). Verified without a browser by a LiveKit client
   script; **not yet verified in a real browser**. Browser echo cancellation + noise suppression are ON because the
   agent has no noise filter (open question 6).
-- The elder page needs a secure origin for the microphone: `http://localhost` works; a phone needs HTTPS. Options,
-  none set up yet: (1) Android + USB: `adb reverse tcp:5173 tcp:5173`, then open `http://localhost:5173` on the
-  phone; (2) `vite --https` with a local certificate (mkcert) and the laptop's LAN address; (3) an HTTPS tunnel
-  (cloudflared / ngrok) to port 5173, which also exposes the dev proxy and its API key, so demo data only;
-  (4) Chrome's `unsafely-treat-insecure-origin-as-secure` flag on the phone, for a quick test only.
+- The elder page needs a secure origin for the microphone: `http://localhost` works; a phone needs HTTPS. Options:
+  (1) `scripts\dev-up.ps1 -Phone` (Cloudflare quick tunnel; see "Run on phone" above); (2) Android + USB:
+  `adb reverse tcp:5173 tcp:5173`, then open `http://localhost:5173` on the phone; (3) `vite --https` with a local
+  certificate (mkcert) and the laptop's LAN address; (4) Chrome's
+  `unsafely-treat-insecure-origin-as-secure` flag on the phone, for a quick test only. A tunnel exposes the dev
+  proxy and its API key, so demo data only.
 - **T8, spoken reminders and medicines (built 2026-10-26, UNVERIFIED with real audio or in a browser):** the scheduler
   (started by `scripts/dev-up.ps1`) queues each due reminder / medicine prompt in core-api; an open voice session
   claims one at a time and speaks it with the fixed wording from SQL, and the item is "spoken" only after playback

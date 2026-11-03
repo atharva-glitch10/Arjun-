@@ -2,8 +2,13 @@
 # Reads the ONE root .env. Each service gets its own window and ONLY the variables it needs;
 # values are never printed or put on a command line (they travel in the child's environment).
 # voice-agent loads its own GNANI_*/LIVEKIT_* from .env (see agent.py), so they are not passed here.
-# Usage: scripts\dev-up.ps1 [-Only core-api|reasoning|voice-agent|web]
-param([ValidateSet("core-api", "reasoning", "scheduler", "voice-agent", "web")][string]$Only)
+# Usage: scripts\dev-up.ps1 [-Only core-api|reasoning|scheduler|voice-agent|web] [-Phone]
+#   -Phone also starts a Cloudflare quick tunnel to :5173, writes its URL to BASE_URL in .env and
+#   (re)starts core-api so family-call links use it. Only the BASE_URL line is changed.
+param(
+    [ValidateSet("core-api", "reasoning", "scheduler", "voice-agent", "web")][string]$Only,
+    [switch]$Phone
+)
 
 $root = Split-Path $PSScriptRoot -Parent
 $py = Join-Path $root ".venv\Scripts\python.exe"
@@ -29,11 +34,131 @@ $local = @{
 $local.PYTHONUNBUFFERED = "1"
 function Get-Setting([string]$name) { if ($local.ContainsKey($name)) { $local[$name] } else { $dotenv[$name] } }
 
+$tunnelLog = Join-Path $logDir "tunnel.log"
+$script:tunnelUrl = ""
+$tunnelHelper = Join-Path $PSScriptRoot "tunnel_url.py"
+
+function Get-TunnelUrlFromLog {
+    if (-not (Test-Path $tunnelLog)) { return $null }
+    $found = & $py $tunnelHelper find $tunnelLog 2>$null
+    if ($LASTEXITCODE -eq 0 -and $found) { return ($found | Select-Object -Last 1).Trim() }
+    return $null
+}
+
+function Get-TunnelProcesses {
+    try {
+        return @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -match 'cloudflared' -and
+            $_.CommandLine -match 'tunnel' -and
+            $_.CommandLine -match 'localhost:5173' -and
+            $_.Name -notmatch '^powershell'
+        })
+    } catch { return @() }
+}
+
+function Test-TunnelUrl([string]$url) {
+    if (-not $url) { return $false }
+    try {
+        $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5 -MaximumRedirection 3
+        return ($res.StatusCode -eq 200)
+    } catch { return $false }
+}
+
+function Stop-Tunnel {
+    # Close the "arjun tunnel" window too, not just cloudflared/npx, so a restart is clean.
+    try {
+        Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.Name -match '^powershell' -and $_.CommandLine -match 'arjun tunnel'
+        } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch { }
+    foreach ($proc in (Get-TunnelProcesses)) {
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Stop-CoreApi {
+    # Used by -Phone: a running core-api keeps the old BASE_URL until it is restarted.
+    try {
+        Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.Name -match '^powershell' -and $_.CommandLine -match 'arjun core-api'
+        } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch { }
+
+    $listeners = @()
+    try { $listeners = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop) } catch { }
+    foreach ($ownerPid in ($listeners | Select-Object -ExpandProperty OwningProcess -Unique)) {
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction SilentlyContinue
+        if (-not $proc -or $proc.CommandLine -notmatch 'core_api\.main:app') { continue }
+        Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue
+    }
+    for ($i = 0; $i -lt 20; $i++) {
+        $still = @()
+        try { $still = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop) } catch { }
+        if ($still.Count -eq 0) { return }
+        Start-Sleep -Milliseconds 250
+    }
+}
+
+function Test-PortListening([int]$port) {
+    try { return @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop).Count -gt 0 }
+    catch { return $false }
+}
+
+function Test-ServiceRunning([string]$name) {
+    switch ($name) {
+        "core-api"  { return (Test-PortListening 8000) }
+        "reasoning" { return (Test-PortListening 8001) }
+        "web"       { return (Test-PortListening 5173) }
+        default {
+            try {
+                return @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+                    $_.Name -match '^powershell' -and $_.CommandLine -match "arjun $name"
+                }).Count -gt 0
+            } catch { return $false }
+        }
+    }
+}
+
+function Start-PhoneTunnel {
+    $url = Get-TunnelUrlFromLog
+    $running = @(Get-TunnelProcesses).Count -gt 0
+    if ($running -and $url -and (Test-TunnelUrl $url)) {
+        Write-Host "reusing the running tunnel $url"
+        return $url
+    }
+    if ($running) {
+        Write-Warning "a tunnel is running but its logged URL is missing or not reachable; restarting it"
+        Stop-Tunnel
+        Start-Sleep -Milliseconds 500
+    }
+    if (Test-Path $tunnelLog) { Remove-Item $tunnelLog -Force -ErrorAction SilentlyContinue }
+
+    $webDir = Join-Path $root "web"
+    # npm_config_yes avoids the first-run "Ok to proceed?" prompt inside the new window. Add-Content -Encoding
+    # utf8 is the same tee the service windows use (Tee-Object would write UTF-16 in Windows PowerShell 5.1).
+    $cmd = "`$host.UI.RawUI.WindowTitle='arjun tunnel'; Set-Location '$webDir'; `$env:npm_config_yes='true'; npx cloudflared tunnel --url http://localhost:5173 2>&1 | ForEach-Object { `$s = `$_.ToString(); Add-Content -Path '$tunnelLog' -Value `$s -Encoding utf8; `$s }"
+    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $cmd
+    Write-Host "starting the Cloudflare tunnel (first run may download cloudflared) ..."
+    $found = & $py $tunnelHelper wait $tunnelLog --timeout 30 --interval 0.5 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $found) {
+        throw "Cloudflare tunnel did not print a trycloudflare.com URL within 30 s. See $tunnelLog"
+    }
+    return ($found | Select-Object -Last 1).Trim()
+}
+
+function Set-EnvBaseUrl([string]$url) {
+    & $py $tunnelHelper set-base-url $envFile $url
+    if ($LASTEXITCODE -ne 0) { throw "could not write BASE_URL to $envFile" }
+    $dotenv["BASE_URL"] = $url
+}
+
 $services = [ordered]@{
     "core-api"    = @{ Dir = "services\core-api"; Cmd = "& '$py' -m uvicorn core_api.main:app --port 8000"
                        Vars = "DATABASE_URL", "CORE_API_KEY", "ARJUN_TZ", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "ARJUN_AGENT_NAME",
                        "CORE_RATE_LIMIT", "CORE_RATE_PER_S", "CORE_RATE_BURST", "UNDO_TTL_S", "FEED_RECHECK_S", "YOUTUBE_API_KEY",
-                       "YOUTUBE_MAX_SEARCHES_PER_DAY" }
+                       "YOUTUBE_MAX_SEARCHES_PER_DAY", "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+                       "BASE_URL", "JOIN_SECRET" }
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
                        "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
@@ -56,8 +181,19 @@ function Wait-Health([string]$url, [string]$label) {
     Write-Warning "$label did not answer $url within 30 s; continuing"
 }
 
+if ($Phone) {
+    $script:tunnelUrl = Start-PhoneTunnel
+    Set-EnvBaseUrl $script:tunnelUrl
+    Write-Host "BASE_URL set to $script:tunnelUrl (only that .env line changed)"
+}
+
 foreach ($name in $services.Keys) {
     if ($Only -and $Only -ne $name) { continue }
+    if ($Phone -and $name -ne "core-api" -and (Test-ServiceRunning $name)) {
+        Write-Host "$name is already running; leaving it alone"
+        continue
+    }
+    if ($Phone -and $name -eq "core-api") { Stop-CoreApi }  # so it reads the new BASE_URL
     $svc = $services[$name]
     $saved = @{}
     $svc.Vars += "PYTHONUNBUFFERED"   # piped python otherwise buffers its log lines
@@ -76,3 +212,22 @@ foreach ($name in $services.Keys) {
     }
 }
 Write-Host "core-api http://127.0.0.1:8000/docs | reasoning http://127.0.0.1:8001/docs | web http://localhost:5173"
+
+if ($Phone) {
+    if ($Only -and $Only -ne "core-api") {
+        Write-Warning "-Only ${Only}: core-api was not restarted, so it may still have the old BASE_URL. Run -Only core-api to apply it."
+    }
+    if ($script:tunnelUrl) {
+        $elder = "$($script:tunnelUrl)/?user=1"
+        $family = "$($script:tunnelUrl)/?view=family&user=1"
+        Write-Host ""
+        Write-Host "================= PHONE URLS (HTTPS) =================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  ELDER   $elder" -ForegroundColor Green
+        Write-Host "  FAMILY  $family" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  The tunnel exposes the dev proxy (and its API key): demo data only."
+        Write-Host "======================================================" -ForegroundColor Green
+        Write-Host ""
+    }
+}
