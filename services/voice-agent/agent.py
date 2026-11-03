@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import applog
+import voiceprovider
 from audiowarm import warm_audio_resampler
 from bridge import (
     claim_next_delivery,
@@ -40,6 +41,11 @@ from livekit.agents import (
 )
 from livekit.agents import tts as lk_tts
 from livekit.plugins import gnani, silero
+
+try:  # TESTING switch (voiceprovider.py). Imported here: a plugin must be registered on the main thread.
+    from livekit.plugins import sarvam
+except ImportError:  # the Gnani path does not need it
+    sarvam = None
 from livekit.plugins.gnani.tts import SSEChunkedStream
 from media import ATTR_MEDIA, MediaState, should_send, strip_wake_word
 from responder import Responder
@@ -53,6 +59,8 @@ from voice import stt_options, tts_choice, tts_text
 logger = logging.getLogger("arjun.agent")
 
 REQUIRED_ENV = ("GNANI_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
+# TESTING switch (voiceprovider.py): with ARJUN_VOICE_PROVIDER=sarvam the Gnani key is not needed, SARVAM_API_KEY is.
+SARVAM_REQUIRED_ENV = ("SARVAM_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
 # ARJUN_* are non-secret settings (agent name, user id, endpointing). REASONING_URL is NOT loaded
 # from .env on purpose: dev-up.ps1 sets the local value and .env may hold the compose hostname.
 ENV_PREFIXES = ("GNANI_", "LIVEKIT_", "ARJUN_")
@@ -69,9 +77,10 @@ def load_agent_env(env_file: Path | None = None) -> None:
     path = env_file or Path(__file__).resolve().parents[2] / ".env"
     values = dotenv_values(path) if path.is_file() else {}
     for name, value in values.items():
-        if name.startswith(ENV_PREFIXES) and value:
+        if (name.startswith(ENV_PREFIXES) or name == "SARVAM_API_KEY") and value:
             os.environ[name] = value
-    missing = [n for n in REQUIRED_ENV if not os.environ.get(n)]
+    sarvam_on = os.environ.get("ARJUN_VOICE_PROVIDER", "").strip().lower() == "sarvam"
+    missing = [n for n in (SARVAM_REQUIRED_ENV if sarvam_on else REQUIRED_ENV) if not os.environ.get(n)]
     if missing:
         sys.exit(f"voice-agent: missing required environment variables: {', '.join(missing)} (set them in {path})")
 
@@ -203,8 +212,16 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     warm_audio_resampler()  # idempotent, a safety net
     applog.setup_file_log() # the CLI may have reset logging after import; make sure the file handler is on
     await ctx.connect()
-    timbre, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
-    logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
+    use_sarvam = voiceprovider.provider() == "sarvam"  # TESTING switch; the default is the Gnani path below
+    if use_sarvam:
+        stt_plugin, tts_plugin = voiceprovider.make_sarvam(sarvam)
+        active_model = voiceprovider.TTS_MODEL  # not a Timbre tag model: <tags> are stripped
+        logger.info(voiceprovider.start_line())  # no Timbre probe
+    else:
+        tts_plugin, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
+        stt_plugin = gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING, **STT_OPTIONS)  # Prisma
+        logger.info("voice provider: gnani (stt prisma, tts %s)", active_model)
+        logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
     endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's
     handling: dict = {"endpointing": endpointing.options()}  # type: ignore[type-arg]
     detection = turn_detection_from_env()  # "vad" by default; None = LiveKit's cloud detector (see endpointing.py)
@@ -212,8 +229,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         handling["turn_detection"] = detection
     logger.info("turn detection %s, endpointing %s", detection or "auto (cloud)", endpointing.options())
     session = AgentSession(
-        stt=gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING, **STT_OPTIONS),  # Prisma
-        tts=timbre,  # key from GNANI_API_KEY
+        stt=stt_plugin,  # Prisma (GNANI_API_KEY) or, with the testing switch, Saaras (SARVAM_API_KEY)
+        tts=tts_plugin,  # Timbre or, with the testing switch, Bulbul
         vad=ctx.proc.userdata.get("vad") or silero.VAD.load(),
         turn_handling=handling,
     )
@@ -236,7 +253,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         session.update_options(endpointing_opts=endpointing.options())  # type: ignore[arg-type]
     # One JSON line per turn, tagged with this LiveKit job id. The numbers start from the wall clock, so a browser that
     # drops and rejoins (a new job, a new TurnLog) continues ABOVE the old session instead of restarting at 1.
-    turns = TurnLog(language_selected=STT_LANGUAGE, session=ctx.job.id, start=TurnLog.base_for(time.time()))
+    turns = TurnLog(
+        language_selected=STT_LANGUAGE, session=ctx.job.id, start=TurnLog.base_for(time.time()),
+        stt_provider="sarvam" if use_sarvam else "gnani", tts_provider="sarvam" if use_sarvam else "gnani",
+    )
 
     # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
     from_metadata = user_id_from_metadata(ctx.job.metadata, 0)
@@ -318,7 +338,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         publish,
         lambda: fallback_text(STT_LANGUAGE),
         thinking=lambda on: publish_thinking(ctx.room.local_participant, on),  # "विचार करतोय…"
-        speakable=lambda reply: tts_text(reply.text, reply.speech, active_model),  # tags only for Timbre v3
+        speakable=lambda reply: (  # tags only for Timbre v3; Bulbul gets neither <tags> nor [tags]
+            voiceprovider.sarvam_text(tts_text(reply.text, reply.speech, active_model))
+            if use_sarvam else tts_text(reply.text, reply.speech, active_model)
+        ),
         on_mode=apply_mode,
     )
 
@@ -377,7 +400,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     # ---- T8: queued reminders / medicines are spoken here; an idle session closes itself -------------------
     async def claim_next():  # type: ignore[no-untyped-def]
-        return await asyncio.to_thread(claim_next_delivery, user_id, session_id)
+        return await asyncio.to_thread(claim_next_delivery, user_id, session_id, None, media.playing)
 
     async def mark_spoken(delivery_id: int) -> None:
         await asyncio.to_thread(mark_delivery_spoken, user_id, delivery_id, session_id)

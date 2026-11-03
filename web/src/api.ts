@@ -165,7 +165,7 @@ export interface Day {
 /** One reminder / medicine prompt on its way to the elder. `spoken_at` set = Arjun finished saying it; it is NOT proof she heard it. */
 export interface Delivery {
   id: number;
-  kind: "reminder" | "medicine";
+  kind: "reminder" | "medicine" | "checkin";
   ref_id: number;
   attempt: number;
   due_at: string;
@@ -179,6 +179,14 @@ export interface Delivery {
   acked_at: string | null;
   outcome: string | null;
   fail_count: number;
+}
+
+/** One line of the family's "आजचा दिवस" card. No words of hers, no mood. */
+export interface CheckinCardItem {
+  kind: string;
+  label: string;
+  at: string;
+  state: "done" | "not_done" | "no_answer" | "asking" | "waiting" | "not_asked";
 }
 
 /** When the elder last spoke to Arjun or tapped her screen. Time only: no words are stored. */
@@ -306,6 +314,7 @@ export const api = {
   day: (id: number) => core<Day>(`/users/${id}/day`),
   pendingAction: (id: number) => core<PendingAction | null>(`/users/${id}/actions/pending`),
   nextAppointment: (id: number) => core<Appointment | null>(`/users/${id}/appointments/next`),
+  checkinCard: (id: number) => core<CheckinCardItem[]>(`/users/${id}/checkins/card`),
   openDeliveries: (id: number) => core<Delivery[]>(`/users/${id}/deliveries/open`),
   deliveries: (id: number, days = 1) => core<Delivery[]>(`/users/${id}/deliveries?days=${days}`),
   ackDelivery: (id: number, deliveryId: number, outcome = "ok") =>

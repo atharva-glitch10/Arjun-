@@ -198,14 +198,21 @@ class Checkin(Base):
     __table_args__ = (UniqueConstraint("user_id", "for_date", "kind", name="uq_checkin_per_day"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(10))  # breakfast | lunch | snack | dinner (walk | bp later)
+    # sleep | breakfast | lunch | walk | interest | home | dinner | bp | appt<ID> | rem<ID>  (see checkin_plan.py)
+    kind: Mapped[str] = mapped_column(String(24))
     for_date: Mapped[date] = mapped_column(Date)
     due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     # pending | asked | done | skipped | missed | unanswered
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
     asked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    followups: Mapped[int] = mapped_column(Integer, default=0)  # at most one 30-minute follow-up
+    followups: Mapped[int] = mapped_column(Integer, default=0)  # at most one 20-minute follow-up
+    # What the question is about, copied from SQL when the plan is made: "HH:MM|title" (appt, rem), "name|relation"
+    # (home), the interest word (interest). Never her words.
+    ref: Mapped[str] = mapped_column(String(160), default="")
+    postponed: Mapped[int] = mapped_column(Integer, default=0)  # busy moments it waited out (10 min each, max 3)
+    mood: Mapped[str] = mapped_column(String(12), default="")  # "" | good | low: one word, never her words
+    source: Mapped[str] = mapped_column(String(10), default="asked")  # asked | volunteered (she said it first)
 
 
 class BpReading(Base):

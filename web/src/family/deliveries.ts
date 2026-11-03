@@ -46,7 +46,7 @@ export function describeDelivery(d: Delivery): DeliveryText {
 
 export function deliveryRows(list: readonly Delivery[]): DeliveryRow[] {
   return list
-    .filter((d) => d.status !== "superseded")
+    .filter((d) => d.status !== "superseded" && d.kind !== "checkin") // check-ins have their own card
     .sort((a, b) => a.due_at.localeCompare(b.due_at) || a.id - b.id)
     .map((d) => ({
       ...describeDelivery(d),

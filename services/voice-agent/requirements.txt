@@ -3,6 +3,8 @@
 livekit-agents==1.8.6
 livekit-plugins-gnani==1.8.6
 livekit-plugins-silero==1.8.6
+# TESTING switch only (ARJUN_VOICE_PROVIDER=sarvam); the Gnani path above stays the default.
+livekit-plugins-sarvam==1.8.6
 livekit-api==1.2.1
 httpx>=0.27
 python-dotenv>=1.0

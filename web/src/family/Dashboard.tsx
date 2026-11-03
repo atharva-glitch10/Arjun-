@@ -8,6 +8,7 @@ import { recentEmergencies } from "./alerts";
 import { loadAcked, needsPopup, saveAcked, startEmergencyWatch, unacknowledged } from "./emergencyWatch";
 import { SEVERITY_LABEL, SEVERITY_RANK, SEVERITY_STYLE, connectFeed, mergeFeed } from "./feed";
 import type { FeedEvent, FeedStatus, Severity } from "./feed";
+import { dayCardRows, dayCardSummary } from "./daycard";
 import { deliveryRows } from "./deliveries";
 import { confirmThen } from "./guard";
 import { startPolling } from "./polling";
@@ -18,6 +19,7 @@ import type {
   AppLink,
   Appointment,
   BpReading,
+  CheckinCardItem,
   Contact,
   Delivery,
   Dose,
@@ -46,6 +48,7 @@ interface Data {
   medicines: Medicine[];
   doses: Dose[];
   deliveries: Delivery[];
+  dayCard: CheckinCardItem[];
   activity: Activity;
   today: WellbeingToday;
   bp: BpReading[];
@@ -134,7 +137,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks, mediaStatus] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks, mediaStatus, dayCard] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -155,8 +158,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         api.watchSamples(userId).catch((): WatchSample[] => []), // older core-api
         api.appLinks(userId).catch((): AppLink[] => []), // older core-api
         api.mediaStatus().catch((): MediaStatus | null => null), // older core-api
+        api.checkinCard(userId).catch((): CheckinCardItem[] => []), // older core-api
       ]);
-      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, mediaStatus, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch });
+      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, mediaStatus, book, requests, notes, medicines, doses, deliveries, dayCard, activity, today, bp, watch });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -517,6 +521,29 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             ))}
             <p className="fam-note">
               Everything here is what Aaji told Arjun. "Done" and "Taken" are self-reported. "On time" is within the window set for each medicine (default 30 min). Meals, the walk and the BP check are the family-set times above; nothing is scored.
+            </p>
+          </section>
+
+          <section className="fam-card" style={{ flex: "1 1 480px" }} aria-label="आजचा दिवस">
+            <h2>आजचा दिवस</h2>
+            <p className="fam-note" style={{ marginTop: 0 }}>
+              {data.user.daily_checkins ? dayCardSummary(data.dayCard) : "Day check-ins are switched off (Settings)."}
+            </p>
+            {dayCardRows(data.dayCard).map((r) => (
+              <div className="timeline-row" key={r.key}>
+                <span className="time">{r.time}</span>
+                <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                  <span className="label">{r.title}</span>
+                </div>
+                <span className="status" title={r.words} aria-label={r.words}>
+                  {r.mark}
+                </span>
+              </div>
+            ))}
+            <p className="fam-note">
+              ✅ done, ❌ not done, — asked but no answer, … asked and waiting, ○ later today, · never asked. These are what Aaji told
+              Arjun (self-reported). Her words are never shown here. How she is feeling appears above only if she
+              agreed to share it.
             </p>
           </section>
 

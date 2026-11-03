@@ -262,17 +262,37 @@ class SnoozeIn(BaseModel):
 class CheckinOut(BaseModel):
     id: int
     user_id: int
-    kind: str  # breakfast | lunch | snack | dinner | walk | bp
+    kind: str  # sleep | breakfast | lunch | walk | interest | home | dinner | bp | appt<ID> | rem<ID>
+    ref: str = ""
     due_at: datetime
     status: str  # pending | asked | done | skipped | missed | unanswered
     asked_at: datetime | None
     answered_at: datetime | None
     followups: int
+    postponed: int = 0
+    source: str = "asked"
     heard: bool  # a voice session really spoke (or showed) the prompt for this check-in
+
+
+class CheckinCardItem(BaseModel):
+    """One line of the family's "आजचा दिवस" card. No words of hers, only what happened."""
+
+    kind: str  # sleep | breakfast | lunch | medicine | appointment | reminder | walk | interest | home | dinner | bp
+    label: str  # medicine name / appointment title / contact first name; "" otherwise
+    at: datetime  # when it was answered, else when it was due
+    state: str  # done | not_done | no_answer | asking | waiting | not_asked
 
 
 class CheckinAnswer(BaseModel):
     answer: Literal["done", "skipped"]
+    mood: Literal["good", "low"] | None = None
+
+
+class CheckinVolunteer(BaseModel):
+    """She said it on her own ("जेवले"): the matching check-in is answered and will not be asked."""
+
+    topic: Literal["sleep", "breakfast", "lunch", "walk", "dinner", "home"]
+    answer: Literal["done", "skipped"] = "done"
 
 
 class BpReadingIn(BaseModel):

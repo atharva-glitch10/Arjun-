@@ -37,9 +37,11 @@ class TurnLog:
         return max(0, int(epoch_s) - _EPOCH0) * 2
 
     def __init__(
-        self, language_selected: str, path: Path = DEFAULT_PATH, session: str = "", start: int = 0
+        self, language_selected: str, path: Path = DEFAULT_PATH, session: str = "", start: int = 0,
+        stt_provider: str = "gnani", tts_provider: str = "gnani",
     ) -> None:
         self.language_selected = language_selected
+        self.stt_provider, self.tts_provider = stt_provider, tts_provider  # which speech services made this row
         self.path = path
         self.session = session  # the LiveKit job id; one JSON line per turn carries it
         self.start = start
@@ -53,7 +55,8 @@ class TurnLog:
     def _new(self) -> dict:
         self.index += 1
         turn = {"turn": self.index, "n": self.index - self.start, "language_selected": self.language_selected,
-                "action_type": "", "ignored_media": False}
+                "action_type": "", "ignored_media": False,
+                "stt_provider": self.stt_provider, "tts_provider": self.tts_provider}
         if self.session:
             turn["session"] = self.session
         self._open[self.index] = turn

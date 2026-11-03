@@ -598,6 +598,121 @@ _CHECKIN: dict[str, dict[str, str]] = {
 for _lang, _texts in _CHECKIN.items():
     R[_lang].update(_texts)
 
+# Proactive day check-ins (2026-11-03). ONE short question, and a reply of at most one sentence. The wording is
+# fixed (never LLM-written); {name}, {interest}, {title}, {when} and {him} come from SQL. Nothing here advises,
+# diagnoses, scores or claims a feeling (boundary 4). A nudge exists only for a meal.
+_DAY: dict[str, dict[str, str]] = {
+    "mr": {
+        "checkin_prompt_sleep": "नमस्कार {name}, रात्री झोप नीट लागली का?",
+        "checkin_prompt_breakfast": "नाश्ता झाला का?",
+        "checkin_prompt_lunch": "दुपारचं जेवण झालं का? काय केलं होतं?",
+        "checkin_prompt_walk": "आज थोडं फिरणं झालं का?",
+        "checkin_prompt_dinner": "रात्रीचं जेवण झालं का? आजचा दिवस कसा गेला?",
+        "checkin_prompt_interest": "आज {interest} ऐकायचं आहे का?",
+        "checkin_prompt_home": "आज {name}शी बोलणं झालं का?",
+        "checkin_prompt_appt": "आज {when} {title} आहे, लक्षात आहे ना?",
+        "checkin_done_sleep": "बरं झालं.",
+        "checkin_skipped_sleep": "ठीक आहे, नोंद केली.",
+        "checkin_done_breakfast": "छान!",
+        "checkin_skipped_breakfast": "ठीक आहे. लवकर काहीतरी खाऊन घ्या.",
+        "checkin_done_lunch": "छान!",
+        "checkin_skipped_lunch": "ठीक आहे. लवकर काहीतरी खाऊन घ्या.",
+        "checkin_done_dinner": "छान!",
+        "checkin_skipped_dinner": "ठीक आहे. थोडं काहीतरी खाऊन घ्या.",
+        "checkin_done_walk": "छान!",
+        "checkin_skipped_walk": "ठीक आहे.",
+        "checkin_done_interest": "ठीक आहे.",
+        "checkin_skipped_interest": "ठीक आहे.",
+        "checkin_done_home": "छान!",
+        "checkin_skipped_home": "{him} निरोप पाठवू का?",
+        "checkin_done_appt": "बरं झालं.",
+        "checkin_skipped_appt": "ठीक आहे. आज {when} {title} आहे.",
+        "checkin_offer_sent": "ठीक आहे.",
+        "checkin_offer_no": "ठीक आहे.",
+        "checkin_offer_message": "She has not spoken to {name} today; please call her.",
+    },
+    "hi": {
+        "checkin_prompt_sleep": "नमस्ते {name}, रात को नींद ठीक से आई?",
+        "checkin_prompt_breakfast": "नाश्ता हो गया?",
+        "checkin_prompt_lunch": "दोपहर का खाना हो गया? क्या खाया था?",
+        "checkin_prompt_walk": "आज थोड़ा टहलना हुआ?",
+        "checkin_prompt_dinner": "रात का खाना हो गया? आज का दिन कैसा रहा?",
+        "checkin_prompt_interest": "आज {interest} सुनना है?",
+        "checkin_prompt_home": "आज {name} से बात हुई?",
+        "checkin_prompt_appt": "आज {when} {title} है, याद है ना?",
+        "checkin_done_sleep": "अच्छा हुआ।",
+        "checkin_skipped_sleep": "ठीक है, दर्ज कर लिया।",
+        "checkin_done_breakfast": "बढ़िया!",
+        "checkin_skipped_breakfast": "ठीक है। जल्दी कुछ खा लीजिए।",
+        "checkin_done_lunch": "बढ़िया!",
+        "checkin_skipped_lunch": "ठीक है। जल्दी कुछ खा लीजिए।",
+        "checkin_done_dinner": "बढ़िया!",
+        "checkin_skipped_dinner": "ठीक है। थोड़ा कुछ खा लीजिए।",
+        "checkin_done_walk": "बढ़िया!",
+        "checkin_skipped_walk": "ठीक है।",
+        "checkin_done_interest": "ठीक है।",
+        "checkin_skipped_interest": "ठीक है।",
+        "checkin_done_home": "बढ़िया!",
+        "checkin_skipped_home": "{him} संदेश भेज दूँ?",
+        "checkin_done_appt": "अच्छा हुआ।",
+        "checkin_skipped_appt": "ठीक है। आज {when} {title} है।",
+        "checkin_offer_sent": "ठीक है।",
+        "checkin_offer_no": "ठीक है।",
+        "checkin_offer_message": "She has not spoken to {name} today; please call her.",
+    },
+    "en": {
+        "checkin_prompt_sleep": "Good morning {name}, did you sleep well last night?",
+        "checkin_prompt_breakfast": "Have you had breakfast?",
+        "checkin_prompt_lunch": "Have you had lunch? What did you have?",
+        "checkin_prompt_walk": "Did you get a little walk today?",
+        "checkin_prompt_dinner": "Have you had dinner? How was your day?",
+        "checkin_prompt_interest": "Would you like to listen to {interest} today?",
+        "checkin_prompt_home": "Did you speak with {name} today?",
+        "checkin_prompt_appt": "You have {title} today {when}. Do you remember?",
+        "checkin_done_sleep": "Good.",
+        "checkin_skipped_sleep": "Okay, noted.",
+        "checkin_done_breakfast": "Nice!",
+        "checkin_skipped_breakfast": "Okay. Please have something soon.",
+        "checkin_done_lunch": "Nice!",
+        "checkin_skipped_lunch": "Okay. Please have something soon.",
+        "checkin_done_dinner": "Nice!",
+        "checkin_skipped_dinner": "Okay. Please have a little something.",
+        "checkin_done_walk": "Nice!",
+        "checkin_skipped_walk": "Okay.",
+        "checkin_done_interest": "Okay.",
+        "checkin_skipped_interest": "Okay.",
+        "checkin_done_home": "Nice!",
+        "checkin_skipped_home": "Shall I send {him} a message?",
+        "checkin_done_appt": "Good.",
+        "checkin_skipped_appt": "Okay. You have {title} today {when}.",
+        "checkin_offer_sent": "Okay.",
+        "checkin_offer_no": "Okay.",
+        "checkin_offer_message": "She has not spoken to {name} today; please call her.",
+    },
+}
+for _lang, _texts in _DAY.items():
+    R[_lang].update(_texts)
+
+# "{him}" in the offer: the pronoun for the person named, by the family-set relation. Marathi takes "ला".
+PRONOUN: dict[str, dict[str, str]] = {
+    "mr": {"m": "त्याला", "f": "तिला", "n": "त्यांना"},
+    "hi": {"m": "उन्हें", "f": "उन्हें", "n": "उन्हें"},
+    "en": {"m": "him", "f": "her", "n": "them"},
+}
+_MALE = ("मुलगा", "नातू", "भाऊ", "नवरा", "पती", "वडील", "जावई", "son", "grandson", "brother")
+_FEMALE = ("मुलगी", "नात", "सून", "बहीण", "पत्नी", "आई", "daughter", "granddaughter", "sister")
+
+
+def pronoun_for(relation: str, lang: str) -> str:
+    """त्याला / तिला / त्यांना for the relation the family set. Unknown or mixed: the plural, never a guess."""
+    rel = relation.strip().lower()
+    key = "n"
+    if any(rel == w for w in _MALE):
+        key = "m"
+    elif any(rel == w for w in _FEMALE):
+        key = "f"
+    return PRONOUN[lang_or_default(lang)][key]
+
 # A spoken BP reading: the SAME numbers back, fixed wording. Never good / bad / high / low / normal, never
 # advice (boundary 7). {reading} is already in the elder's script, e.g. "१३२ बाय ८६".
 _READING: dict[str, dict[str, str]] = {

@@ -229,7 +229,7 @@ def test_without_a_key_the_youtube_results_page_opens_and_is_not_hidden(core_htt
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")  # YOUTUBE_API_KEY is unset
     assert res.action["kind"] == "url"
     assert res.action["value"].startswith("https://www.youtube.com/results?search_query=")
-    assert res.reply == "यूट्यूबवर शोधलं आहे, हवं ते गाणं दाबा."
+    assert res.reply == "यूट्यूबवर शोधलं आहे, हवा असलेला व्हिडिओ दाबा."
 
 
 def test_a_quota_error_also_falls_back_to_the_results_page(core_http, uid, household, monkeypatch):
@@ -237,7 +237,7 @@ def test_a_quota_error_also_falls_back_to_the_results_page(core_http, uid, house
     monkeypatch.setattr(media, "http_get", lambda *a, **k: httpx.Response(403, text="quotaExceeded"))
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")
     assert res.action["kind"] == "url" and res.action["value"].startswith("https://www.youtube.com/results")
-    assert res.reply == "यूट्यूबवर शोधलं आहे, हवं ते गाणं दाबा."
+    assert res.reply == "यूट्यूबवर शोधलं आहे, हवा असलेला व्हिडिओ दाबा."
 
 
 def test_nothing_found_and_google_down_are_fixed_lines(core_http, uid, household, monkeypatch):
@@ -252,7 +252,7 @@ def test_nothing_found_and_google_down_are_fixed_lines(core_http, uid, household
     media.reset_quota_for_tests()
     monkeypatch.setattr(media, "http_get", down)
     res = engine(core_http).handle(uid, "आशा भोसलेची गाणी लाव")
-    assert res.action["kind"] == "url" and res.reply == "यूट्यूबवर शोधलं आहे, हवं ते गाणं दाबा."
+    assert res.action["kind"] == "url" and res.reply == "यूट्यूबवर शोधलं आहे, हवा असलेला व्हिडिओ दाबा."
 
 
 def test_news_on_screen_plays_the_family_channel(core_http, uid, household):

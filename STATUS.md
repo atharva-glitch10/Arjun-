@@ -1,3 +1,63 @@
+# STATUS (2026-11-03, proactive day check-ins)
+
+## Built 2026-11-03: proactive day check-ins for any user (tested; NOT tried with a real voice session or a phone)
+- It EXTENDS the existing check-in engine (core-api `checkins.py`, the `Checkin` table, the `checkin` delivery kind,
+  the scheduler's `/internal/checkins/tick`, reasoning's `_answer_open_checkin`); nothing was duplicated.
+- core-api `checkin_plan.py`: today's plan from SQL only: sleep = wake+30 min, breakfast = wake+1.5 h, lunch =
+  lunch_time+30, walk = walk_time else 16:00, dinner = dinner_time+30, bp = bp_check_time (if set), interest = 1/4
+  into the opener window (a LISTENING interest only: cooking is never offered, boundary 10), home = 4/5 into the
+  window (a family contact, rotating by day; a doctor never), `appt<ID>` / `rem<ID>` = 1 h before an appointment /
+  reminder (weekly rules via `occurrence_on`; none is created within 30 min of the start). The old snack check-in
+  is no longer scheduled (not in the spec); its wording is still in replies.py.
+- Rules in `tick` (SQL-backed, no LLM): global `ARJUN_CHECKINS_ENABLED` (default 1) + the family switch
+  `daily_checkins`; never 22:00-07:00; only inside opener_start-opener_end except appointment/reminder mentions
+  (a question due before the window simply waits and is asked when it opens, if still under 90 min old, else
+  `missed`); ONE question per user per tick; >=45 min between questions; `ARJUN_CHECKIN_MAX_PER_DAY` (8);
+  an appointment that moved/was deleted or a reminder already done is not asked; ONE follow-up 20 min after the
+  first ask; a follow-up that was really heard + 90 s of silence = `unanswered`; never heard = `missed` (we never
+  say she was asked when she was not).
+- Postponing: `POST /users/{id}/checkins/{cid}/postpone`. Reasoning `deliver_next` calls it BEFORE claiming a
+  check-in when media is playing (voice-agent now sends `media_playing`), a safety reply is fresh (120 s), a yes/no is
+  pending, she spoke in the last 120 s, or a reminder/medicine delivery is `speaking`. The prompt goes back to
+  `pending` 10 min later (attempt number +100 so the queue row is new), a 4th busy moment skips it (`missed`), and
+  a busy follow-up is dropped. A postponed question counts for neither the daily cap nor the 45-min gap.
+- Dedupe: `POST /users/{id}/checkins/volunteer`; reasoning rules (`volunteered_topic`) record a meal or walk she
+  mentions on her own ("नाश्ता केला", "दुपारचं जेवण झालं", a plain "जेवले" = lunch 11-16 h / dinner 18-23 h and NOT
+  guessed at other hours); that check-in is then never asked.
+- Answers (reasoning): `answer_for(kind, text)` rules per topic first, then ONE strict-JSON Sarvam call
+  (`checkin_understanding`, {topic, status: done|not_done|unclear, note}; 3 s; `note` is ignored and nothing she said is
+  stored); unclear = ordinary talk. Reply = one fixed line from SQL values ("छान!", "बरं झालं.", a meal gets
+  "ठीक आहे. लवकर काहीतरी खाऊन घ्या."). SAFETY WINS: a symptom or loneliness in the same sentence is not a check-in
+  answer and goes to the existing symptom/lonely flow. Emergency/distress run first as always.
+- Interest yes -> `handle("<interest> लाव")`, i.e. the existing media flow. Home "no" -> "त्याला/तिला/त्यांना निरोप
+  पाठवू का?" (pronoun from the family-set relation) -> a spoken yes sends the usual REQUEST_CAREGIVER (Telegram, undo
+  window); "नको" or 2 minutes of silence drops it.
+- Medicine: DELIBERATELY not a second question. The medicine flow already asks at the due time and repeats every
+  `repeat_minutes` (15), "हो" records taken with read-back + undo, "नाही" = not taken (self-reported). The requested
+  "नाही -> आत्ता घ्या" is NOT built: boundary 6 forbids dose guidance; the day card reads the dose rows instead.
+- Family dashboard: card "आजचा दिवस" (`GET /users/{id}/checkins/card`, `web/src/family/daycard.ts`): ✅ done, ❌ not done,
+  — asked/no answer, … asked/waiting, ○ later today, · never asked, plus medicine doses; per row only kind, label (SQL
+  title/name), time, state. No words, no mood (mood stays behind the consent flag in the wellbeing card).
+  Check-in deliveries are hidden from the "Spoken reminders and medicines" card.
+- Demo: `scripts/checkin_demo.py --user 1 --now HH:MM [--setup] [--plan-only]` prints the plan and asks the next
+  check-in at once via `POST /users/{id}/checkins/demo-fire`, which exists ONLY with `ARJUN_CHECKIN_DEMO=1` (404
+  otherwise). `--now` is the pretend time of day, checked against her window and the quiet hours; the cap and the
+  45-min gap are skipped so the demo repeats. `--setup` switches `daily_checkins` on and opens the window
+  07:00-21:00 for that person (a family setting, printed when changed).
+- New columns on `checkins` (ref, postponed, mood, source) are added by `ensure_columns`; `kind` is now free text
+  (<=24 chars): an existing SQLite file works, an existing Postgres table would need `ALTER`.
+- Config: `.env.example` has `ARJUN_CHECKINS_ENABLED=1`, `ARJUN_CHECKIN_MAX_PER_DAY=8`, `ARJUN_CHECKIN_DEMO=0`;
+  `dev-up.ps1` passes them to core-api.
+- Verified (2026-11-03): core-api 244, reasoning 706 + 8 failing in `tests/test_app_commands.py` (PRE-EXISTING media
+  work on hold: they also fail on a clean `git archive HEAD`, 11 there), voice-agent 192, scheduler 8, vitest 114,
+  `tsc` clean, `npm run build` clean. `ruff check .`: 2 errors in `reasoning_svc/turn.py` (unused `understand_media`
+  import + import order) come from the same uncommitted media work and were left alone.
+  The demo script was run against a throwaway database (plan printed, sleep asked, card printed).
+- NOT verified: a real voice session speaking the questions, the 90 s silence rule with a live mic, the interest
+  yes -> a real YouTube play, the Telegram offer end to end, the dashboard card in a browser, any Marathi word list
+  with a native speaker, and the opener-window default: for user 1 (09:00-19:00) sleep/breakfast/dinner fall outside
+  it, so they are only asked once the window opens (or never, dinner) unless the family widens it.
+
 # STATUS (2026-11-03, Telegram family alerts + LiveKit family call)
 
 ## Built 2026-11-03: Part A distress reply fix + Part B free family alerting

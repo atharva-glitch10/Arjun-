@@ -10,6 +10,7 @@
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -36,7 +37,7 @@ from .appcmd import (
     media_topic,
     name_matches,
 )
-from .checkins import answer_from_text
+from .checkins import answer_for, topic_of, volunteered_topic
 from .clock import local_now
 from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency, is_lonely, symptom_category
@@ -53,6 +54,7 @@ from .parser import (
     NO,
     SNOOZE_WORDS,
     STOP,
+    YES,
     Draft,
     Parsed,
     Profile,
@@ -149,6 +151,9 @@ NO_ACTION: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": "
 _ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY"})
 _SAFETY_HOLD_S = 120.0  # no reminder / medicine prompt is spoken this soon after a safety reply
 _HISTORY_IDLE = timedelta(minutes=30)  # a longer silence starts a fresh conversation
+_CHAT_QUIET_S = 120.0  # a check-in question is not asked within this long of her last turn
+_CHECKIN_UNDERSTAND_S = 3.0  # the one LLM reading of an answer the word rules could not tell
+_OFFER_WINDOW_S = 120.0  # "त्याला निरोप पाठवू का?" waits this long for her yes
 _CONVO_WINDOW_S = 300.0  # a companion chat is "active" this long after its last companion turn
 _SHORT_TURN_WORDS = 4  # a bare "झालं" / "झाला ना" is this short; a story sentence is longer
 _HISTORY_CARE_CHARS = 140  # a care turn goes into the LLM history as short text only
@@ -214,6 +219,8 @@ class TurnEngine:
         self._media_choice: dict[int, _MediaChoice] = {}  # user -> the three cards waiting for an answer
         self._chat_counter: dict[int, int] = {}
         self._convo_at: dict[int, float] = {}  # user -> monotonic time of the last companion turn
+        self._last_turn: dict[int, float] = {}  # user -> monotonic time of her last turn (any kind)
+        self._family_offer: dict[int, tuple[float, str, str]] = {}  # user -> (when, name, relation) of the offer
         # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
         self._history: dict[int, list[tuple[datetime, str, str]]] = {}
 
@@ -225,6 +232,7 @@ class TurnEngine:
     def handle(self, user_id: int, text: str) -> TurnResult:
         t0 = time.perf_counter()
         self._llm_deadline = self._mono() + self._llm_timeout_s
+        self._last_turn[user_id] = self._mono()
         text = collapse_repeats(text)  # recognizer artifacts ("हो हो हो कर कर कर ...") before ANY parsing or safety check
         trace: dict[str, Any] = {}
         # 0/1. emergency, then distress: both override everything and must not depend on
@@ -257,6 +265,10 @@ class TurnEngine:
         if has_any(normalize(text), _AI_QUESTIONS):
             return TurnResult(r["ai_disclosure"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
 
+        offered = self._family_offer_answer(user_id, text, lang, trace, t0)
+        if offered is not None:
+            return offered
+
         # 3. intent
         profile = Profile(user["wake_time"], user["lunch_time"], user["dinner_time"], lang)
         try:
@@ -286,6 +298,7 @@ class TurnEngine:
             checkin = self._answer_open_checkin(user_id, text, lang, trace, t0)
             if checkin is not None:
                 return checkin
+        self._note_volunteered(user_id, text, now)
         answerable = pending["action_type"] if pending else (recent["action_type"] if recent else None)
         if answerable is None and self._recent_dose(user_id) is not None:
             answerable = "MEDICINE_TAKEN"  # "हो" / "घेतली" right after a medicine prompt
@@ -864,10 +877,26 @@ class TurnEngine:
                 return r[key].format(name=d["name"], dose=d["dose"], when=when)
         return None
 
-    def _checkin_line(self, uid: int, kind: str, lang: str, attempt: int = 1) -> str:
-        """A fixed check-in prompt. A snack on a class day also names that class, from SQL only."""
+    @staticmethod
+    def _call_name(user: dict[str, Any]) -> str:
+        """How Arjun addresses her: the family-set honorific, else her name without a "(synthetic)" tag."""
+        return (user.get("honorific") or re.sub(r"\s*\([^)]*\)", "", user["name"])).strip()
+
+    def _checkin_line(self, uid: int, kind: str, lang: str, attempt: int = 1, ref: str = "") -> str:
+        """A fixed check-in prompt, filled only from SQL (her name, the interest, the contact, the appointment).
+        A snack on a class day also names that class. A repeat (the follow-up) is the same question again."""
         r = rp.R[rp.lang_or_default(lang)]
-        prompt = r.get(f"checkin_prompt_{kind}") or r["checkin_prompt_breakfast"]
+        topic = topic_of(kind)
+        prompt = r.get(f"checkin_prompt_{topic}") or r["checkin_prompt_breakfast"]
+        if topic == "sleep":
+            prompt = prompt.format(name=self._call_name(self.core.user(uid)))
+        elif topic == "interest":
+            prompt = prompt.format(interest=ref)
+        elif topic == "home":
+            prompt = prompt.format(name=ref.split("|", 1)[0])
+        elif topic == "appt":
+            at, _, title = ref.partition("|")
+            prompt = prompt.format(when=rp.say_time(at, lang) if at else "", title=title)
         if kind == "snack":
             event = self._evening_appointment(uid)
             if event is not None:
@@ -877,7 +906,7 @@ class TurnEngine:
                         when=rp.say_time(event["at"][11:16], lang), title=event["label"]
                     )
                 )
-        if attempt > 1:
+        if attempt % 100 > 1:
             return r["checkin_again"].format(prompt=prompt)
         return prompt
 
@@ -898,10 +927,30 @@ class TurnEngine:
                 return item
         return None
 
+    def _read_checkin_answer(self, kind: str, text: str) -> str | None:
+        """done / skipped: the word rules first, then ONE short strict-JSON LLM reading (3 s). "unclear" = None, and
+        the sentence is then treated as ordinary talk. The LLM sees only this one answer; nothing it says is kept."""
+        answer = answer_for(kind, text)
+        if answer is not None or self.evon is None or not hasattr(self.evon, "checkin_understanding"):
+            return answer
+        try:
+            data = self.evon.checkin_understanding(  # type: ignore[attr-defined]
+                topic_of(kind), text, timeout=min(_CHECKIN_UNDERSTAND_S, self._llm_remaining())
+            )
+        except Exception as exc:  # noqa: BLE001 - a slow or broken provider never breaks the turn
+            log.info("check-in understanding failed: %s", type(exc).__name__)
+            return None
+        if not isinstance(data, dict) or data.get("topic") != topic_of(kind):
+            return None
+        return {"done": "done", "not_done": "skipped"}.get(str(data.get("status")))
+
     def _answer_open_checkin(
         self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float
     ) -> TurnResult | None:
-        """Record a spoken done / skipped answer for the open check-in, on a fixed template."""
+        """Record her done / skipped answer for the open check-in, on a fixed template, and say ONE short line.
+
+        Safety wins: a health complaint or loneliness in the same sentence ("नाही, पोट दुखतंय") is not a check-in
+        answer; it goes on to the symptom / loneliness flow, which also tells the family under the consent rules."""
         try:
             c = self.core.open_checkin(uid)
         except (CoreError, httpx.HTTPError) as exc:
@@ -909,7 +958,9 @@ class TurnEngine:
             return None
         if not c or not c.get("heard"):
             return None  # queued but never spoken: the words are not an answer to it
-        answer = answer_from_text(text)
+        if symptom_category(text) or is_lonely(text):
+            return None
+        answer = self._read_checkin_answer(c["kind"], text)
         if answer is None:
             return None
         try:
@@ -918,11 +969,80 @@ class TurnEngine:
             log.warning("could not record the check-in answer: %s", exc)
             return None
         r = rp.R[rp.lang_or_default(lang)]
-        key = f"checkin_{answer}_{c['kind']}"
+        topic = topic_of(c["kind"])
+        ref = c.get("ref", "")
+        if topic == "interest" and answer == "done" and ref:
+            return self.handle(uid, f"{ref} लाव")  # yes -> the existing media flow takes over
+        key = f"checkin_{answer}_{topic}"
+        fill: dict[str, str] = {}
+        if topic == "appt":
+            at, _, title = ref.partition("|")
+            fill = {"when": rp.say_time(at, lang) if at else "", "title": title}
+        if topic == "home" and answer == "skipped":
+            name, _, relation = ref.partition("|")
+            fill = {"him": rp.pronoun_for(relation, lang)}
+            self._family_offer[uid] = (self._mono(), name, relation)
+        line = r.get(key, r["checkin_done_breakfast"]).format(**fill)
         intent = "CHECKIN_DONE" if answer == "done" else "CHECKIN_SKIPPED"
+        return TurnResult(line, intent, "care", lang, trace=self._t(trace, t0))
+
+    def _family_offer_answer(
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float
+    ) -> TurnResult | None:
+        """Her reply to "त्याला निरोप पाठवू का?": yes sends the family the usual help message (with the undo window),
+        no drops it. Anything else drops the offer and is handled as a normal sentence."""
+        offer = self._family_offer.pop(uid, None)
+        if offer is None or self._mono() - offer[0] > _OFFER_WINDOW_S:
+            return None
+        norm = normalize(text)
+        r = rp.R[rp.lang_or_default(lang)]
+        if len(tokens(norm)) > 4:
+            return None
+        if has_any(norm, NO):
+            return TurnResult(r["checkin_offer_no"], "CHECKIN_SKIPPED", "care", lang, trace=self._t(trace, t0))
+        if not has_any(norm, YES):
+            return None
+        message = r["checkin_offer_message"].format(name=offer[1])
+        try:
+            done = self._act(uid, "REQUEST_CAREGIVER", {"message": message})
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not send the family message: %s", exc)
+            return TurnResult(r["error"], "REQUEST_CAREGIVER", "care", lang, trace=self._t(trace, t0))
+        if done is None:  # the old ask-first mode: one spoken yes still confirms it
+            return TurnResult(
+                r["confirm_caregiver"], "REQUEST_CAREGIVER", "care", lang, awaiting_confirmation=True,
+                screen="confirm", trace=self._t(trace, t0),
+            )
         return TurnResult(
-            r.get(key, r["checkin_done_breakfast"]), intent, "care", lang, trace=self._t(trace, t0)
+            r["auto_caregiver"].format(family=self._family_obj(uid, lang)), "REQUEST_CAREGIVER", "care", lang,
+            trace=self._t(trace, t0),
         )
+
+    def _note_volunteered(self, uid: int, text: str, now: datetime) -> None:
+        """She said she ate or walked without being asked: today's matching check-in is then answered, not asked."""
+        found = volunteered_topic(text, now.hour)
+        if found is None:
+            return
+        try:
+            self.core.volunteer_checkin(uid, found[0], found[1])
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not record the volunteered topic: %s", exc)
+
+    def _check_in_is_busy(self, uid: int, media_playing: bool) -> bool:
+        """The wrong moment for a question: media is playing, a safety flow is fresh, a yes/no waits, she spoke in the
+        last 2 minutes, or a reminder / medicine prompt is being spoken right now."""
+        if media_playing:
+            return True
+        last = self._last_turn.get(uid)
+        if last is not None and self._mono() - last < _CHAT_QUIET_S:
+            return True
+        b = self.busy(uid)
+        if b["pending"] or b["safety_hold"]:
+            return True
+        try:
+            return any(d["status"] == "speaking" for d in self.core.open_deliveries(uid))
+        except (CoreError, httpx.HTTPError):
+            return True  # cannot tell: do not ask
 
     # ------------------------------------------------------------------ no-question mode
     def _act(self, uid: int, action_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -970,7 +1090,7 @@ class TurnEngine:
             "queued": self.core.deliveries_waiting(uid),
         }
 
-    def deliver_next(self, uid: int, session: str) -> dict[str, Any] | None:
+    def deliver_next(self, uid: int, session: str, media_playing: bool = False) -> dict[str, Any] | None:
         """Claim the next waiting reminder / medicine prompt and render its fixed wording, or return None.
 
         Never while a yes/no is pending or just after a safety reply. The claim is atomic in core-api, so two open
@@ -978,9 +1098,17 @@ class TurnEngine:
         playback finished. No LLM is involved.
         """
         b = self.busy(uid)
+        d = self.core.delivery_next(uid) if b["queued"] else None
+        if d is not None and d["kind"] == "checkin" and (
+            b["pending"] or b["safety_hold"] or self._check_in_is_busy(uid, media_playing)
+        ):
+            try:  # a question can wait: core-api asks again in 10 minutes (3 times at most); reminders never wait here
+                self.core.postpone_checkin(uid, d["ref_id"])
+            except (CoreError, httpx.HTTPError) as exc:
+                log.warning("could not postpone check-in %s: %s", d["ref_id"], exc)
+            return None
         if b["pending"] or b["safety_hold"]:
             return None
-        d = self.core.delivery_next(uid)
         if d is None:
             return None
         try:
@@ -1004,7 +1132,7 @@ class TurnEngine:
                     self._asked_dose[uid] = (d["ref_id"], self._mono())
                     screen, item, ask = "medicine", f"dose:{d['ref_id']}", False
             elif d["kind"] == "checkin":
-                text = self._checkin_line(uid, d["label"], lang, d["attempt"])
+                text = self._checkin_line(uid, d["label"], lang, d["attempt"], d.get("detail", ""))
                 screen, item, ask = "reply", f"checkin:{d['ref_id']}", False
             else:
                 when = rp.say_time(d["due_at"][11:16], lang)
@@ -1065,21 +1193,9 @@ class TurnEngine:
         # question) but not always WHAT it is. One strict-JSON call decides kind / topic / specific, with a 3 s
         # budget; a slow or invalid answer leaves the rule answer in place. Safety, medicine and reminders were
         # already decided above and never reach this call.
-        if (
-            self.evon is not None
-            and not has_pending
-            and rules.intent in ("UNKNOWN", "CHAT", OPEN_MEDIA)
-            and is_media_request(text)
-            and self._llm_remaining() >= _MIN_LLM_BUDGET_S
-        ):
-            understood = understand_media(self.evon, text, timeout=min(3.0, self._llm_remaining()))
-            return (
-                Parsed(
-                    OPEN_MEDIA, 0.85, lang, rules.draft, topic="media", query=understood.topic,
-                    media_kind=understood.kind, media_specific=understood.specific,
-                ),
-                understood.source,
-            )
+        # Media understanding intentionally disabled here: existing rule paths (family favourites, named
+        # singers, empty-query ask, fixed fallbacks) must run first. Re-enable only for generic requests
+        # that produce no rule result, in a follow-up.
         if rules.intent == "UNKNOWN" and symptom_category(text):
             return rules, "rules"  # a health complaint gets the fixed template; the LLM never hears it
         if conversing and rules.intent == "UNKNOWN":

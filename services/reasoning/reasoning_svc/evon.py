@@ -412,6 +412,30 @@ class EvonClient:
             return None
         return data if isinstance(data, dict) else None
 
+    def checkin_understanding(self, topic: str, text: str, timeout: float | None = None) -> dict[str, Any] | None:
+        """One strict-JSON reading of her answer to ONE check-in question: {topic, status, note}. One attempt.
+
+        Only status matters (done | not_done | unclear). `note` is ignored by the caller and never stored or shown:
+        what she said is never kept. Used only when the word rules could not tell."""
+        system = (
+            "You read ONE short answer from an older Marathi speaker to a daily check-in question from Arjun, "
+            f"a voice companion. The question was about: {topic}. "
+            'Output ONLY one JSON object: {"topic": "<the same topic>", "status": "done|not_done|unclear", '
+            '"note": "<at most 6 words, in English>"}. '
+            "done = she says it happened (or yes / remembers); not_done = she says it did not (or no); "
+            "unclear = anything else, a different subject, or she is asking something. Never give advice. No prose."
+        )
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
+        try:
+            raw = self._chat(
+                messages, 0.0, purpose="checkin", timeout=timeout, max_tokens=80,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(raw)
+        except (httpx.HTTPError, ValueError, KeyError):
+            return None
+        return data if isinstance(data, dict) else None
+
     def companion_reply(
         self,
         text: str,

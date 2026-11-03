@@ -74,10 +74,24 @@ class CoreClient:
         """The one meal prompt still waiting for an answer; `heard` says a session really spoke it."""
         return self._req("GET", f"/users/{uid}/checkins/open")  # type: ignore[no-any-return]
 
-    def answer_checkin(self, uid: int, checkin_id: int, answer: str) -> dict[str, Any]:
-        return self._req(
-            "POST", f"/users/{uid}/checkins/{checkin_id}/answer", json={"answer": answer}
-        )  # type: ignore[no-any-return]
+    def answer_checkin(self, uid: int, checkin_id: int, answer: str, mood: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"answer": answer}
+        if mood:
+            body["mood"] = mood
+        return self._req("POST", f"/users/{uid}/checkins/{checkin_id}/answer", json=body)  # type: ignore[no-any-return]
+
+    def postpone_checkin(self, uid: int, checkin_id: int) -> dict[str, Any]:
+        """A busy moment: core-api pulls the prompt out of the queue and asks again in 10 minutes (max 3)."""
+        return self._req("POST", f"/users/{uid}/checkins/{checkin_id}/postpone")  # type: ignore[no-any-return]
+
+    def volunteer_checkin(self, uid: int, topic: str, answer: str) -> dict[str, Any] | None:
+        """She told us on her own: today's matching check-in is answered and will not be asked."""
+        return self._req(  # type: ignore[no-any-return]
+            "POST", f"/users/{uid}/checkins/volunteer", json={"topic": topic, "answer": answer}
+        )
+
+    def open_deliveries(self, uid: int) -> list[dict[str, Any]]:
+        return self._req("GET", f"/users/{uid}/deliveries/open")  # type: ignore[no-any-return]
 
     def add_bp_reading(self, uid: int, systolic: int, diastolic: int) -> dict[str, Any]:
         """Raw numbers only; the reply repeats them back and never judges them (boundary 7)."""

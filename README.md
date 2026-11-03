@@ -206,7 +206,17 @@ the script reports that limitation while seeding the other requested data.
   "ask up to" count. "On time" = within the medicine's window (default 30 min), all self-reported.
 - Voice reminders that mention a medicine are refused on purpose (family sets medicine times); this also
   means a plain voice reminder like "tablet remind kar" now gets the "your family sets medicine times" reply.
-- **Still not built:** BP / sugar readings, meal and walk check-ins, "Export for doctor", medicine-strip photo
+- **Proactive day check-ins (2026-11-03, built, NOT tried with a real voice session):** when the family switches
+  `daily_checkins` on, Arjun asks one short Marathi question at a time about her day (sleep, breakfast, lunch,
+  a walk, one listening interest, whether she spoke to one family member, dinner, and a mention one hour before
+  an appointment / reminder). Times and names come from her own data. She is never asked inside 22:00-07:00, or
+  (except the appointment / reminder mention) outside her opener window; at most `ARJUN_CHECKIN_MAX_PER_DAY` (8)
+  a day, 45 minutes apart; a busy moment (media playing, a safety reply, she spoke in the last 2 minutes, a
+  reminder being spoken) postpones a question 10 minutes, 3 times at most. Word lists for her answers are
+  UNVERIFIED (no native speaker). Medicines are NOT a separate check-in: the medicine flow already asks at the
+  due time and every 15 minutes, with name and dose verbatim, and the day card reads those doses.
+  The family card "आजचा दिवस" shows done / not done / no answer with times and never her words.
+- **Still not built:** BP / sugar readings, "Export for doctor", medicine-strip photo
   upload (the dashboard takes a link). The dashboard keeps "Not set up" for those; the BP screen exists in
   `web/src/ghar/Screens.tsx` (shown at `/?preview`) but is not wired.
 - New tables (`medicines`, `medicine_doses`) are added by `create_all`; there are no migrations, and an

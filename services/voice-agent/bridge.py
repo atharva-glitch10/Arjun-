@@ -103,11 +103,16 @@ def closing_text(language: str) -> str:
 
 
 # ---- T8: queued reminders / medicine prompts (the agent only knows reasoning, never core-api) ----------------
-def claim_next_delivery(user_id: int, session: str, http: httpx.Client | None = None) -> dict | None:  # type: ignore[type-arg]
+def claim_next_delivery(
+    user_id: int, session: str, http: httpx.Client | None = None, media_playing: bool = False
+) -> dict | None:  # type: ignore[type-arg]
     """Claim + render the next waiting item for this session, or None (also when reasoning is down)."""
     client = http or _shared_client()
     try:
-        r = client.post(f"{REASONING_URL}/delivery/next", json={"user_id": user_id, "session": session})
+        r = client.post(
+            f"{REASONING_URL}/delivery/next",
+            json={"user_id": user_id, "session": session, "media_playing": media_playing},
+        )
         r.raise_for_status()
         return r.json()  # type: ignore[no-any-return]
     except (httpx.HTTPError, ValueError) as exc:

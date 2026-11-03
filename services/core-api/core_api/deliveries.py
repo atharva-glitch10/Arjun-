@@ -74,7 +74,7 @@ def _user(db: Session, user_id: int) -> m.User:
 def _item(db: Session, d: m.Delivery) -> tuple[str, str]:
     if d.kind == "checkin":
         c = db.get(m.Checkin, d.ref_id)
-        return (c.kind if c else ""), ""
+        return (c.kind if c else ""), (c.ref if c else "")  # detail = what the question is about (from SQL)
     if d.kind == "reminder":
         r = db.get(m.Reminder, d.ref_id)
         return (r.task if r else ""), ""
