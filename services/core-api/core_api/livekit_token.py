@@ -8,6 +8,7 @@ when a room is CREATED; reusing a room name would mean no agent on the second se
 import json
 import os
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,26 @@ from .deps import require_key
 router = APIRouter(dependencies=[Depends(require_key)])
 
 TOKEN_TTL_S = 600  # only needed to join; LiveKit renews the connection itself afterwards
+
+# The room the elder's page most recently joined, per user. The family-call join link points at it.
+# In memory on purpose (single process); a restart forgets it, and the elder's next tap sets it again.
+_rooms: dict[int, str] = {}
+_rooms_lock = threading.Lock()
+
+
+def remember_room(user_id: int, room: str) -> None:
+    with _rooms_lock:
+        _rooms[user_id] = room
+
+
+def active_room(user_id: int) -> str | None:
+    with _rooms_lock:
+        return _rooms.get(user_id)
+
+
+def reset_rooms_for_tests() -> None:
+    with _rooms_lock:
+        _rooms.clear()
 
 
 class TokenIn(BaseModel):
@@ -69,4 +90,5 @@ def livekit_token(body: TokenIn, db: Session = Depends(get_db)) -> TokenOut:
             ))
         .to_jwt()
     )
+    remember_room(user.id, room)
     return TokenOut(url=url, token=token, room=room, identity=identity, expires_in=TOKEN_TTL_S)

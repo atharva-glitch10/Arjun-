@@ -1,0 +1,101 @@
+"""GET /family/join: turn a signed join link into a LiveKit token for the elder's current room.
+
+The family opens the link from Telegram; the web page calls this endpoint (the dev proxy adds the API
+key). The signed link is checked here, the elder's most recent room is looked up, and a short-lived
+token is issued for identity "family" with the microphone on. The LiveKit secret never leaves the server.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, HTTPException
+from livekit.api import AccessToken, VideoGrants
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from . import joins
+from . import models as m
+from .db import get_db
+from .deps import require_key
+from .livekit_token import active_room
+
+router = APIRouter(dependencies=[Depends(require_key)])
+
+TOKEN_TTL_S = 3600  # the call itself is not limited by the join link's 30 minutes
+FAMILY_IDENTITY = "family"
+FALLBACK_NAME = "कुटुंब"
+_SON_WORDS = ("son", "मुलगा")
+_DOCTOR_WORDS = ("doctor", "डॉक")
+
+
+def family_name(contacts: list[m.Contact]) -> str:
+    """Who the elder's page says is talking: the son, else another family member, never a doctor."""
+    for contact in contacts:
+        relation = (contact.relation or "").lower()
+        if any(word in relation for word in _SON_WORDS):
+            return contact.name
+    for contact in contacts:
+        relation = (contact.relation or "").lower()
+        if not any(word in relation for word in _DOCTOR_WORDS):
+            return contact.name
+    return FALLBACK_NAME
+
+
+class JoinOut(BaseModel):
+    url: str
+    token: str
+    room: str
+    identity: str
+    name: str
+    expires_in: int
+
+
+@router.get("/family/join", response_model=JoinOut)
+def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
+    user_id = joins.verify(t)
+    if user_id is None:
+        raise HTTPException(403, "join link is invalid or expired")
+    url = os.environ.get("LIVEKIT_URL")
+    key = os.environ.get("LIVEKIT_API_KEY")
+    secret = os.environ.get("LIVEKIT_API_SECRET")
+    if not (url and key and secret):
+        # say nothing about which setting is missing: the caller is a browser
+        raise HTTPException(503, "voice is not available")
+    user = db.get(m.User, user_id)
+    if user is None:
+        raise HTTPException(404, "user not found")
+    room = active_room(user_id)
+    if room is None:
+        raise HTTPException(409, "the elder's voice session is not open")
+    contacts = list(
+        db.scalars(select(m.Contact).where(m.Contact.user_id == user_id).order_by(m.Contact.id))
+    )
+    name = family_name(contacts)
+    token = (
+        AccessToken(key, secret)
+        .with_identity(FAMILY_IDENTITY)
+        .with_name(name)
+        .with_ttl(timedelta(seconds=TOKEN_TTL_S))
+        .with_grants(
+            VideoGrants(
+                room_join=True,
+                room=room,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+                can_publish_sources=["microphone"],
+            )
+        )
+        .to_jwt()
+    )
+    return JoinOut(
+        url=url,
+        token=token,
+        room=room,
+        identity=FAMILY_IDENTITY,
+        name=name,
+        expires_in=TOKEN_TTL_S,
+    )
