@@ -1,3 +1,39 @@
+# STATUS (2026-11-02, distress reply fix)
+
+## Built 2026-11-02: distress reply fix
+- reasoning turn.py _safety: reply now "कुठे त्रास होतोय, सांगा. मी {family_obj} कळवलं आहे." (physical/ambiguous) / emergency "मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा." family_obj from contacts (son) or fallback "तुमच्या घरच्यांना".
+- All suites green: reasoning 677.
+
+# STATUS (2026-11-02, issue endpoint + green)
+
+## Built 2026-11-02: /issue endpoint + green repo
+- core-api: `POST /users/{id}/issue` -> Notification kind "issue" (urgent) + FeedEvent; body contains "issue" and "no call or message was sent"; missing user 404. feed.py _KINDS gained "issue".
+- ruff: fixed import order in scripts/telegram_test.py.
+- All suites green: core-api 206, reasoning 677, voice-agent 185, scheduler 8, vitest 104, ruff clean, tsc clean.
+
+# STATUS (2026-11-02, web + seed)
+
+## Built 2026-11-02: app actions in the page, media controls, link windows, app-links dashboard, seed verification (tests; NOT hand-tested in a browser)
+- web `state.ts` parses `arjun.action` (turn / type / kind / video_id / value / title / command / contact_id); invalid JSON, a bad shape or a
+  missing turn is ignored, and a turn at or below the last one performed never runs twice.
+- new pure `elder/media.ts` decides every kind: video / playlist / live YouTube embed (id parsed from the URL for playlists, `live_stream?channel=`
+  for a channel, a URL's video when it has one), `url` / `link` in a new window, `whatsapp` from the contact's own number (`wa.me`, 10 digits get 91),
+  and stop / pause / resume / next / volume controls. The YouTube IFrame API is loaded with a runtime script tag; no key reaches the browser.
+- `MediaScreen`: large Devanagari title, three huge buttons (बंद करा / थांबवा-सुरू करा / पुढचं) and two volume buttons; autoplay refused = one big
+  "▶ सुरू करा" tap; stop or video end goes home and reports `arjun.media: stopped`; play reports `playing`.
+- WhatsApp / link windows keep a handle; stop or the new "परत" bar closes it and focuses Arjun; the voice session keeps running underneath.
+- Dashboard "Apps and links": list / add / remove / Test open, `youtube_live` alias, and a yellow "approved by family" note on every rss / link entry.
+- `scripts/seed_apps.py`: dry run by default, `--apply` writes through core-api, idempotent by (kind, label), never prints the key. Before writing it
+  fetches every URL (HTTP 200, playlist / channel id present on its YouTube page) and names anything it leaves out.
+- Verified URLs on 2026-11-02 (HTTP, this machine): playlist `PL01mceoBxHCiCj28l-viryuhBh7nXsqZN` ("Super Hit Pahateche Bhakti | Prabhat Geet |
+  Marathi Bhaktigeete") 200 and the id is on the page; channel `UCH7nv1A9xIrAifZJNvt7cgA` ("ABP MAJHA") 200 and the id is on the page; ABP Majha feed
+  `https://marathi.abplive.com/home/feed` 200; BBC Marathi `https://feeds.bbci.co.uk/marathi/rss.xml` 200. The seed dry run verified 5 of 5 entries.
+- Tests (2026-11-02): vitest 103 passed (was 88), `tsc --noEmit` clean, `npm run build` clean, no-browser-speech check clean.
+- **Not done / needs a hand test**: no real voice session and no browser run of the new MediaScreen; autoplay-with-sound in the kiosk profile, the
+  real YouTube embed, the pop-up-blocked WhatsApp path, whether the three buttons are comfortable at arm's length, and the video's own audio being
+  ignored while a song plays were NOT tried with a person. The seed script was NOT applied to the demo database here (the running core-api on :8000
+  predates the `/apps` routes, so it answered 404); its URL verification was run and is above.
+
 # STATUS (2026-11-02, apps)
 
 ## Built 2026-11-02: voice-controlled apps (tests + scripted runs; NOT heard with a real voice, NOT seen in the elder page in a browser)
@@ -11,8 +47,13 @@
   rssfeedsdefault.cms 404, esakal.com/rss 404, lokmat 403. Live channel ABP MAJHA `UCH7nv1A9xIrAifZJNvt7cgA`: page title "ABP MAJHA", its /live page says
   `isLive: true`, `playableInEmbed: true` (embedding in the real page NOT tried). Playlist `PL01mceoBxHCiCj28l-viryuhBh7nXsqZN` ("Super Hit Pahateche Bhakti |
   Prabhat Geet | Marathi Bhaktigeete", Wings Marathi Bhakti): YouTube oEmbed 200 (public); embeddability NOT tried. The photos link is a placeholder.
-- No `YOUTUBE_API_KEY` is configured on this machine, so the real first-match search was NOT run: the scripted run showed the no-key fallback (YouTube results
-  page). Mocked-API tests cover the key path.
+- 2026-11-02: `YOUTUBE_API_KEY` is now configured. A real call to core-api `GET /media/youtube/search?q=bhajan` returned 5 results (verified;
+  first match not played in the browser). An earlier attempt failed with `API_KEY_INVALID` because the `.env` value had `<>` around it. Voice-to-playback
+  end to end NOT re-run yet.
+- 2026-11-02 "bhajan/gaana opens YouTube search page" diagnosis: `.env` has NO `YOUTUBE_API_KEY` line (dev-up.ps1 does pass it), so
+  core-api answers 503 and reasoning opens the results page; the reasoning process on :8001 also predated the query-cleaning edits
+  (it kept "जोशींचं"). Current code, run on a second port: queries "भीमसेन जोशी भजन" / "लता मंगेशकर गाणं", fallback URL + "tap" line,
+  "यूट्यूब उघड" asks "काय लावू?". Real-key playback of the two sentences NOT verified (no key). Restart reasoning to pick up the edits.
 - **Not done**: the manual browser run (the Chrome extension was not connected), so what actually played is unknown. A dev-only preview exists for it:
   `/?preview&video=<id>` | `&playlist=<id>` | `&channel=<UC...>` logs `[arjun.media] playing|stopped` to the console.
 - Tests (2026-11-02): core-api 189 passed + 2 FAILED in the untracked `tests/test_issue.py` (an `/issue` endpoint that is not built; not part of this work), reasoning 654, voice-agent 173, scheduler 8, vitest 88; ruff, `tsc`, `npm run build`, no-browser-speech check clean; eval 42/42 intent, 12/12 slot, 5/5 distress.

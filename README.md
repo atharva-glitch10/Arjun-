@@ -19,9 +19,15 @@ YouTube (songs, bhajans, live news), headlines read aloud, WhatsApp, and family-
   आहेत" plays the family's live news channel; "बातम्या ऐकवा" reads 5 headlines aloud from the family's RSS feeds, verbatim, source first (no LLM);
   "चंद्रकांतला व्हॉट्सॲप कर" opens her WhatsApp chat (she taps the green button); "नातवाचे फोटो दाखव" opens the family link of that name.
 - While a video plays: "अर्जुन, थांबव / बंद कर / आवाज कमी कर / पुढचं गाणं". Everything else the mic hears is ignored (media mode), except safety phrases.
+  Say **"अर्जुन" first** for any new request while a video plays; a bare stop / pause / next / volume phrase also works.
 - The family adds, tests and removes entries in the dashboard section "Apps and links" (https only; a website off the known list needs an explicit tick
-  and shows a warning). `python scripts/seed_apps.py --apply` seeds the synthetic household through core-api.
-- Needs `YOUTUBE_API_KEY` in `.env` (read only by core-api) for the first-match search; without it the YouTube results page opens instead.
+  and shows a warning). `python scripts/seed_apps.py --apply` seeds the synthetic household through core-api; without `--apply` it only verifies and
+  prints what it would add.
+- **YouTube search key**: put `YOUTUBE_API_KEY=<your key>` in the root `.env` and restart core-api (the key stays on the server; the browser never sees
+  it). Without it, a search opens the YouTube results page instead of playing the first match.
+- **Adding a link by hand**: Family dashboard -> "Apps and links" -> choose the kind, type a name she will see and the value (a playlist / video /
+  channel link or id, an RSS feed, or an https page), then comma-separated spoken names ("भजन, भक्तिगीते"). "Test open" opens it on this device.
+- **WhatsApp needs one tap**: Arjun opens her chat with that contact; she taps the green call / send button herself.
 
 ## What works today (verified by tests / smoke run)
 Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Marathi / Hindi / English.
@@ -45,6 +51,20 @@ each (logs also go to `logs/`). It reads the one root `.env`, passes each servic
 compose-only hosts. `-Only <service>` starts one. The scheduler is not started by it. voice-agent loads only `GNANI_*` and
 `LIVEKIT_*` from `.env` itself and exits naming any missing required variable. Tests: create a venv, `pip install -r services/core-api/requirements.txt -r services/reasoning/requirements.txt`,
 then `pytest` inside each service and `ruff check .` at the root.
+
+## Demo user: Heerabai
+
+Seed synthetic user 1 through core-api. The first command is a dry run; add `--apply` to write the changes.
+Existing user names cannot be changed with the current core-api profile endpoint; if user 1 has a different name,
+the script reports that limitation while seeding the other requested data.
+
+```
+.venv\Scripts\python scripts/seed_heerabai.py
+.venv\Scripts\python scripts/seed_heerabai.py --apply
+```
+
+- Elder app: http://localhost:5173/?user=1
+- Family dashboard: http://localhost:5173/?view=family&user=1
 
 ## Safety design in code
 - LLM never writes to the DB. Reasoning proposes -> core-api validates and stores a *pending* action ->

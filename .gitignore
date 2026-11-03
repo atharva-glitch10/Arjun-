@@ -42,3 +42,6 @@ agents-playground/
 
 # Local scratch output from scripts/check_gnani.py
 omkar_test.wav
+
+# Marketing video renders: large binaries, kept on disk only
+ad_video/
