@@ -54,6 +54,54 @@ const SCREENS: readonly AgentScreen[] = ["reply", "story", "confirm", "saved", "
 const ITEM = /^(reminder|dose):\d{1,9}$/;
 const STATES: readonly AgentState[] = ["initializing", "listening", "thinking", "speaking"];
 
+/** An app / media action the agent published, exactly as the page needs it. The optional fields appear only when
+ *  reasoning had them (a search result's video id, a WhatsApp contact, a control command). */
+export interface ActionAttribute {
+  turn: number;
+  type: "open" | "control";
+  kind: string;
+  video_id?: string;
+  value?: string;
+  title?: string;
+  command?: string;
+  contact_id?: number;
+}
+
+const text = (v: unknown, max: number): string | undefined => (typeof v === "string" ? v.slice(0, max) : undefined);
+
+/** "arjun.action" -> an action, or null when it is empty, malformed or unsafe to act on. Never throws: a bad
+ *  attribute must not break the voice screen. */
+export function parseActionAttribute(raw: string | undefined): ActionAttribute | null {
+  if (!raw) return null;
+  let o: unknown;
+  try {
+    o = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof o !== "object" || o === null || Array.isArray(o)) return null;
+  const a = o as Record<string, unknown>;
+  const turn = typeof a.turn === "number" ? a.turn : Number.parseInt(String(a.turn ?? ""), 10);
+  if (!Number.isInteger(turn) || turn <= 0) return null;
+  if (a.type !== "open" && a.type !== "control") return null;
+  if (typeof a.kind !== "string" || !a.kind.trim()) return null;
+  const action: ActionAttribute = { turn, type: a.type, kind: a.kind.trim().slice(0, 40) };
+  const video = text(a.video_id, 64);
+  const value = text(a.value, 500);
+  const title = text(a.title, 120);
+  const command = text(a.command, 40);
+  if (video) action.video_id = video;
+  if (value) action.value = value;
+  if (title) action.title = title;
+  if (command) action.command = command;
+  const id = typeof a.contact_id === "number" ? a.contact_id : Number.parseInt(String(a.contact_id ?? ""), 10);
+  if (Number.isInteger(id) && id > 0) action.contact_id = id;
+  return action;
+}
+
+/** Each action runs exactly once: only a turn newer than the last one performed (the same attribute returns after a reconnect). */
+export const isFreshAction = (a: ActionAttribute, lastTurn: number): boolean => a.turn > lastTurn;
+
 export function parseAttributes(attrs: Record<string, string>): {
   screen: AgentScreen | undefined;
   turn: number;

@@ -3,10 +3,8 @@ import type { Participant, RemoteParticipant } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
-import { parseAction } from "./action";
-import type { ArjunAction } from "./action";
-import { parseAttributes } from "./state";
-import type { AgentScreen, AgentState, Failure, Phase, VoiceSnapshot } from "./state";
+import { isFreshAction, parseActionAttribute, parseAttributes } from "./state";
+import type { ActionAttribute, AgentScreen, AgentState, Failure, Phase, VoiceSnapshot } from "./state";
 
 /** Give the agent this long to come up after joining before telling the elder plainly. */
 export const READY_TIMEOUT_MS = 20_000;
@@ -39,7 +37,7 @@ export interface ArjunVoice {
   /** Arjun is working out the answer (reasoning / the LLM): show the "thinking" marker. */
   thinking: boolean;
   /** The newest "arjun.action" (open a video / WhatsApp / a link, or a media control). Run each once, by `turn`. */
-  action: ArjunAction | null;
+  action: ActionAttribute | null;
   /** Tell the agent whether the video player is playing ("arjun.media"): it ignores the video's own audio meanwhile. */
   reportMedia: (state: "playing" | "stopped") => void;
   /** Arjun's voice volume, 0..1 (the slider on the elder screen). Kept on this device. */
@@ -72,7 +70,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [item, setItem] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [thinking, setThinking] = useState(false);
-  const [action, setAction] = useState<ArjunAction | null>(null);
+  const [action, setAction] = useState<ActionAttribute | null>(null);
   const [volume, setVolumeState] = useState(savedVolume);
   const volumeRef = useRef(volume);
   const audioEls = useRef(new Set<HTMLMediaElement>());
@@ -82,6 +80,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const timers = useRef<number[]>([]);
   const phaseRef = useRef<Phase>("idle");
   const turnRef = useRef(0);
+  const actionTurn = useRef(0); // the last action turn taken: an attribute that returns after a reconnect never runs twice
   const warm = useRef(false); // a room joined without the mic, waiting for the first tap
   const joining = useRef(false);
 
@@ -112,6 +111,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     setScreen(undefined);
     setTurn(0);
     turnRef.current = 0;
+    actionTurn.current = 0;
     setReply("");
     setHeard("");
     setItem("");
@@ -143,8 +143,11 @@ export function useArjunVoice(userId: number): ArjunVoice {
       setThinking(p.attributes["arjun.thinking"] === "1" || a.agentState === "thinking");
       if (a.screen) setScreen(a.screen);
       if (a.item) setItem(a.item);
-      const act = parseAction(p.attributes["arjun.action"]);
-      if (act) setAction((prev) => (prev && prev.turn >= act.turn ? prev : act));
+      const act = parseActionAttribute(p.attributes["arjun.action"]);
+      if (act && isFreshAction(act, actionTurn.current)) {
+        actionTurn.current = act.turn;
+        setAction(act);
+      }
       if (a.turn > turnRef.current) {
         turnRef.current = a.turn;
         setTurn(a.turn);
@@ -272,6 +275,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     if (phaseRef.current === "connecting" || phaseRef.current === "waiting" || phaseRef.current === "live") return;
     const t0 = performance.now();
     turnRef.current = 0;
+    actionTurn.current = 0;
     setFailure(undefined);
     setAgentState(undefined);
     setScreen(undefined);

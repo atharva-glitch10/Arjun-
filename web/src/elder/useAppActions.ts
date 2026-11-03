@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isVideoKind, shouldPerform } from "../voice/action";
+import type { Contact } from "../api";
+import { isFreshAction } from "../voice/state";
 import type { ArjunAction } from "../voice/action";
 import type { ArjunVoice } from "../voice/useArjunVoice";
 import type { MediaControlEvent } from "./MediaScreen";
+import { planAction } from "./media";
 
 /** Performs the agent's "arjun.action" on the elder page, each action exactly once:
  *  - a YouTube video / playlist / live channel -> the full-screen MediaScreen,
- *  - WhatsApp and family links -> one new window that we keep a handle to ("बंद कर" closes it and focuses Arjun again),
+ *  - WhatsApp and family links -> one window we keep a handle to ("परत" closes it and focuses Arjun again),
  *  - a control (stop / pause / resume / next / volume) -> the screen that is open.
  *  A pop-up blocker is not hidden: if the window cannot open, one big tap button does it instead.
  *  Emergencies win: a safety screen closes the video. The voice session keeps running underneath all of this. */
-export function useAppActions(voice: ArjunVoice, safety: boolean, resume: () => void) {
+export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: boolean, resume: () => void) {
   const [media, setMedia] = useState<ArjunAction | null>(null);
   const [control, setControl] = useState<MediaControlEvent | null>(null);
-  const [blocked, setBlocked] = useState<ArjunAction | null>(null);
+  const [blocked, setBlocked] = useState<{ url: string; title: string } | null>(null);
+  const [link, setLink] = useState<{ title: string } | null>(null);
   const performed = useRef(0);
   const seq = useRef(0);
   const win = useRef<Window | null>(null);
@@ -22,42 +25,48 @@ export function useAppActions(voice: ArjunVoice, safety: boolean, resume: () => 
   const closeWindow = useCallback(() => {
     win.current?.close();
     win.current = null;
+    setLink(null);
     window.focus();
   }, []);
 
-  const openWindow = useCallback((a: ArjunAction) => {
-    const w = window.open(a.value, "arjun-link");
+  const openWindow = useCallback((url: string, title: string) => {
+    const w = window.open(url, "arjun_link"); // the house's own handle: a later "बंद कर" closes exactly this window
     if (w) {
       win.current = w;
       setBlocked(null);
+      setLink({ title });
     } else {
-      setBlocked(a); // the browser refused (pop-up blocker): ask for one tap
+      setLink(null);
+      setBlocked({ url, title }); // the browser refused (pop-up blocker): ask for one tap
     }
   }, []);
 
   const action = voice.action;
   useEffect(() => {
-    if (!action || !shouldPerform(action, performed.current)) return;
+    if (!action || !isFreshAction(action, performed.current)) return;
     performed.current = action.turn;
-    if (action.type === "control") {
-      if (action.kind === "stop") {
+    const plan = planAction(action, contacts, window.location.origin);
+    if (plan.do === "none") return;
+    if (plan.do === "control") {
+      if (plan.command === "stop") {
         setMedia(null);
         setBlocked(null);
         closeWindow();
       }
       seq.current += 1;
-      setControl({ kind: action.kind, seq: seq.current });
+      setControl({ kind: plan.command, seq: seq.current });
       return;
     }
-    if (isVideoKind(action.kind)) {
-      closeWindow();
-      setBlocked(null);
-      setMedia(action);
-    } else {
+    if (plan.do === "window") {
       setMedia(null);
-      openWindow(action);
+      openWindow(plan.url, plan.title);
+      return;
     }
-  }, [action, closeWindow, openWindow]);
+    // an embed: one full-screen player, keyed by the turn so a new song really reloads
+    closeWindow();
+    setBlocked(null);
+    setMedia({ type: "open", kind: plan.kind, value: plan.value, title: plan.title, turn: action.turn });
+  }, [action, contacts, closeWindow, openWindow]);
 
   useEffect(() => {
     if (safety) {
@@ -72,6 +81,7 @@ export function useAppActions(voice: ArjunVoice, safety: boolean, resume: () => 
       const w = win.current;
       if (w && w.closed) {
         win.current = null;
+        setLink(null);
         window.focus();
         resume();
       }
@@ -83,10 +93,12 @@ export function useAppActions(voice: ArjunVoice, safety: boolean, resume: () => 
     media,
     control,
     blocked,
+    link,
     reportMedia: voice.reportMedia,
     onMediaClosed: useCallback(() => setMedia(null), []),
+    closeLink: closeWindow,
     openBlocked: () => {
-      if (blocked) openWindow(blocked);
+      if (blocked) openWindow(blocked.url, blocked.title);
     },
     cancelBlocked: () => setBlocked(null),
   };

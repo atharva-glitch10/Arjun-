@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FAILURE_TEXT, parseAttributes, shownFor } from "./state";
+import { FAILURE_TEXT, isFreshAction, parseActionAttribute, parseAttributes, shownFor } from "./state";
 import type { VoiceSnapshot } from "./state";
 
 const base: VoiceSnapshot = {
@@ -149,5 +149,51 @@ describe("T8: delivered reminders and medicines", () => {
 
   it("a dropped connection still shows the failure screen, even with a card waiting", () => {
     expect(shownFor(snap({ phase: "failed", failure: "dropped", hasCard: true }))).toBe("failed");
+  });
+});
+
+describe("parseActionAttribute: arjun.action is JSON the page checks again", () => {
+  const raw = (o: object) => JSON.stringify(o);
+
+  it("reads a valid open action, including the optional video / contact / command fields", () => {
+    expect(
+      parseActionAttribute(
+        raw({ type: "open", kind: "youtube_video", value: "dQw4w9WgXcQ", video_id: "dQw4w9WgXcQ", title: "भजन", turn: 5 }),
+      ),
+    ).toEqual({ turn: 5, type: "open", kind: "youtube_video", value: "dQw4w9WgXcQ", video_id: "dQw4w9WgXcQ", title: "भजन" });
+    expect(parseActionAttribute(raw({ type: "open", kind: "whatsapp", value: "https://wa.me/91", contact_id: "7", turn: 6 }))).toMatchObject({
+      kind: "whatsapp",
+      contact_id: 7,
+      turn: 6,
+    });
+    expect(parseActionAttribute(raw({ type: "control", kind: "stop", command: "stop", turn: 7 }))).toEqual({
+      turn: 7,
+      type: "control",
+      kind: "stop",
+      command: "stop",
+    });
+  });
+
+  it("is null for nothing, invalid JSON, a wrong shape or no usable turn", () => {
+    expect(parseActionAttribute(undefined)).toBeNull();
+    expect(parseActionAttribute("")).toBeNull();
+    expect(parseActionAttribute("not json")).toBeNull();
+    expect(parseActionAttribute("[]")).toBeNull();
+    expect(parseActionAttribute(raw({ type: "open", kind: "youtube_video", turn: 0 }))).toBeNull();
+    expect(parseActionAttribute(raw({ type: "shutdown", kind: "youtube_video", turn: 1 }))).toBeNull();
+    expect(parseActionAttribute(raw({ type: "open", kind: "", turn: 1 }))).toBeNull();
+    expect(parseActionAttribute(raw({ type: "open", kind: "link", turn: "x" }))).toBeNull();
+  });
+
+  it("drops optional fields of the wrong type instead of trusting them", () => {
+    const a = parseActionAttribute(raw({ type: "open", kind: "link", value: "https://x.example", video_id: 7, contact_id: -1, turn: 2 }));
+    expect(a).toEqual({ turn: 2, type: "open", kind: "link", value: "https://x.example" });
+  });
+
+  it("an old turn is never performed again", () => {
+    const a = parseActionAttribute(raw({ type: "open", kind: "youtube_video", value: "dQw4w9WgXcQ", turn: 4 }))!;
+    expect(isFreshAction(a, 3)).toBe(true);
+    expect(isFreshAction(a, 4)).toBe(false); // the same attribute comes back after a reconnect
+    expect(isFreshAction(a, 9)).toBe(false);
   });
 });

@@ -126,7 +126,8 @@ export function MediaScreen({
 
   useEffect(() => {
     onReport(mediaReport(state));
-    if (state.phase === "closed") onClosed();
+    // A closed screen and a finished video both go home: nothing is playing and the agent must hear her again.
+    if (state.phase === "closed" || state.phase === "ended") onClosed();
   }, [state, onReport, onClosed]);
 
   const src = embedSrc(action, window.location.origin);
@@ -139,6 +140,21 @@ export function MediaScreen({
     dispatch({ t: "tap" });
     player.current?.playVideo();
   };
+  const toggle = () => {
+    if (state.phase === "paused" || state.phase === "blocked") {
+      dispatch({ t: "control", kind: "resume" });
+      player.current?.playVideo();
+    } else {
+      dispatch({ t: "control", kind: "pause" });
+      player.current?.pauseVideo();
+    }
+  };
+  const next = () => {
+    if (!state.canNext) return;
+    dispatch({ t: "control", kind: "next" });
+    player.current?.nextVideo();
+  };
+  const paused = state.phase === "paused" || state.phase === "blocked";
 
   return (
     <div className="media-screen" role="dialog" aria-label={state.title || "वीडियो"}>
@@ -158,15 +174,17 @@ export function MediaScreen({
         </button>
       )}
       {state.phase === "error" && <p className="media-error">व्हिडिओ सुरू झाला नाही. "अर्जुन, दुसरं लाव" म्हणा किंवा बंद करा दाबा.</p>}
+      <h1 className="media-title">{state.title || "व्हिडिओ"}</h1>
       <div className="media-bar">
         <button type="button" className="media-btn media-close" onClick={() => dispatch({ t: "close" })}>
           ✕ बंद करा
         </button>
-        {state.canNext && (
-          <button type="button" className="media-btn" onClick={() => player.current?.nextVideo()}>
-            ⏭ पुढचं
-          </button>
-        )}
+        <button type="button" className="media-btn media-toggle" onClick={toggle}>
+          {paused ? "▶ सुरू करा" : "⏸ थांबवा"}
+        </button>
+        <button type="button" className="media-btn" onClick={next} disabled={!state.canNext}>
+          ⏭ पुढचं
+        </button>
         <button type="button" className="media-btn" onClick={() => volume(-20)} aria-label="आवाज कमी">
           🔉 कमी
         </button>

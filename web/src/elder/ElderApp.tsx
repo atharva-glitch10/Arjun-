@@ -104,7 +104,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const shown = restingScreen(shownFor(snapshot), voice.snapshot.turn, restedTurn, HANDS_FREE);
   const { phase } = voice.snapshot;
   // Apps by voice: a video, WhatsApp or a family link opens on this page (agent attribute "arjun.action").
-  const apps = useAppActions(voice, shown === "safety", () => {
+  const apps = useAppActions(voice, contacts, shown === "safety", () => {
     if (voice.snapshot.phase !== "live") void voice.start();
   });
 
@@ -600,6 +600,14 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       )}
       {apps.blocked && shown !== "safety" && (
         <LinkPrompt title={apps.blocked.title} onOpen={apps.openBlocked} onCancel={apps.cancelBlocked} />
+      )}
+      {apps.link && shown !== "safety" && (
+        <div className="link-bar" role="status">
+          <span>{apps.link.title} उघडलं</span>
+          <button type="button" className="media-btn" onClick={apps.closeLink}>
+            ◀ परत
+          </button>
+        </div>
       )}
       {HANDS_FREE && (
         <label className="volume" title="आवाज">

@@ -21,6 +21,7 @@ import type {
   Contact,
   Delivery,
   Dose,
+  MediaStatus,
   Medicine,
   MedicineInput,
   Note,
@@ -38,6 +39,7 @@ interface Data {
   nextAppt: Appointment | null;
   contacts: Contact[];
   appLinks: AppLink[];
+  mediaStatus: MediaStatus | null;
   book: SharedStory[];
   requests: Note[];
   notes: Note[];
@@ -132,7 +134,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks, mediaStatus] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -152,8 +154,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         api.bpReadings(userId).catch((): BpReading[] => []), // older core-api
         api.watchSamples(userId).catch((): WatchSample[] => []), // older core-api
         api.appLinks(userId).catch((): AppLink[] => []), // older core-api
+        api.mediaStatus().catch((): MediaStatus | null => null), // older core-api
       ]);
-      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch });
+      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, mediaStatus, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -761,6 +764,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           <AppLinksCard
             links={data.appLinks}
             contacts={data.contacts}
+            mediaStatus={data.mediaStatus}
             onAdd={(body) => run(() => api.addAppLink(userId, body))}
             onDelete={(id) => run(() => api.deleteAppLink(userId, id))}
           />

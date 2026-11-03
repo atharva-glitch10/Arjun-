@@ -6,6 +6,7 @@ export const KIND_LABELS: Record<AppLink["kind"], string> = {
   youtube_video: "YouTube video",
   youtube_query: "YouTube search (first match plays)",
   youtube_channel_live: "Live news channel (YouTube)",
+  youtube_live: "Live news channel (YouTube)",
   rss: "News feed (read aloud)",
   whatsapp: "WhatsApp (a contact)",
   link: "Web link",
@@ -19,6 +20,7 @@ export function testUrl(link: AppLink, contacts: Contact[]): string | null {
     case "youtube_playlist":
       return `https://www.youtube.com/playlist?list=${link.value}`;
     case "youtube_channel_live":
+    case "youtube_live":
       return `https://www.youtube.com/channel/${link.value}/live`;
     case "youtube_query":
       return `https://www.youtube.com/results?search_query=${encodeURIComponent(link.value)}`;
@@ -36,6 +38,11 @@ export function testUrl(link: AppLink, contacts: Contact[]): string | null {
   }
 }
 
-/** The host of a link or feed that is not on the known list but the family approved: shown with a warning. */
-export const warning = (link: AppLink): string =>
-  link.other_host ? "This website is not on the known list. Only keep it if you trust it." : "";
+/** A feed or website is always shown with a yellow note: the family approved it, and nobody checked its contents. */
+export function warning(link: AppLink): string {
+  if (link.kind !== "rss" && link.kind !== "link") return "";
+  if (link.other_host || link.approved_by_family) {
+    return "Approved by family, but this website is not on the known list. Only keep it if you trust it.";
+  }
+  return "Approved by family. Only keep it if you trust it.";
+}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { AppLink, AppLinkInput, Contact } from "../api";
+import type { AppLink, AppLinkInput, Contact, MediaStatus } from "../api";
 import { KIND_LABELS, testUrl, warning } from "./applinks";
 
 const KINDS = Object.keys(KIND_LABELS) as AppLink["kind"][];
@@ -9,6 +9,7 @@ const HINT: Record<AppLink["kind"], string> = {
   youtube_video: "video link or id",
   youtube_query: "search words, e.g. जुनी मराठी भजनं",
   youtube_channel_live: "channel link or id (UC...)",
+  youtube_live: "channel link or id (UC...)",
   rss: "https:// feed address",
   whatsapp: "",
   link: "https:// address",
@@ -18,11 +19,13 @@ const HINT: Record<AppLink["kind"], string> = {
 export function AppLinksCard({
   links,
   contacts,
+  mediaStatus,
   onAdd,
   onDelete,
 }: {
   links: AppLink[];
   contacts: Contact[];
+  mediaStatus?: MediaStatus | null;
   onAdd: (body: AppLinkInput) => void;
   onDelete: (id: number) => void;
 }) {
@@ -44,6 +47,13 @@ export function AppLinksCard({
         What she can open by voice: songs on YouTube, the news (read aloud or on screen), WhatsApp, a photo link. WhatsApp only opens her
         chat; she taps the green button herself. Phone numbers stay in Family contacts.
       </p>
+      {mediaStatus && (
+        <p className="fam-note" role="status">
+          {mediaStatus.youtube_key
+            ? "YouTube search: ready"
+            : "YouTube search: add YOUTUBE_API_KEY (now opens search pages)"}
+        </p>
+      )}
       <ul className="fam-list">
         {links.length === 0 && <li>Nothing added yet.</li>}
         {links.map((l) => {
@@ -52,7 +62,7 @@ export function AppLinksCard({
             <li key={l.id}>
               <span style={{ fontWeight: 800 }}>{l.label}</span> · {KIND_LABELS[l.kind]} · <code>{nameOf(l)}</code>
               {l.spoken_names.length > 0 && <> · she says: {l.spoken_names.join(", ")}</>}
-              {warning(l) && <div className="fam-note" role="alert">⚠ {warning(l)}</div>}{" "}
+              {warning(l) && <div className="fam-warn" role="alert">⚠ {warning(l)}</div>}{" "}
               {url && (
                 <a className="fbtn" href={url} target="_blank" rel="noreferrer noopener">
                   Test open
