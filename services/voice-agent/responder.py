@@ -43,7 +43,8 @@ class Responder:
         finally:
             await self._mark_thinking(False)
         self.turns.reasoning_done(
-            idx, time.time(), reply.text, reply.mode, reply.round_trip_ms, intent=reply.intent, source=reply.source
+            idx, time.time(), reply.text, reply.mode, reply.round_trip_ms, intent=reply.intent, source=reply.source,
+            action_type=(reply.action or {}).get("type", ""),
         )
         if self.on_mode is not None:
             try:

@@ -16,9 +16,10 @@ SCREEN = "arjun.screen"  # reply | story | confirm | saved | safety
 TURN = "arjun.turn"  # increases with every spoken reply, so the app can tell a new reply from the same screen
 REPLY = "arjun.reply"  # the exact line being spoken, for the reply / story / safety screens
 ITEM = "arjun.item"  # reminder:<id> | dose:<id> for a delivered reminder / medicine prompt, else empty
-ACTION = "arjun.action"  # JSON {type: open|control, kind, value, title, turn} for the page to perform; "" = none
+ACTION = "arjun.action"  # JSON {type: open|control, kind, value, title, video_id, turn} for the page to perform; "" = none
 THINKING = "arjun.thinking"  # "1" while reasoning works out the answer: the elder screen shows "विचार करतोय…"
 MAX_REPLY_CHARS = 600
+_ACTION_KEYS = ("type", "kind", "value", "title", "video_id", "contact_id", "command", "query", "label")
 
 
 def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
@@ -36,8 +37,8 @@ def action_json(reply: BridgeReply, turn: int) -> str:
     action = reply.action or {}
     if reply.mode == "safety" or action.get("type") not in ("open", "control"):
         return ""
-    return json.dumps({**{k: str(action.get(k, "")) for k in ("type", "kind", "value", "title")}, "turn": turn},
-                      ensure_ascii=False)
+    payload = {k: str(action[k]) for k in _ACTION_KEYS if action.get(k) not in (None, "")}
+    return json.dumps({**payload, "turn": turn}, ensure_ascii=False)
 
 
 def delivery_attributes(item: dict, turn: int) -> dict[str, str]:  # type: ignore[type-arg]

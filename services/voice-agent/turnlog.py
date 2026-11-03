@@ -52,7 +52,8 @@ class TurnLog:
     # ---- helpers -----------------------------------------------------------------------------
     def _new(self) -> dict:
         self.index += 1
-        turn = {"turn": self.index, "n": self.index - self.start, "language_selected": self.language_selected}
+        turn = {"turn": self.index, "n": self.index - self.start, "language_selected": self.language_selected,
+                "action_type": "", "ignored_media": False}
         if self.session:
             turn["session"] = self.session
         self._open[self.index] = turn
@@ -118,10 +119,10 @@ class TurnLog:
 
     def reasoning_done(
         self, idx: int, t: float, reply: str, mode: str, reasoning_ms: float | None = None,
-        intent: str = "", source: str = "",
+        intent: str = "", source: str = "", action_type: str = "",
     ) -> None:
         if idx in self._open:
-            self._open[idx].update(t_reasoning_done=t, reply=reply, mode=mode)
+            self._open[idx].update(t_reasoning_done=t, reply=reply, mode=mode, action_type=action_type)
             if intent:
                 self._open[idx]["intent"] = intent
             if source:  # rules | llm: who wrote the answer
@@ -160,6 +161,7 @@ class TurnLog:
         if cur is not None:
             cur["transcript"] = ""
             cur["skipped"] = cur["outcome"] = reason
+            cur["ignored_media"] = True
             self.flush(int(cur["turn"]))
 
     def skip(self, idx: int, reason: str) -> None:
