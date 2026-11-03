@@ -275,10 +275,28 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         await publish_screen(ctx.room.local_participant, reply, turn)  # screen + "arjun.action" for the page
         media.on_action(reply.action)
 
+    _heartbeat_task: list[asyncio.Task[None] | None] = [None]
+
+    async def _heartbeat_clear() -> None:
+        await asyncio.sleep(30)
+        media.reset()
+        logger.info("media mode cleared: no heartbeat for 30 s")
+
     @ctx.room.on("participant_attributes_changed")
     def _on_page_attributes(changed, participant) -> None:  # type: ignore[no-untyped-def]
         if ATTR_MEDIA in changed:  # the elder page says whether its player is playing
-            media.on_page_state(changed[ATTR_MEDIA])
+            val = changed[ATTR_MEDIA]
+            if val == "playing":
+                media.on_page_state(val)
+                logger.info("media heartbeat received")
+                if _heartbeat_task[0] is not None:
+                    _heartbeat_task[0].cancel()
+                _heartbeat_task[0] = asyncio.ensure_future(_heartbeat_clear())
+            else:
+                if _heartbeat_task[0] is not None:
+                    _heartbeat_task[0].cancel()
+                    _heartbeat_task[0] = None
+                media.on_page_state(val)
 
     @ctx.room.on("participant_connected")
     def _on_family_joined(participant) -> None:  # type: ignore[no-untyped-def]

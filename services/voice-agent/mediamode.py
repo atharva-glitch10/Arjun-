@@ -12,6 +12,12 @@ The agent holds the lexicons nowhere: reasoning's `POST /media/gate` answers {"s
 import logging
 import re
 from collections.abc import Awaitable, Callable
+
+try:
+    from media import is_bare_control as _local_control
+except Exception:  # pragma: no cover
+    def _local_control(_t: str) -> bool:
+        return False
 from typing import Any
 
 logger = logging.getLogger("arjun.media")
@@ -64,6 +70,8 @@ class MediaMode:
             return "pass", "not_playing"
         if starts_with_wake_word(transcript):
             return "pass", "wake_word"
+        if _local_control(transcript):
+            return "pass", "control"
         try:
             verdict = await self.gate(transcript)
         except Exception:  # noqa: BLE001 - when in doubt, pass it on

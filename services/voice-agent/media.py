@@ -14,8 +14,10 @@ ATTR_MEDIA = "arjun.media"  # set by the ELDER PAGE on its own participant: "pla
 MEDIA_KINDS = frozenset({"youtube_video", "youtube_playlist", "youtube_channel_live", "youtube_live"})
 WAKE_WORDS = ("अर्जुन", "अर्जून", "अर्जन", "अर्जुना", "arjun", "arjoon", "arjuna")
 CONTROL_PHRASES = (
-    "थांबव", "थांबवा", "बंद कर", "बंद करा", "पॉज", "पुढचं",
-    "आवाज कमी कर", "आवाज वाढव", "stop", "pause", "next",
+    "थांबव", "थांबवा", "थांब", "थांबा", "बंद कर", "बंद करा", "बंद", "पॉज",
+    "पुढचं", "पुढे", "मागचं", "मागे", "आवाज कमी कर", "आवाज वाढव",
+    "आवाज कमी", "आवाज वाढवा", "परत", "stop",
+    "pause", "next", "play", "resume",
 )
 MAX_CONTROL_WORDS = 4
 
@@ -47,9 +49,22 @@ def strip_wake_word(text: str) -> str:
 
 
 def is_bare_control(text: str) -> bool:
-    """Exactly one of the short control phrases (after a leading wake word), never a line of a song."""
+    """A short control phrase (after a leading wake word), never a line of a song.
+
+    STT adds particles ("बंद कर ना", "थांब रे") and suffixes ("बंद करा"), so we match when any
+    known control phrase is contained in the normalised text, not only on an exact equality."""
     norm = normalize(strip_wake_word(text))
-    return bool(norm) and len(norm.split()) <= MAX_CONTROL_WORDS and norm in _CONTROL
+    if not norm:
+        return False
+    if norm in _CONTROL:
+        return True
+    words = norm.split()
+    if len(words) > MAX_CONTROL_WORDS:
+        return False
+    for phrase in _CONTROL:
+        if phrase in norm:
+            return True
+    return False
 
 
 def should_send(transcript: str, playing: bool) -> bool:

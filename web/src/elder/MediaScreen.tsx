@@ -122,6 +122,13 @@ export function MediaScreen({
     else if (control.kind === "volume_down") p?.setVolume(Math.max(10, stateRef.current.volume - 20));
   }, [control]);
 
+  // Heartbeat: tell the agent the player is still playing every 10 s so media mode can never get stuck.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (stateRef.current.phase === "playing" || stateRef.current.phase === "loading") onReport("playing");
+    }, 10_000);
+    return () => window.clearInterval(id);
+  }, [onReport]);
   useEffect(() => () => onReport("stopped"), [onReport]); // the screen went away: nothing is playing any more
 
   useEffect(() => {
