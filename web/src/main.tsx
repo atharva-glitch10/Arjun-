@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { Dashboard } from "./family/Dashboard";
+import { JoinCall } from "./family/JoinCall";
 import { ElderApp } from "./elder/ElderApp";
 import { Gallery } from "./ghar/Gallery";
 import "./styles/ghar.css";
@@ -66,4 +67,7 @@ function App() {
 }
 
 const root = document.getElementById("root");
-if (root) createRoot(root).render(params.has("preview") ? <Gallery /> : <App />);
+if (root) {
+  const join = params.get("view") === "join";
+  createRoot(root).render(join ? <JoinCall /> : params.has("preview") ? <Gallery /> : <App />);
+}

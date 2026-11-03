@@ -225,6 +225,17 @@ export interface LivekitToken {
   expires_in: number;
 }
 
+/** A LiveKit token for the family member joining the elder's current room from a Telegram link. */
+export interface FamilyJoin {
+  url: string;
+  token: string;
+  room: string;
+  identity: string;
+  /** Who the elder's page names: the son, else another family member, else "कुटुंब". */
+  name: string;
+  expires_in: number;
+}
+
 async function call<T>(base: string, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${base}${path}`, {
     ...init,
@@ -301,4 +312,6 @@ export const api = {
     core<Delivery>(`/users/${id}/deliveries/${deliveryId}/ack`, post({ outcome })),
   // A short-lived join token for one voice session (a fresh room each time; the secret stays server-side).
   livekitToken: (userId: number) => core<LivekitToken>("/livekit/token", post({ user_id: userId })),
+  // The family-call link from Telegram: checked by core-api, returns a token for the elder's current room.
+  familyJoin: (token: string) => core<FamilyJoin>(`/family/join?t=${encodeURIComponent(token)}`),
 };

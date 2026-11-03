@@ -16,10 +16,10 @@ SCREEN = "arjun.screen"  # reply | story | confirm | saved | safety
 TURN = "arjun.turn"  # increases with every spoken reply, so the app can tell a new reply from the same screen
 REPLY = "arjun.reply"  # the exact line being spoken, for the reply / story / safety screens
 ITEM = "arjun.item"  # reminder:<id> | dose:<id> for a delivered reminder / medicine prompt, else empty
-ACTION = "arjun.action"  # JSON {type: open|control, kind, value, title, video_id, turn} for the page to perform; "" = none
+ACTION = "arjun.action"  # JSON {type: open|control|choice, kind, value, title, video_id, choices, turn} for the page; "" = none
 THINKING = "arjun.thinking"  # "1" while reasoning works out the answer: the elder screen shows "विचार करतोय…"
 MAX_REPLY_CHARS = 600
-_ACTION_KEYS = ("type", "kind", "value", "title", "video_id", "contact_id", "command", "query", "label")
+_ACTION_KEYS = ("type", "kind", "value", "title", "video_id", "contact_id", "command", "query", "label", "choices")
 
 
 def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
@@ -35,9 +35,14 @@ def action_json(reply: BridgeReply, turn: int) -> str:
     """The action as one JSON attribute, tagged with the turn number so the page performs it exactly once. Never on a
     safety reply: nothing opens in the middle of an emergency. "" clears the previous action."""
     action = reply.action or {}
-    if reply.mode == "safety" or action.get("type") not in ("open", "control"):
+    if reply.mode == "safety" or action.get("type") not in ("open", "control", "choice"):
         return ""
-    payload = {k: str(action[k]) for k in _ACTION_KEYS if action.get(k) not in (None, "")}
+    payload: dict[str, object] = {}
+    for k in _ACTION_KEYS:
+        value = action.get(k)
+        if value in (None, ""):
+            continue
+        payload[k] = value if k == "choices" else str(value)  # choices stays a list, not its Python repr
     return json.dumps({**payload, "turn": turn}, ensure_ascii=False)
 
 

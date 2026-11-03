@@ -78,8 +78,9 @@ def _query_words(q: str) -> list[str]:
 
 
 def rank_results(items: list[dict[str, str]], q: str, *, news: bool = False) -> list[dict[str, str]]:
-    """Best title match first. #shorts is never played; a normal search also drops titles with none of the query words.
-    For news the live filter matters more than every word being in the title, so nothing is dropped for no match."""
+    """Best title match first, then a Devanagari (Marathi) title, then Google's order. #shorts is never played; a
+    normal search also drops titles with none of the query words. For news the live filter matters more than every
+    word being in the title, so nothing is dropped for no match."""
     words = _query_words(q)
     scored: list[tuple[int, dict[str, str]]] = []
     for item in items:
@@ -89,8 +90,9 @@ def rank_results(items: list[dict[str, str]], q: str, *, news: bool = False) -> 
         hits = sum(1 for w in words if w in title)
         if not news and words and hits == 0:
             continue
-        scored.append((hits, item))
-    scored.sort(key=lambda pair: pair[0], reverse=True)  # stable: equal matches keep Google's order
+        marathi = 1 if any("\u0900" <= ch <= "\u097f" for ch in title) else 0
+        scored.append((hits * 2 + marathi, item))
+    scored.sort(key=lambda pair: pair[0], reverse=True)  # stable: equal scores keep Google's order
     return [item for _, item in scored]
 
 
@@ -147,6 +149,10 @@ def youtube_search(
     }
     if news:
         params["eventType"] = "live"
+    else:
+        # The API's closest bucket to the 3-30 minute videos an elder can watch: "medium" (about 4-20 min).
+        # "short" (#shorts) and "long" (hours) are never what she asked for.
+        params["videoDuration"] = "medium"
     try:
         r = http_get(YOUTUBE_SEARCH_URL, params, 5.0)
     except httpx.HTTPError as exc:

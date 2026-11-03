@@ -27,6 +27,7 @@ from bridge import (
 from delivery import DeliveryLoop
 from dotenv import dotenv_values
 from endpointing import ConjunctionHold, EndpointingPolicy, turn_detection_from_env
+from familyroom import FamilyPresence
 from idle import IdleCloser, IdlePolicy
 from livekit import agents
 from livekit.agents import (
@@ -153,10 +154,11 @@ async def working_tts():  # type: ignore[no-untyped-def]
 class Arjun(Agent):
     def __init__(
         self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy, hold: ConjunctionHold,
-        media: MediaState,
+        media: MediaState, family: FamilyPresence,
     ) -> None:
         self.turns = turns
         self.media = media
+        self.family = family
         self.hold = hold
         self.responder = responder
         self.state = state
@@ -167,6 +169,11 @@ class Arjun(Agent):
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:  # type: ignore[no-untyped-def]
         """Send the transcript to reasoning and speak its templated reply (no built-in LLM)."""
         transcript = new_message.text_content or ""
+        # A family member is in the room: the mic hears them too, so Arjun says nothing at all.
+        if self.family.present():
+            logger.info("family_in_room: Arjun stays quiet")
+            self.turns.ignore_collected("family_in_room")
+            raise StopResponse()
         # While a video plays, most of what the mic hears is the video. Send only her own words, a bare
         # control, or a safety phrase; the check is local, so safety never waits for another service.
         if not should_send(transcript, self.media.playing):
@@ -262,6 +269,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             return True
 
     media = MediaState()  # media mode: while a video plays, only "अर्जुन ..." / stop / safety phrases get through
+    family = FamilyPresence()  # while a family member is in the room, Arjun stays quiet
 
     async def publish(reply, turn) -> None:  # type: ignore[no-untyped-def]
         await publish_screen(ctx.room.local_participant, reply, turn)  # screen + "arjun.action" for the page
@@ -272,9 +280,18 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if ATTR_MEDIA in changed:  # the elder page says whether its player is playing
             media.on_page_state(changed[ATTR_MEDIA])
 
+    @ctx.room.on("participant_connected")
+    def _on_family_joined(participant) -> None:  # type: ignore[no-untyped-def]
+        family.joined(participant.identity)
+        logger.info("participant joined (%s)", "family" if family.present() else "not family")
+
     @ctx.room.on("participant_disconnected")
     def _on_page_left(participant) -> None:  # type: ignore[no-untyped-def]
+        family.left(participant.identity)
         media.reset()
+
+    for _p in ctx.room.remote_participants.values():  # a family member may already be waiting
+        family.joined(_p.identity)
 
     responder = Responder(
         turns,
@@ -290,6 +307,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     async def on_tapped_text(sess, ev) -> None:  # type: ignore[no-untyped-def]
         """A button tap on the elder screen arrives as text on "lk.chat": same path as a spoken turn.
         LiveKit's default would call an LLM we do not have."""
+        if family.present():  # a family call is in progress: no third voice, even from a tap
+            logger.info("family_in_room: tap ignored")
+            return
         policy.touch()
         await sess.interrupt()  # a tap while Arjun is talking cuts the old line off
         async with state.turn():
@@ -333,7 +353,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Arjun(turns, responder, state, policy, hold, media),
+        agent=Arjun(turns, responder, state, policy, hold, media, family),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
 
@@ -370,11 +390,11 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     deliveries = DeliveryLoop(
         claim_next=claim_next, spoken=mark_spoken, release=release, speak=speak_checked, publish=publish_item,
-        can_speak=lambda: state.quiet(speech_lock.locked()),
+        can_speak=lambda: state.quiet(speech_lock.locked()) and not family.present(),
     )
     closer = IdleCloser(
-        policy, quiet=lambda: state.quiet(speech_lock.locked()), get_busy=get_busy, say_closing=say_closing,
-        publish_closed=announce_closed, shutdown=leave,
+        policy, quiet=lambda: state.quiet(speech_lock.locked()) and not family.present(), get_busy=get_busy,
+        say_closing=say_closing, publish_closed=announce_closed, shutdown=leave,
     )
     background += [asyncio.create_task(deliveries.run()), asyncio.create_task(closer.run())]
 

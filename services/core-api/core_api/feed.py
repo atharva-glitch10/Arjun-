@@ -37,6 +37,8 @@ RANK = {s: i for i, s in enumerate(SEVERITIES)}
 
 # Notification kind -> (seriousness, short title for the family)
 _KINDS: dict[str, tuple[str, str]] = {
+    "alert_sent": ("info", "Telegram alert sent"),
+    "alert_failed": ("watch", "Telegram alert failed"),
     "emergency": ("emergency", "Emergency"),
     "distress": ("urgent", "She may be upset"),
     "caregiver_request": ("urgent", "She asked for help"),

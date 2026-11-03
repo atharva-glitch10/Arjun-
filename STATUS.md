@@ -1,3 +1,45 @@
+# STATUS (2026-11-03, Telegram family alerts + LiveKit family call)
+
+## Built 2026-11-03: Part A distress reply fix + Part B free family alerting
+- reasoning `turn.py` `_safety`: uses the return of `core.distress()` (`caregiver_alerted`). Says
+  "मी {family_obj} कळवलं आहे" ONLY when alerted; otherwise "कुठे त्रास होतोय, सांगा. मुलाला फोन करायचा
+  असेल तर 'मुलाला फोन लाव' म्हणा." Emergency with a failed alert keeps 112 and never claims the family.
+- reasoning family lookup: son/मुलगा → other family (never a doctor) → "तुमच्या घरच्यांना"; the
+  `contacts[0]` fallback is removed. `_family_obj` is shared by `_safety` and `REQUEST_CAREGIVER`.
+- reasoning replies: "आता कसं वाटतंय?" removed from `symptom_noted` / `symptom_not_noted` (mr/hi/en) and
+  from the Evon prompt. `auto_caregiver` is now "{family} निरोप पाठवला आहे." (mr) / "{family} संदेश भेज दिया
+  है।" (hi) / "I have sent {family} a message." (en).
+- core-api `telegram.py`: `TELEGRAM_ENABLED=1` + token/chat id; `send_alert` posts from a daemon thread with
+  an inline "📞 आईशी बोला / Join call" button; one alert per (user, kind) per 10 minutes; `alert_sent` /
+  `alert_failed` rows in the feed. Token/chat id are never logged. Texts: emergency "🚨 … तातडीची मदत हवी —
+  लगेच संपर्क करा", distress "⚠️ … यांना बरं वाटत नाहीये", request "📞 … यांनी बोलायला सांगितलं आहे".
+- core-api `joins.py` + `family_call.py`: 30-minute HMAC-signed `?view=join&t=` links bound to the user id
+  only; `GET /family/join` looks up the elder's room at redemption time and returns a LiveKit token as identity
+  `family` (son name, else non-doctor, else "कुटुंब"). Expired/forged links 403, missing room 409.
+  `livekit_token.py` tracks the most recent room, so a room replaced after the alert is still followed.
+- core-api triggers: emergency always; distress when `caregiver_alerted`; `REQUEST_CAREGIVER` confirm.
+  `_emergency_body` states are honest: "sending" / "pending" / "sent" / "failed" / "none"; it says
+  "Telegram alert sent" only after a delivery. `POST /users/{id}/alert/test` + `scripts/telegram_test.py --call`.
+- voice-agent `familyroom.py`: while identity `family` is in the room, Arjun ignores turns and taps, and
+  does not speak reminders or close the session.
+- web: `api.familyJoin`, `JoinCall` at `?view=join` (mic on, big "बंद करा"), `useArjunVoice.family`, elder
+  banner "… बोलत आहेत", family audio plays through the existing track attachment. No open room: "आई सध्या
+  ॲपवर नाहीत" + "पुन्हा प्रयत्न करा", and no LiveKit connection is attempted.
+- `.env.example` documents TELEGRAM_ENABLED / TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / BASE_URL / JOIN_SECRET;
+  `scripts/dev-up.ps1` passes them to core-api.
+- `scripts/dev-up.ps1 -Phone`: starts a Cloudflare quick tunnel to :5173 in its own window (tee to
+  `logs\tunnel.log`), reuses a running tunnel whose logged URL answers HTTP 200, waits up to 30 s for the
+  `https://*.trycloudflare.com` URL, writes only `BASE_URL` in `.env` via `scripts/tunnel_url.py`, then
+  starts/restarts core-api and prints the elder/family HTTPS URLs. If the stack is already running, the
+  other services are left alone (no duplicate windows). `scripts/test_tunnel_url.py`: 16 stdlib
+  unit tests for URL parsing (including Windows UTF-16 logs) and the byte-preserving line replace.
+- All suites green: core-api 224, reasoning 681, voice-agent 191, scheduler 8, vitest 109, ruff clean, tsc clean.
+- Known limits: the active-room map and dedupe live in memory (single core-api process, reset on restart); after
+  a restart the join page says "आई सध्या ॲपवर नाहीत" until the elder opens the app again. Telegram delivery is
+  best effort: the dashboard alert is written first and never depends on it.
+- NOT hand-tested in a browser or against the real Telegram bot; the `-Phone` tunnel was not started in this
+  session (helper tests pass). Nothing committed or pushed.
+
 # STATUS (2026-11-02, distress reply fix)
 
 ## Built 2026-11-02: distress reply fix

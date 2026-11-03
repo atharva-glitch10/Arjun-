@@ -578,6 +578,12 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           <span className="hf-dot" aria-hidden /> मी ऐकतोय · कधीही बोला
         </div>
       )}
+      {voice.family && (
+        <div className="family-call-banner" role="status" aria-live="polite">
+          <span className="family-call-dot" aria-hidden />
+          {voice.family} बोलत आहेत
+        </div>
+      )}
       {live && voice.thinking && (
         <div className="thinking-marker" role="status" aria-live="polite">
           <span className="dots" aria-hidden>

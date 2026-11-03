@@ -380,6 +380,38 @@ class EvonClient:
                 continue
         return None
 
+    def media_understanding(self, text: str, timeout: float | None = None) -> dict[str, Any] | None:
+        """One strict-JSON reading of a media request: {kind, topic, specific}. One attempt, no retry.
+
+        Deliberately separate from extract_intent: the intent schema is about reminders and care, and a media
+        request must not be forced through it. No URL, id or reply may come out of here (turn.py validates).
+        """
+        system = (
+            "You classify ONE media request for Arjun, a voice companion for an older Marathi speaker. "
+            'Output ONLY one JSON object: {"kind": "news|recipe|music|devotional|exercise|video|unknown", '
+            '"topic": "<what to search for, in Marathi, 1-6 words; empty if nothing>", '
+            '"specific": true|false}. '
+            "kind: news = news/headlines/live news; recipe = how to cook or make a dish; music = songs; "
+            "devotional = bhajan/abhang/aarti/kirtan; exercise = exercise/yoga; video = another video; "
+            "unknown = she did not say what to watch or listen to. "
+            "specific=true only when she named a particular singer, song, dish, programme or channel; "
+            "a category (songs, bhajans, news, sweets, exercise) is false. Never output a URL. No prose."
+        )
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
+        try:
+            raw = self._chat(
+                messages,
+                0.0,
+                purpose="media",
+                timeout=timeout,
+                max_tokens=120,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(raw)
+        except (httpx.HTTPError, ValueError, KeyError):
+            return None
+        return data if isinstance(data, dict) else None
+
     def companion_reply(
         self,
         text: str,
@@ -419,7 +451,7 @@ class EvonClient:
             f"9. If she asks you to DO something (open, play, show, call, send), never say you cannot and never "
             f"change the subject; reply only: \"हे अजून मला जमत नाही, घरच्यांना सांगते.\" "
             f"GOOD replies: \"चिकन छान झालं! कोणी बनवलं?\" / \"गाणं कोणतं शिकलात आज?\" / "
-            f"\"घरच्यांना कळवलं आहे. आता कसं वाटतंय?\" "
+            f"\"घरच्यांना कळवलं आहे.\" "
             f"BAD replies (never): \"मला समजलं, तो आवाज संदीपसारखाच वाटतोय. तुम्ही अविनाशला याआधी कधी भेटला आहात का?\" "
             f"(guesses, long) / \"हो, हे तर बँकेशी बोलूनच ठरवता येईल. पण हे सगळं मॅन्युअली चेक करताना...\" "
             f"(opinion, long) / \"डोक्याला त्रास होत असेल तर थोडा वेळ शांत पडून राहा\" (health advice). {clock}"

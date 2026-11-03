@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import joins, telegram
 from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
@@ -17,6 +18,7 @@ from .db import Base, engine, ensure_columns, get_db
 from .deliveries import ack_item, enqueue
 from .deliveries import router as deliveries_router
 from .deps import check_api_key_configured, get_now, require_key
+from .family_call import router as family_router
 from .feed import router as feed_router
 from .feed import ws_router as feed_ws_router
 from .livekit_token import router as livekit_router
@@ -357,6 +359,7 @@ def confirm(
     action = _get_pending(db, user_id, action_id, now)
     p = action.payload
     done: dict[str, object] = {"done_at": now.isoformat()}  # kept in the payload so the action can be undone
+    caregiver_requested = False
     if action.action_type == "CREATE_REMINDER":
         due = _check_reminder(
             s.ReminderIn(
@@ -375,6 +378,7 @@ def confirm(
     elif action.action_type == "REQUEST_CAREGIVER":
         db.add(m.CaregiverRequest(user_id=user_id, message=p["message"]))
         db.add(m.Notification(user_id=user_id, kind="caregiver_request", body=p["message"]))
+        caregiver_requested = True
     elif action.action_type == "SHARE_STORY":
         story = db.get(m.StoryMemory, p["story_id"])
         if story is None:
@@ -396,6 +400,10 @@ def confirm(
     action.payload = {**p, "_done": done}  # a new dict, so the JSON column is saved
     action.status = "confirmed"
     db.commit()
+    if caregiver_requested:
+        user = db.get(m.User, user_id)
+        if user is not None:
+            _family_alert(db, user_id, "request", _display_name(user))
     return action
 
 
@@ -504,16 +512,45 @@ def report_issue(user_id: int, db: Session = Depends(get_db)) -> dict[str, objec
 
 
 # ---- safety / companion state -----------------------------------------------------------------
-def _emergency_body(user: m.User, contacts: list[m.Contact], now: datetime) -> str:
-    """The dashboard alert text. Honest about delivery: it is a dashboard alert only (CLAUDE.md boundary 14)."""
+_ALERT_TAIL: dict[str, str] = {
+    "sent": " Telegram alert sent.",
+    "sending": " Sending a Telegram alert now.",
+    "pending": " A Telegram alert is already being sent.",
+    "failed": " The Telegram alert could not be sent.",
+    "none": " Dashboard alert only; no call or message was sent.",
+}
+
+
+def _display_name(user: m.User) -> str:
+    return user.name.replace("(synthetic)", "").strip() or user.name
+
+
+def _emergency_body(
+    user: m.User, contacts: list[m.Contact], now: datetime, alert_state: str = "none"
+) -> str:
+    """The dashboard alert text. Honest about delivery: "Telegram alert sent" only when it was sent
+    (CLAUDE.md boundary 14). A queued send is described as "sending", never as delivered."""
     who = "; ".join(f"{c.name} ({c.relation}) {c.phone}".strip() for c in contacts) or ""
     family = f"Family contacts on file: {who}." if who else "No family contact is set up."
     head = (
         f"EMERGENCY {now:%H:%M}: {user.name} reported a physical emergency (e.g. chest pain, a fall). "
         f"Arjun told her to call 112. Please call her now. "
     )
-    tail = " Dashboard alert only; no call or message was sent."
+    tail = _ALERT_TAIL.get(alert_state, _ALERT_TAIL["none"])
     return (head + family)[: 300 - len(tail)] + tail
+
+
+def _family_alert(db: Session, user_id: int, kind: str, name: str, *, claimed: bool = False) -> None:
+    """One Telegram alert per kind per 10 minutes. Never blocks the request (see telegram.py)."""
+    if not claimed and telegram.claim(user_id, kind) != "ready":
+        return
+    telegram.send_alert(
+        telegram.alert_text(kind, name),
+        joins.join_url(user_id),
+        user_id=user_id,
+        kind=kind,
+        bind=db.get_bind(),
+    )
 
 
 @router.post("/users/{user_id}/distress", response_model=s.DistressOut, status_code=201)
@@ -528,15 +565,34 @@ def record_distress(
     - emergency (chest pain, can't breathe, a fall, fainting, bleeding): ALWAYS alerts, whatever the consent
       flag says (team decision 2026-10-24). The alert names the configured family contacts.
     - distress (emotional): the caregiver is notified ONLY if the user configured consent. Unchanged.
+
+    A Telegram message follows the same rule; the dashboard alert is written first and never depends on it.
     """
     user = _user(db, user_id)
     emergency = kind == "emergency"
     alerted = emergency or bool(user.consent_distress_alert)
+    name = _display_name(user)
     db.add(m.DistressEvent(user_id=user_id, caregiver_alerted=alerted))
+    alert_kind = ""
+    alert_claimed = False
     if emergency:
+        state = telegram.claim(user_id, "emergency")
+        alert_claimed = state == "ready"
+        if alert_claimed:
+            alert_state = "sending"
+        elif state == "recent":
+            alert_state = telegram.recent_outcome(user_id, "emergency")
+        else:
+            alert_state = "none"
         contacts = list(db.scalars(select(m.Contact).where(m.Contact.user_id == user_id).order_by(m.Contact.id)))
-        db.add(m.Notification(user_id=user_id, kind="emergency", body=_emergency_body(user, contacts, now)))
+        db.add(
+            m.Notification(
+                user_id=user_id, kind="emergency", body=_emergency_body(user, contacts, now, alert_state)
+            )
+        )
+        alert_kind = "emergency"
     elif alerted:
+        alert_kind = "distress"
         db.add(
             m.Notification(
                 user_id=user_id,
@@ -545,7 +601,26 @@ def record_distress(
             )
         )
     db.commit()
+    if alert_kind:
+        _family_alert(db, user_id, alert_kind, name, claimed=alert_claimed)
     return s.DistressOut(caregiver_alerted=alerted)
+
+
+@router.post("/users/{user_id}/alert/test")
+def send_test_alert(user_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
+    """Manual check for scripts/telegram_test.py --call: one test message with a join link."""
+    user = _user(db, user_id)
+    if not telegram.ready():
+        return {"queued": False, "reason": "telegram is disabled or not configured"}
+    url = joins.join_url(user_id)
+    telegram.send_alert(
+        telegram.alert_text("test", _display_name(user)),
+        url,
+        user_id=user_id,
+        kind="test",
+        bind=db.get_bind(),
+    )
+    return {"queued": True, "join_url": url}
 
 
 @router.post("/users/{user_id}/lonely")
@@ -682,6 +757,7 @@ app.include_router(day_router)
 app.include_router(checkins_router)
 app.include_router(deliveries_router)
 app.include_router(livekit_router)
+app.include_router(family_router)
 app.include_router(activity_router)
 app.include_router(readings_router)
 app.include_router(wellbeing_router)

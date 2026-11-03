@@ -9,7 +9,7 @@ turn.py; nothing here, and nothing the LLM says, can produce a URL.
 import re
 from dataclasses import dataclass
 
-from .textutil import normalize, tokens
+from .textutil import has_any, normalize, tokens
 
 OPEN_MEDIA = "OPEN_MEDIA"
 NEWS_READ = "NEWS_READ"
@@ -66,6 +66,34 @@ _NEWS_READ_EXACT = frozenset({"read", "tell", "headlines", "headline"})
 _LINK_VERB_STEMS = ("दाखव", "उघड", "खोल", "दिखा", "दिखाओ", "बघाय", "बघा")
 _LINK_VERB_EXACT = frozenset({"open", "show", "दाखव", "दाखवा"})
 
+# ---- what a media request is ABOUT (recipe / exercise / a video, not only YouTube + play) ---------------------
+# The old parser needed a play verb plus a song word. These shapes also catch "मला मिठाई बनवायची आहे" and
+# "पुरणपोळी कशी करतात", which used to fall through to the companion LLM. UNVERIFIED lexicon.
+_MEDIA_WORD_STEMS = (
+    "गाण", "गीत", "संगीत", "भजन", "अभंग", "आरती", "कीर्तन", "भक्तिगीत", "स्तोत्र", "लावणी", "पोवाड", "गझल",
+    "बातम", "न्यूज", "न्यूझ", "न्यूज़", "समाचार", "खबर", "ख़बर",
+    "व्यायाम", "योग", "रेसिपी", "पाककृती", "व्हिडिओ", "व्हिडीओ", "व्हिडीयो",
+    "song", "music", "bhajan", "gaan", "gana", "geet", "ghazal", "aarti", "gaane", "kirtan",
+    "news", "recipe", "exercise", "yoga", "video", "vidio",
+)
+_RECIPE_PHRASES = (
+    "कसं करतात", "कशी करतात", "कसे करतात", "कसा करतात", "कसं बनवतात", "कशी बनवतात", "कसे बनवतात",
+    "कसं बनवायचं", "कशी बनवायची", "कसे बनवायचे", "कसा बनवायचा",
+    "बनवायची आहे", "बनवायचं आहे", "बनवायचे आहे", "बनवायचा आहे",
+    "how to make", "recipe", "रेसिपी", "पाककृती",
+)
+# Words that name the REQUEST, not the thing to search for.
+_MEDIA_TOPIC_DROP = frozenset(
+    "आहे आहेत आहेस आणि कशी कसा कसं कसे करतात करतो करते करायचं करायची करायचा बनवायची बनवायचं बनवायचे "
+    "बनवायचा बनवतात सांग सांगा शिकव शिकवा".split()
+)
+# A category word is not a "specific" request; a singer / dish / programme name is.
+_GENERIC_MEDIA = frozenset(
+    "गाणं गाणी गीत गीतं संगीत भजन भजनं अभंग आरती कीर्तन बातम्या बातमी न्यूज न्यूझ समाचार खबर खबरें "
+    "व्यायाम योग रेसिपी पाककृती मिठाई मराठी जुनी जुने चांगलं चांगली चांगले काही काहीतरी "
+    "video song songs music news recipe exercise yoga".split()
+)
+
 _STOP_WORDS = frozenset("थांबव थांबवा बंद stop band रोक रोको रोकिए बंद-कर".split())
 _CONTROL_NOISE = frozenset("अर्जुन arjun जरा आता please ना कर करा karo kar कृपया तू".split())
 _DOWN = frozenset("कमी हळू कम धीमा धीरे low down lower खाली कमि".split())
@@ -112,12 +140,73 @@ def clean_query(text: str) -> str:
     "भीमसेन जोशींचं भजन लावा" -> "भीमसेन जोशी भजन"; "यूट्यूबवर पु ल देशपांडे दाखव" -> "पु ल देशपांडे"."""
     out = []
     for tok in tokens(normalize(text)):
-        if not tok or tok in _QUERY_DROP or _YOUTUBE.search(tok) or _is(tok, _PLAY_EXACT, _PLAY_STEMS):
+        if not tok or _YOUTUBE.search(tok) or _is(tok, _PLAY_EXACT, _PLAY_STEMS):
             continue
         tok = _strip_possessive(tok)
-        if tok:
+        if tok and tok not in _QUERY_DROP:
             out.append(tok)
     return " ".join(out)
+
+
+def media_topic(text: str) -> str:
+    """The search words of a media request: the request/question words dropped, the thing kept.
+    "मला मिठाई बनवायची आहे" -> "मिठाई"; "पुरणपोळी कशी करतात" -> "पुरणपोळी"."""
+    return " ".join(t for t in tokens(clean_query(text)) if t not in _MEDIA_TOPIC_DROP)
+
+
+def media_kind(text: str) -> str:
+    """The kind of media this request is about (rules fallback for the Sarvam understanding)."""
+    norm = normalize(text)
+    toks = tokens(norm)
+    topic = media_topic(text)
+    if _has(toks, frozenset(_NEWS_NOUNS)):
+        return "news"
+    if has_any(norm, _RECIPE_PHRASES) or any(t.startswith(("रेसिप", "पाककृती")) for t in toks):
+        return "recipe"
+    if any(t.startswith(("भजन", "अभंग", "आरती", "कीर्तन", "भक्तिगीत", "स्तोत्र"))
+           or t in ("bhajan", "aarti", "kirtan") for t in toks):
+        return "devotional"
+    if any(t.startswith(("गाण", "गीत", "संगीत", "गझल", "लावणी", "पोवाड"))
+           or t in ("song", "music", "gaan", "gana", "geet", "ghazal", "gaane") for t in toks):
+        return "music"
+    if any(t.startswith(("व्यायाम", "योग")) or t in ("exercise", "yoga") for t in toks):
+        return "exercise"
+    if _YOUTUBE.search(norm) or any(t.startswith(("व्हिडिओ", "व्हिडीओ", "व्हिडीयो")) or t in ("video", "vidio")
+                                    for t in toks):
+        # "यूट्यूब लाव" / "व्हिडिओ दाखव" name no subject: the short question is better than a random video.
+        return "video" if topic and not all(t in _GENERIC_MEDIA for t in tokens(topic)) else "unknown"
+    return "unknown"
+
+
+def media_specific(text: str, kind: str | None = None, topic: str | None = None) -> bool:
+    """True only when she named a particular singer / song / dish / programme, not a category."""
+    kind = kind or media_kind(text)
+    topic = media_topic(text) if topic is None else topic
+    if not topic or kind == "news":
+        return False
+    words = [t for t in tokens(topic) if t not in _GENERIC_MEDIA]
+    if kind == "recipe":
+        return bool(words)  # "मिठाई" is a category; "पुरणपोळी" is a dish
+    return bool(words)
+
+
+def is_media_request(text: str) -> bool:
+    """A request to watch / listen to something, not a story that merely mentions a song or YouTube.
+
+    Request-shaped: YouTube / a media word plus a play or show verb, a recipe question ("कसं करतात",
+    "बनवायचं"), or exercise + show. "मला गाणं आठवलं..." and "माझ्या नातवाने यूट्यूबवर काम केलं" stay chat.
+    """
+    norm = normalize(text)
+    if not norm:
+        return False
+    toks = tokens(norm)
+    if has_any(norm, _RECIPE_PHRASES):
+        return True
+    media_word = bool(_YOUTUBE.search(norm)) or any(
+        t.startswith(_MEDIA_WORD_STEMS) for t in toks
+    )
+    play = _has(toks, _PLAY_EXACT, _PLAY_STEMS)
+    return media_word and play
 
 
 def _control(toks: list[str]) -> str | None:
@@ -184,6 +273,11 @@ def parse_app_command(text: str, *, remind: bool = False, links: bool = False) -
         words = clean_query(" ".join(toks))
         generic = not words or all(media_noun(t) for t in tokens(words))
         return AppCmd(OPEN_MEDIA, topic="youtube" if youtube else "play", query="" if generic else words)
+
+    # A recipe question ("पुरणपोळी कशी करतात") or a media word plus a show/play verb ("व्यायाम दाखव") is a media
+    # request even without the old song-word + play pair. UNVERIFIED lexicon; stories still stay chat.
+    if is_media_request(text):
+        return AppCmd(OPEN_MEDIA, topic="youtube", query=media_topic(text))
 
     link_verb = links and _has(toks, _LINK_VERB_EXACT, _LINK_VERB_STEMS)  # generic "show ...": only as the LAST rule
     if link_verb:

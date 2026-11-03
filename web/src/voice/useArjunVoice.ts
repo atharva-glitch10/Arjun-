@@ -21,6 +21,8 @@ export interface ArjunVoice {
   readyMs: number | null;
   /** The SQL item the agent last delivered ("reminder:<id>" | "dose:<id>"), else "". */
   item: string;
+  /** The family member in the room right now ("चंद्रकांत"), else "". Arjun stays quiet while this is set. */
+  family: string;
   /** The one-time Start tap: unlocks sound and asks for the mic once. Must be called from a click. */
   arm: () => Promise<void>;
   /** Join a room quietly (no mic) when the page opens, so the first tap is fast. Best effort, never an error. */
@@ -68,6 +70,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [heard, setHeard] = useState("");
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [item, setItem] = useState("");
+  const [family, setFamily] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [action, setAction] = useState<ActionAttribute | null>(null);
@@ -115,6 +118,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     setReply("");
     setHeard("");
     setItem("");
+    setFamily("");
     setAudioBlocked(false);
     setThinking(false);
     setAction(null);
@@ -199,11 +203,16 @@ export function useArjunVoice(userId: number): ArjunVoice {
         }),
       );
       r.on(RoomEvent.AudioPlaybackStatusChanged, () => setAudioBlocked(!r.canPlaybackAudio));
+      const seeFamily = (p: Participant) => {
+        if (p.identity === "family") setFamily(p.name || "कुटुंब");
+      };
       r.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => {
         if (isAgent(p)) applyAgent(p, t0);
+        seeFamily(p);
       });
       r.on(RoomEvent.ParticipantConnected, (p) => {
         if (isAgent(p)) applyAgent(p, t0);
+        seeFamily(p);
       });
       const lost = () => {
         if (stopping.current) return;
@@ -217,6 +226,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
       };
       r.on(RoomEvent.ParticipantDisconnected, (p) => {
         if (isAgent(p)) lost();
+        if (p.identity === "family") setFamily("");
       });
       r.on(RoomEvent.Reconnecting, () => {
         timers.current.push(window.setTimeout(() => fail("dropped"), RECONNECT_GIVE_UP_MS));
@@ -238,6 +248,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
         room.current = null;
         return null;
       }
+      for (const p of r.remoteParticipants.values()) seeFamily(p);
       return r;
     },
     [applyAgent, fail, userId],
@@ -374,7 +385,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     audioBlocked,
   };
   return {
-    snapshot, reply, heard, readyMs, item, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
+    snapshot, reply, heard, readyMs, item, family, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
     thinking, volume, setVolume, action, reportMedia,
   };
 }

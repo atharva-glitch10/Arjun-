@@ -54,7 +54,7 @@ def test_missing_details_are_still_asked_never_guessed(auto, core_http, uid):
 def test_help_is_sent_at_once_and_says_where(auto, core_http, uid):
     res = auto.handle(uid, "मला मदत हवी आहे")
     assert res.intent == "REQUEST_CAREGIVER" and not res.awaiting_confirmation
-    assert "स्क्रीनवर" in res.reply  # honest: a dashboard note, not a phone call
+    assert "निरोप" in res.reply and "फोन" not in res.reply  # a message was sent, never a phone call
     kinds = [n["kind"] for n in core_http.get(f"/users/{uid}/notifications").json()]
     assert "caregiver_request" in kinds
 

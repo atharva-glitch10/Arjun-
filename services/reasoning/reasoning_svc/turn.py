@@ -27,15 +27,20 @@ from .appcmd import (
     MEDIA_CONTROL,
     NEWS_READ,
     OPEN_LINK,
+    OPEN_MEDIA,
     OPEN_WHATSAPP,
     clean_query,
     covers,
+    is_media_request,
+    media_kind,
+    media_topic,
     name_matches,
 )
 from .checkins import answer_from_text
 from .clock import local_now
 from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency, is_lonely, symptom_category
+from .media_understanding import understand_media
 from .evon import (
     EvonClient,
     sanitize_companion,
@@ -72,6 +77,33 @@ _YT_ALL = _YT_MUSIC + ("youtube_channel_live",)
 _NEWS_SEARCH = "मराठी बातम्या live"  # core-api adds eventType=live for kind=news_video
 _MEDIA_ASK_WINDOW_S = 120.0  # how long "काय लावू?" waits for her answer
 _MEDIA_TITLE_WORDS = 6  # the spoken title after "लावतो:"
+_CHOICE_WINDOW_S = 120.0  # how long the three cards stay answerable
+_CHOICE_TITLE_WORDS = 5  # the spoken / card title: at most five words
+# A short answer to the three cards. "दुसरं दाखव" is the next page, checked before the plain ordinals.
+_CHOICE_MORE = ("दुसरं दाखव", "दुसरे दाखव", "अजून", "अजून दाखव", "आणखी", "पुढचं", "पुढचे", "more", "next")
+_CHOICE_CANCEL = ("नको", "नका", "बंद", "बंद कर", "थांब", "थांबव", "cancel", "stop")
+_CHOICE_ORDINALS = {
+    0: ("पहिलं", "पहिला", "पहिली", "पहिले", "एक", "१", "1", "first", "one"),
+    1: ("दुसरं", "दुसरा", "दुसरी", "दुसरे", "दोन", "२", "2", "second", "two"),
+    2: ("तिसरं", "तिसरा", "तिसरी", "तिसरे", "तीन", "३", "3", "third", "three"),
+}
+_CHOICE_LAST = ("शेवटचं", "शेवटचा", "शेवटची", "शेवटी", "last")
+# Words that appear in almost every card: matching one of them is not naming a card.
+_CHOICE_STOP = frozenset(
+    "गाणं गाणी गीत संगीत भजन अभंग आरती बातम्या बातमी न्यूज मराठी रेसिपी व्यायाम योग व्हिडिओ व्हिडीओ "
+    "video song news recipe exercise yoga".split()
+)
+
+
+@dataclass
+class _MediaChoice:
+    """Three cards waiting for a spoken number / channel / title, or a tap. Per user, in memory, 2 minutes."""
+
+    kind: str  # news | music | ...
+    query: str
+    items: list[dict[str, Any]]
+    offset: int = 0
+    at: float = 0.0
 
 
 def _sentence(title: str) -> str:
@@ -84,6 +116,31 @@ def _short_title(title: str, max_words: int = _MEDIA_TITLE_WORDS) -> str:
     """At most six words of a YouTube title for the spoken line, without stray punctuation."""
     text = " ".join(title.split()[:max_words]).strip(" .,;:!?…-–—&|")
     return text or title.strip()[:60]
+
+
+def _same_word(said: str, card: str) -> bool:
+    """A spoken word names a card word: equal, or one is the start of the other ("ABP" ~ "ABP माझा")."""
+    if said == card:
+        return True
+    short = min(len(said), len(card))
+    return short >= 4 and (said.startswith(card) or card.startswith(said))
+
+
+# Who a safety or help line names: the son first, then any other family member, NEVER a doctor, never an
+# arbitrary first row. `_FAMILY_FALLBACK` is used when nothing fits.
+_SON_WORDS = ("son", "मुलगा")
+_DOCTOR_WORDS = ("doctor", "डॉक")
+_FAMILY_FALLBACK = {"mr": "तुमच्या घरच्यांना", "hi": "आपके घरवालों को", "en": "your family"}
+
+
+def _is_son(relation: str) -> bool:
+    rel = relation.lower()
+    return any(w in rel for w in _SON_WORDS)
+
+
+def _is_doctor(relation: str) -> bool:
+    rel = relation.lower()
+    return any(w in rel for w in _DOCTOR_WORDS)
 
 
 NO_ACTION: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": ""}
@@ -123,9 +180,10 @@ class TurnResult:
     # What the voice says, with Timbre v3.0 voice tags the LLM chose ("<laugh> ..."). Empty = say `reply`.
     # The screen always shows `reply` (no tags). The voice agent strips tags for TTS models without them.
     speech: str = ""
-    # What the elder screen should OPEN or do: {type: open|control|none, kind, value, title}. Decided here from the family's
-    # app_links (never from the LLM); the voice agent publishes it as "arjun.action", the page performs it.
-    action: dict[str, str] = field(default_factory=lambda: dict(NO_ACTION))
+    # What the elder screen should OPEN or do: {type: open|control|choice|none, kind, value, title, choices?}.
+    # Decided here from the family's app_links / core-api search (never from the LLM); the voice agent publishes it
+    # as "arjun.action", the page performs it.
+    action: dict[str, Any] = field(default_factory=lambda: dict(NO_ACTION))
 
 
 class TurnEngine:
@@ -153,6 +211,7 @@ class TurnEngine:
         self._last_safety: dict[int, float] = {}  # user -> monotonic time of the last safety reply (T8)
         self._drafts: dict[int, Draft] = {}  # in-memory slot-filling state (single instance)
         self._media_ask: dict[int, float] = {}  # user -> mono time of "काय लावू?" waiting for the answer
+        self._media_choice: dict[int, _MediaChoice] = {}  # user -> the three cards waiting for an answer
         self._chat_counter: dict[int, int] = {}
         self._convo_at: dict[int, float] = {}  # user -> monotonic time of the last companion turn
         # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
@@ -172,6 +231,7 @@ class TurnEngine:
         # core-api being reachable. The replies are fixed templates, so a failed lookup only
         # costs the language default.
         if is_emergency(text) or is_distress(text) or "त्रास" in text and ("होतोय" in text or "होते" in text or "होता" in text):
+            self._media_choice.pop(user_id, None)  # an emergency closes the cards: nothing is playing
             try:
                 default_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
@@ -206,6 +266,17 @@ class TurnEngine:
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
         draft = self._drafts.get(user_id)
         recent = self._recent_done(user_id)
+        if pending is not None or draft is not None:
+            self._media_choice.pop(user_id, None)  # a reminder / medicine question wins over the cards
+        else:
+            picked = self._answer_choice(user_id, text, lang, trace, t0)
+            if picked is not None:
+                if picked.intent == "CHAT" and picked.mode == "companion":
+                    self._convo_at[user_id] = self._mono()
+                if picked.mode != "safety":
+                    self._remember(user_id, now, text, picked)
+                log.info(json.dumps({"user": user_id, "intent": picked.intent, **picked.trace}))
+                return picked
         # A meal / walk prompt that a session really spoke takes a clear done/skipped answer - but only when
         # nothing else is waiting: no yes/no, no reminder draft, no undo window, no recent medicine prompt.
         if pending is None and draft is None and recent is None and self._recent_dose(user_id) is None:
@@ -424,7 +495,7 @@ class TurnEngine:
         )
 
     @staticmethod
-    def _media_action(action: dict[str, str], query: str) -> dict[str, str]:
+    def _media_action(action: dict[str, Any], query: str) -> dict[str, Any]:
         """An open action carries the words she asked for too (a title for the screen, never a URL)."""
         return {**action, "query": query}
 
@@ -432,55 +503,256 @@ class TurnEngine:
         self, uid: int, text: str, p: Parsed, links: list[dict[str, Any]], a: dict[str, str],
         res: Callable[..., TurnResult],
     ) -> TurnResult:
+        """Play a named item directly, offer three cards for a category, ask one short question when the kind is
+        unknown. The old generic "काय लावू?" and the "search results page" reply are gone: nothing claims to be
+        playing when only a results page was opened."""
+        kind = p.media_kind or media_kind(text)
         if p.topic == "news_video":
-            lives = [x for x in links if x["kind"] == "youtube_channel_live"]
-            named_live = self._named_links(links, text, "", ("youtube_channel_live",))
-            pick = named_live[0] if named_live else (lives[0] if lives else None)
-            if pick is None:  # no family channel: search live Marathi news on YouTube
-                return self._search_and_open(uid, text, "", a, res, kind="news_video")
-            return res(a["news_live"], self._media_action(self._open_link(pick), ""))
-        query = p.query.strip()
-        named = self._named_links(links, text, "", _YT_MUSIC)
-        # A name she said picks that favourite only when it covers everything she asked for: "भजन" is the family's
-        # bhajan list, but "भीमसेन जोशींचं भजन" is a search.
-        named = [x for x in named if not query or covers(self._link_names(x), query)]
-        pick = named[0] if named else None
-        if pick is None and not query:  # "गाणी लावा" / "यूट्यूब": the family's first favourite
-            pick = next((x for x in sorted(links, key=lambda x: (x["sort"], x["id"])) if x["kind"] in _YT_MUSIC), None)
-        if pick is not None and pick["kind"] != "youtube_query":
-            return res(
-                a["youtube_open"] if p.topic == "youtube" else a["play"],
-                self._media_action(self._open_link(pick), query),
-            )
-        if pick is not None:
-            query = pick["value"]  # a saved search ("जुनी मराठी भजनं")
-        if not query:  # "यूट्यूब उघड" with no favourite saved: never open YouTube's home page
-            self._media_ask[uid] = self._mono()
-            return res(a["ask_query"])
-        return self._search_and_open(uid, text, query, a, res)
+            kind = "news"
+        query = p.query.strip() or media_topic(text)
+        specific = bool(p.media_specific)
 
-    def _search_and_open(
-        self, uid: int, text: str, query: str, a: dict[str, str], res: Callable[..., TurnResult],
-        *, kind: str | None = None,
-    ) -> TurnResult:
-        try:
-            found = self.core.youtube_search(uid, query, kind=kind)
-        except CoreError as exc:
-            if exc.status in (429, 502, 503):  # no key / Google down / today's quota: the results page does the search
-                fallback = query or _NEWS_SEARCH
-                url = "https://www.youtube.com/results?search_query=" + quote(fallback)
-                return res(
-                    a["play_results"],
-                    {"type": "open", "kind": "url", "value": url, "title": fallback},
-                )
-            raise
+        if kind == "unknown":
+            self._media_ask[uid] = self._mono()  # the existing 2-minute "what should I play?" state
+            return res(a["ask_media_kind"])
+        if kind == "news":
+            return self._offer_news(uid, text, links, a, res)
+
+        # A family favourite she NAMED (and that covers everything she asked for) is the best match. A category
+        # alone ("भजन लाव") goes to search + three cards, so the family's curation never hides other choices.
+        named = self._named_links(links, text, "", _YT_MUSIC)
+        named = [x for x in named if not query or covers(self._link_names(x), query)]
+        if specific and named:
+            pick = named[0]
+            if pick["kind"] == "youtube_query":
+                query = pick["value"]  # a saved search ("जुनी मराठी भजनं")
+            else:
+                return res(a["play"], self._media_action(self._open_link(pick), query))
+
+        if not query:  # a category with no words: search the category in Marathi
+            query = {
+                "music": "मराठी गाणी", "devotional": "मराठी भजन", "recipe": "मराठी रेसिपी",
+                "exercise": "मराठी व्यायाम", "video": "मराठी व्हिडिओ",
+            }.get(kind, "")
+        query = self._with_marathi(query)
+        if not query:
+            self._media_ask[uid] = self._mono()
+            return res(a["ask_media_kind"])
+        found = self._search(uid, query)
+        if found is None:
+            return self._results_page(query, a, res)
         if not found:
             return res(a["play_none"])
-        top = found[0]
+        items = [self._video_item(i, x) for i, x in enumerate(found)]
+        if specific:
+            return self._play_item(uid, items[0], a, res)
+        return self._offer(uid, kind, query, items, a, res)
+
+    def _offer_news(
+        self, uid: int, text: str, links: list[dict[str, Any]], a: dict[str, str],
+        res: Callable[..., TurnResult],
+    ) -> TurnResult:
+        """The family's approved news sources first (YouTube live / RSS, at most three cards); with none, live
+        Marathi news from YouTube search. One approved source is played without asking."""
+        sources = [x for x in links if x["kind"] in ("youtube_channel_live", "rss")]
+        named = self._named_links(sources, text, "", ("youtube_channel_live", "rss"))
+        if named:
+            return self._play_news_link(uid, named[0], a, res)
+        if len(sources) == 1:
+            return self._play_news_link(uid, sources[0], a, res)
+        if sources:
+            items = [self._news_item(i, x) for i, x in enumerate(sources[:3])]
+            return self._offer(uid, "news", "", items, a, res)
+        found = self._search(uid, "", kind="news_video")
+        if found is None:
+            return self._results_page(_NEWS_SEARCH, a, res)
+        if not found:
+            return res(a["news_none"])
+        items = [self._video_item(i, x) for i, x in enumerate(found)]
+        return self._offer(uid, "news", "", items, a, res)
+
+    @staticmethod
+    def _with_marathi(query: str) -> str:
+        """Search in Marathi unless she already said it: "पुरणपोळी" -> "पुरणपोळी मराठी"."""
+        q = " ".join(query.split())[:100]
+        return q if not q or "मराठी" in q else f"{q} मराठी"
+
+    def _search(self, uid: int, query: str, *, kind: str | None = None) -> list[dict[str, Any]] | None:
+        """core-api search; None means "no key / quota / Google down", which opens the results page instead."""
+        try:
+            return self.core.youtube_search(uid, query, kind=kind)
+        except CoreError as exc:
+            if exc.status in (429, 502, 503):
+                return None
+            raise
+
+    @staticmethod
+    def _results_page(query: str, a: dict[str, str], res: Callable[..., TurnResult]) -> TurnResult:
+        """No API key / quota: open YouTube's own results page, and say exactly that (never "playing")."""
+        fallback = query or _NEWS_SEARCH
+        url = "https://www.youtube.com/results?search_query=" + quote(fallback)
+        return res(a["youtube_results"], {"type": "open", "kind": "url", "value": url, "title": fallback})
+
+    @staticmethod
+    def _video_item(index: int, video: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "index": index + 1,
+            "title": video["title"],
+            "short": _short_title(video["title"], _CHOICE_TITLE_WORDS),
+            "channel": video.get("channel", ""),
+            "kind": "youtube_video",
+            "value": video["video_id"],
+            "video_id": video["video_id"],
+        }
+
+    @staticmethod
+    def _news_item(index: int, link: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "index": index + 1,
+            "title": link["label"],
+            "short": _short_title(link["label"], _CHOICE_TITLE_WORDS),
+            "channel": "",
+            "kind": link["kind"],
+            "value": link["value"],
+        }
+
+    def _play_news_link(
+        self, uid: int, link: dict[str, Any], a: dict[str, str], res: Callable[..., TurnResult],
+    ) -> TurnResult:
+        """A family YouTube live channel plays; an RSS feed is read aloud (opening the feed URL would show XML)."""
+        if link["kind"] == "rss":
+            return self._read_news(uid, a, res)
+        return res(a["news_live"], self._media_action(self._open_link(link), ""))
+
+    def _play_item(
+        self, uid: int, item: dict[str, Any], a: dict[str, str], res: Callable[..., TurnResult],
+    ) -> TurnResult:
+        if item["kind"] == "rss":
+            return self._read_news(uid, a, res)
+        if item["kind"] in ("youtube_channel_live", "youtube_live"):
+            return res(
+                a["news_live"],
+                {"type": "open", "kind": item["kind"], "value": item["value"], "title": item["title"]},
+            )
         return res(
-            a["play_found"].format(title=_short_title(top["title"])),
-            {"type": "open", "kind": "youtube_video", "video_id": top["video_id"], "title": top["title"]},
+            a["play_found"].format(title=item["short"]),
+            {"type": "open", "kind": "youtube_video", "video_id": item["value"], "title": item["title"]},
         )
+
+    def _offer(
+        self, uid: int, kind: str, query: str, items: list[dict[str, Any]], a: dict[str, str],
+        res: Callable[..., TurnResult],
+    ) -> TurnResult:
+        """Three big cards and one short line. One item is played at once: a choice of one is not a choice."""
+        if not items:
+            return res(a["news_none"] if kind == "news" else a["play_none"])
+        if len(items) == 1:
+            return self._play_item(uid, items[0], a, res)
+        self._media_choice[uid] = _MediaChoice(kind=kind, query=query, items=items, offset=0, at=self._mono())
+        page = items[:3]
+        return res(
+            self._choice_line(page, a),
+            {"type": "choice", "kind": "media", "value": "", "title": "", "query": query, "choices": page},
+        )
+
+    @staticmethod
+    def _choice_line(page: list[dict[str, Any]], a: dict[str, str]) -> str:
+        titles = [str(x.get("short") or x.get("title") or "व्हिडिओ") for x in page]
+        if len(titles) >= 3:
+            return a["choice_ask_three"].format(a=titles[0], b=titles[1], c=titles[2])
+        return a["choice_ask_two"].format(a=titles[0], b=titles[1])
+
+    # ---- the answer to the three cards ----------------------------------------------------------------------
+    def _answer_choice(
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float,
+    ) -> TurnResult | None:
+        """A spoken / tapped answer to the cards, or None (the cards are cleared and the turn goes on normally).
+
+        Safety, medicines and reminders never reach here: handle() checks them first and drops the cards.
+        """
+        state = self._media_choice.get(uid)
+        if state is None:
+            return None
+        if self._mono() - state.at > _CHOICE_WINDOW_S:
+            self._media_choice.pop(uid, None)
+            return None
+        a = A[rp.lang_or_default(lang)]
+        norm = normalize(text)
+        toks = tokens(norm)
+
+        def out(line: str, action: dict[str, Any] | None = None) -> TurnResult:
+            return TurnResult(
+                line, OPEN_MEDIA, "care", lang, screen="reply", action=action or dict(NO_ACTION),
+                trace=self._t({**trace, "intent": OPEN_MEDIA, "choice": True}, t0),
+            )
+
+        if self._is_choice_cancel(toks):
+            self._media_choice.pop(uid, None)
+            return out(a["choice_cancel"])
+        if is_media_request(text):  # "भजन लाव" is a new request, not a card name
+            self._media_choice.pop(uid, None)
+            return None
+        if self._is_choice_more(norm):
+            page = self._next_page(state)
+            if not page:
+                return out(a["choice_none_more"])  # keep the cards she already has
+            return out(
+                self._choice_line(page, a),
+                {"type": "choice", "kind": "media", "value": "", "title": "", "query": state.query,
+                 "choices": page},
+            )
+        page = state.items[state.offset:state.offset + 3]
+        index = self._ordinal(toks, len(page))
+        if index is None:
+            index = self._named_card(page, norm)
+        if index is None:  # not an answer: the cards go, the sentence takes the normal path
+            self._media_choice.pop(uid, None)
+            return None
+        item = page[index]
+        self._media_choice.pop(uid, None)
+        return self._play_item(uid, item, a, lambda line, action=None: out(line, action))  # type: ignore[arg-type]
+
+    @staticmethod
+    def _is_choice_more(norm: str) -> bool:
+        padded = f" {norm} "
+        return any(f" {p} " in padded for p in _CHOICE_MORE)
+
+    @staticmethod
+    def _is_choice_cancel(toks: list[str]) -> bool:
+        return any(t in _CHOICE_CANCEL for t in toks)
+
+    @staticmethod
+    def _ordinal(toks: list[str], page_len: int) -> int | None:
+        if any(t in _CHOICE_LAST for t in toks):
+            return max(0, page_len - 1)
+        for index, words in _CHOICE_ORDINALS.items():
+            if index < page_len and any(t in words for t in toks):
+                return index
+        return None
+
+    @staticmethod
+    def _named_card(page: list[dict[str, Any]], norm: str) -> int | None:
+        """A channel name or a distinctive title word ("ABP", "पुरणपोळी") picks that card. Generic words never do."""
+        said = [t for t in tokens(norm) if len(t) >= 3 and t not in _CHOICE_STOP]
+        if not said or len(tokens(norm)) > 6:
+            return None
+        matches = []
+        for i, item in enumerate(page):
+            words = [
+                w for w in tokens(normalize(f"{item.get('title', '')} {item.get('channel', '')}"))
+                if len(w) >= 3 and w not in _CHOICE_STOP
+            ]
+            if any(_same_word(s, w) for s in said for w in words):
+                matches.append(i)
+        return matches[0] if len(matches) == 1 else None
+
+    def _next_page(self, state: _MediaChoice) -> list[dict[str, Any]]:
+        nxt = state.offset + 3
+        if nxt >= len(state.items):
+            return []
+        state.offset = nxt
+        state.at = self._mono()  # the 2 minutes start again from the new cards
+        return state.items[state.offset:state.offset + 3]
 
     def _open_reminders(self, uid: int) -> list[dict[str, Any]]:
         try:
@@ -789,6 +1061,25 @@ class TurnEngine:
         if draft is not None and rules.intent in ("UNKNOWN", "CHAT", "CREATE_REMINDER"):
             rules.intent = "CREATE_REMINDER"
             return rules, "rules"
+        # Media understanding. The rules know this is a media-ish request (YouTube / बघायचं / लाव / a recipe
+        # question) but not always WHAT it is. One strict-JSON call decides kind / topic / specific, with a 3 s
+        # budget; a slow or invalid answer leaves the rule answer in place. Safety, medicine and reminders were
+        # already decided above and never reach this call.
+        if (
+            self.evon is not None
+            and not has_pending
+            and rules.intent in ("UNKNOWN", "CHAT", OPEN_MEDIA)
+            and is_media_request(text)
+            and self._llm_remaining() >= _MIN_LLM_BUDGET_S
+        ):
+            understood = understand_media(self.evon, text, timeout=min(3.0, self._llm_remaining()))
+            return (
+                Parsed(
+                    OPEN_MEDIA, 0.85, lang, rules.draft, topic="media", query=understood.topic,
+                    media_kind=understood.kind, media_specific=understood.specific,
+                ),
+                understood.source,
+            )
         if rules.intent == "UNKNOWN" and symptom_category(text):
             return rules, "rules"  # a health complaint gets the fixed template; the LLM never hears it
         if conversing and rules.intent == "UNKNOWN":
@@ -998,7 +1289,7 @@ class TurnEngine:
         if intent == "REQUEST_CAREGIVER":
             if self._act(uid, "REQUEST_CAREGIVER", {"message": "Please call me."}) is None:
                 return out(r["confirm_caregiver"], wait=True)
-            return out(r["auto_caregiver"])
+            return out(r["auto_caregiver"].format(family=self._family_obj(uid, lang)))
 
         # A bare "ghetli" while a medicine is due is the medicine, not a reminder.
         if intent == "COMPLETE_REMINDER" and has_any(normalize(text), MED_TAKEN_WORDS):
@@ -1366,39 +1657,47 @@ class TurnEngine:
                 self.core.reject(uid, pending["id"])
         except (CoreError, httpx.HTTPError) as exc:
             log.error("%s: could not clear pending action: %s", kind, exc)
+        alerted = False
         try:
-            # emergency: core-api ALWAYS alerts the family (dashboard); distress: only with consent
-            self.core.distress(uid, kind)
+            # emergency: core-api ALWAYS alerts the family (dashboard); distress: only with consent.
+            # The reply below may claim the family was told ONLY when this says it was.
+            alerted = bool((self.core.distress(uid, kind) or {}).get("caregiver_alerted"))
         except (CoreError, httpx.HTTPError) as exc:
             log.error("%s: could not record event / alert caregiver: %s", kind, exc)
-        # Build family_obj from contacts (son name) with fallback.
-        family_obj = "तुमच्या घरच्यांना"
-        try:
-            contacts = self.core.contacts(uid)
-            chosen = None
-            for c in contacts or []:
-                rel = str(c.get("relation", "")).lower()
-                if "son" in rel or "मुलगा" in str(c.get("relation", "")):
-                    chosen = c
-                    break
-            if chosen is None:
-                for c in contacts or []:
-                    rel = str(c.get("relation", "")).lower()
-                    if rel and "doctor" not in rel:
-                        chosen = c
-                        break
-            if chosen is None and contacts:
-                chosen = contacts[0]
-            if chosen is not None:
-                family_obj = f"{chosen.get('name')}ला"
-        except Exception:
-            pass
+        family_obj = self._family_obj(uid, "mr")
+        ask_call = "मुलाला फोन करायचा असेल तर 'मुलाला फोन लाव' म्हणा."
         if kind == "emergency":
-            reply = f"मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा."
-        else:
+            reply = (
+                f"मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा."
+                if alerted
+                else f"112 वर फोन करा. {ask_call}"
+            )
+        elif alerted:
             reply = f"कुठे त्रास होतोय, सांगा. मी {family_obj} कळवलं आहे."
+        else:
+            reply = f"कुठे त्रास होतोय, सांगा. {ask_call}"
         intent = "EMERGENCY" if kind == "emergency" else "DISTRESS"
         return TurnResult(reply, intent, "safety", lang, trace=self._t(trace, t0), screen="safety")
+
+    def _family_obj(self, uid: int, lang: str = "mr") -> str:
+        """The person a safety / help line names: the son, else another family member (never a doctor),
+        else "your family". A lookup failure never becomes an arbitrary first contact."""
+        try:
+            contacts = self.core.contacts(uid) or []
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("family lookup failed: %s", exc)
+            contacts = []
+        chosen = next((c for c in contacts if _is_son(str(c.get("relation", "")))), None)
+        if chosen is None:
+            chosen = next((c for c in contacts if not _is_doctor(str(c.get("relation", "")))), None)
+        name = str(chosen.get("name", "")).strip() if chosen is not None else ""
+        if not name:
+            return _FAMILY_FALLBACK.get(lang, _FAMILY_FALLBACK["mr"])
+        if lang == "hi":
+            return f"{name} को"
+        if lang == "en":
+            return name
+        return f"{name}ला"
 
     @staticmethod
     def _t(trace: dict[str, Any], t0: float) -> dict[str, Any]:

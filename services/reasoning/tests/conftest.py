@@ -12,6 +12,12 @@ from sqlalchemy.orm import sessionmaker
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.pop("CORE_API_KEY", None)
 os.environ["ARJUN_TESTING"] = "1"  # the only way core-api runs without CORE_API_KEY
+# Never send a real Telegram alert from a test: the shell may carry the developer's .env values.
+os.environ.pop("TELEGRAM_ENABLED", None)
+os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+os.environ.pop("TELEGRAM_CHAT_ID", None)
+os.environ.pop("BASE_URL", None)
+os.environ.pop("JOIN_SECRET", None)
 # The older suites were written for the ask-first flow ("... ठेवू का? हो किंवा नाही"), which stays available
 # behind ARJUN_ASK_BEFORE_ACTING=1. The no-question default is tested with ask_first=False explicitly
 # (test_no_questions.py and the other new suites).

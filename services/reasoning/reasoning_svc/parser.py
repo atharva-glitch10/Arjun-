@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from .appcmd import parse_app_command
+from .appcmd import OPEN_MEDIA, media_kind, media_specific, media_topic, parse_app_command
 from .textutil import has_any, normalize, tokens
 
 # ---- intent keywords (roman + Devanagari) -----------------------------------------------------
@@ -265,6 +265,10 @@ class Parsed:
     contact_hint: str | None = None
     topic: str | None = None
     query: str = ""  # OPEN_MEDIA / OPEN_WHATSAPP / OPEN_LINK: the words left after the command words
+    # OPEN_MEDIA only: what she asked for (news / recipe / music / devotional / exercise / video / unknown) and
+    # whether she named a particular item (play it) or only a category (offer a choice).
+    media_kind: str | None = None
+    media_specific: bool = False
 
 
 def _add_minutes(hhmm: str, minutes: int) -> str:
@@ -451,6 +455,9 @@ def parse(
         # left after the command ("भीमसेन जोशींचं भजन", "चंद्रकांतला", a link label).
         p.topic, p.query = app.control or app.topic, app.query
         p.contact_hint = app.query or None
+        if app.intent == OPEN_MEDIA:
+            p.media_kind = media_kind(text)
+            p.media_specific = media_specific(text, p.media_kind, media_topic(text))
         return p
 
     if not has_any(norm, REMIND):

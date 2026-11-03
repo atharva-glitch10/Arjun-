@@ -6,6 +6,12 @@ from datetime import datetime
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.pop("CORE_API_KEY", None)
 os.environ["ARJUN_TESTING"] = "1"  # the only way core-api runs without CORE_API_KEY
+# Telegram alerts are off unless a test turns them on: the shell may carry the real .env values.
+os.environ.pop("TELEGRAM_ENABLED", None)
+os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+os.environ.pop("TELEGRAM_CHAT_ID", None)
+os.environ.pop("BASE_URL", None)
+os.environ.pop("JOIN_SECRET", None)
 
 import pytest  # noqa: E402
 from core_api.db import Base, get_db, make_engine  # noqa: E402
