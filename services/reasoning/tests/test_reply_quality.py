@@ -83,7 +83,7 @@ def test_advice_replies_are_rejected(advice):
     assert "medical" in companion_violations(advice, "mr" if any("ऀ" <= c <= "ॿ" for c in advice) else "en")
 
 
-@pytest.mark.parametrize("fine", ["गाणं कोणतं शिकलात आज?", "घरच्यांना कळवलं आहे. आता कसं वाटतंय?", "हे डॉक्टरांना विचारा."])
+@pytest.mark.parametrize("fine", ["गाणं कोणतं शिकलात आज?", "घरच्यांना कळवलं आहे.", "हे डॉक्टरांना विचारा."])
 def test_good_replies_are_not_flagged(fine):
     assert companion_violations(fine, "mr") == []
 
@@ -157,9 +157,9 @@ def test_the_symptom_reply_asks_how_she_feels_and_gives_no_llm_call(core_http, u
     eng, llm = engine(core_http, "छान!")
     res = eng.handle(uid, "सर्दी झाली आहे")
     assert res.intent == "SYMPTOM" and res.mode == "companion" and llm.calls == []
-    assert res.reply == "हे घरच्यांना किंवा डॉक्टरांना नक्की सांगा. आता कसं वाटतंय?"  # no consent: no claim to have told them
+    assert res.reply == "हे घरच्यांना किंवा डॉक्टरांना नक्की सांगा."  # no consent: no claim to have told them
     core_http.patch(f"/users/{uid}", json={"consent_distress_alert": True})
     told = eng.handle(uid, "ताप आलाय")
-    assert told.reply == "घरच्यांना कळवलं आहे. आता कसं वाटतंय?"
+    assert told.reply == "घरच्यांना कळवलं आहे."
     after = eng.handle(uid, STORY)  # the chat continues, and only now is the LLM asked
     assert after.intent == "CHAT" and len(llm.calls) == 1

@@ -84,7 +84,7 @@ def test_a_headache_gets_the_fixed_template_and_a_family_note(core_http, uid):
     eng = _engine(core_http)
     res = eng.handle(uid, EVIDENCE_4)
     assert res.intent == "SYMPTOM" and res.mode == "companion" and not res.awaiting_confirmation
-    assert res.reply == "घरच्यांना कळवलं आहे. आता कसं वाटतंय?"  # ends with a "how are you now" question, no yes/no
+    assert res.reply == "घरच्यांना कळवलं आहे."  # no "how are you now?" follow-up, no yes/no
     for advice in ("आराम", "पाणी", "गोळी", "औषध", "झोपा", "पडून"):
         assert advice not in res.reply
     assert "health_complaint" in _kinds(core_http, uid)
