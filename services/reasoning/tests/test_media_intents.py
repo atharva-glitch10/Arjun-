@@ -46,7 +46,7 @@ def test_news_on_screen_is_an_open_media_command_and_never_reaches_the_llm(core_
 def test_youtube_link_is_an_open_media_command_and_never_reaches_the_llm(core_http, uid):
     res = engine(core_http, NoLlm()).handle(uid, "नाही मला तू यूट्यूब व्हिडिओची लिंक दे")
     assert res.intent == "OPEN_MEDIA"
-    assert res.reply == "काय लावू? गाणं, भजन की बातम्या?" and res.action["type"] == "none"
+    assert res.reply == "काय बघायचं आहे — बातम्या, गाणी की रेसिपी?" and res.action["type"] == "none"
     cmd = parse_app_command("नाही मला तू यूट्यूब व्हिडिओची लिंक दे")
     assert cmd.topic == "youtube" and cmd.query == ""  # a pointer is not a search
 
