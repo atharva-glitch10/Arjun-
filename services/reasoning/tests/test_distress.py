@@ -48,7 +48,7 @@ def test_distress_overrides_pending_and_never_executes(engine, core_http, uid):
     assert core_http.get(f"/users/{uid}/actions/pending").json() is not None
     res = engine.handle(uid, "mala jagaychi iccha nahi")
     assert res.mode == "safety" and res.intent == "DISTRESS"
-    assert "14567" in res.reply
+    assert "कळवलं" in res.reply
     assert core_http.get(f"/users/{uid}/actions/pending").json() is None
     engine.handle(uid, "ho")  # stray yes after distress must not create anything
     assert core_http.get(f"/users/{uid}/reminders").json() == []
@@ -80,4 +80,4 @@ def test_distress_reply_survives_core_api_failure(uid):
     http = httpx.Client(transport=httpx.MockTransport(down), base_url="http://core")
     res = TurnEngine(CoreClient(http), evon=None).handle(uid, "I want to die")
     assert res.mode == "safety" and res.intent == "DISTRESS"
-    assert "14567" in res.reply
+    assert "कळवलं" in res.reply

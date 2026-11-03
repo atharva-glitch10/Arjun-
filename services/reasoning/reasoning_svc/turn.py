@@ -28,6 +28,7 @@ from .appcmd import (
     NEWS_READ,
     OPEN_LINK,
     OPEN_WHATSAPP,
+    clean_query,
     covers,
     name_matches,
 )
@@ -68,12 +69,21 @@ _LLM_INTENTS = frozenset(
 )
 _YT_MUSIC = ("youtube_playlist", "youtube_video", "youtube_query")  # what a song request may open (family favourites)
 _YT_ALL = _YT_MUSIC + ("youtube_channel_live",)
+_NEWS_SEARCH = "मराठी बातम्या live"  # core-api adds eventType=live for kind=news_video
+_MEDIA_ASK_WINDOW_S = 120.0  # how long "काय लावू?" waits for her answer
+_MEDIA_TITLE_WORDS = 6  # the spoken title after "लावतो:"
 
 
 def _sentence(title: str) -> str:
     """A headline as one spoken sentence: unchanged words, and a full stop only when it has no ending of its own."""
     t = title.strip()
     return t if t.endswith((".", "!", "?", "।", "…")) else t + "."
+
+
+def _short_title(title: str, max_words: int = _MEDIA_TITLE_WORDS) -> str:
+    """At most six words of a YouTube title for the spoken line, without stray punctuation."""
+    text = " ".join(title.split()[:max_words]).strip(" .,;:!?…-–—&|")
+    return text or title.strip()[:60]
 
 
 NO_ACTION: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": ""}
@@ -142,6 +152,7 @@ class TurnEngine:
         self._llm_deadline = 0.0
         self._last_safety: dict[int, float] = {}  # user -> monotonic time of the last safety reply (T8)
         self._drafts: dict[int, Draft] = {}  # in-memory slot-filling state (single instance)
+        self._media_ask: dict[int, float] = {}  # user -> mono time of "काय लावू?" waiting for the answer
         self._chat_counter: dict[int, int] = {}
         self._convo_at: dict[int, float] = {}  # user -> monotonic time of the last companion turn
         # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
@@ -160,7 +171,7 @@ class TurnEngine:
         # 0/1. emergency, then distress: both override everything and must not depend on
         # core-api being reachable. The replies are fixed templates, so a failed lookup only
         # costs the language default.
-        if is_emergency(text) or is_distress(text):
+        if is_emergency(text) or is_distress(text) or "त्रास" in text and ("होतोय" in text or "होते" in text or "होता" in text):
             try:
                 default_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
@@ -211,6 +222,10 @@ class TurnEngine:
         parsed, source = self._intent(
             text, profile, now, lang, answerable is not None, draft, answerable, conversing=conversing
         )
+        if pending is None and draft is None:
+            parsed = self._use_media_answer(user_id, text, parsed)
+        else:
+            self._media_ask.pop(user_id, None)
         if pending is None and draft is None:
             parsed = self._reshape(user_id, text, parsed, conversing)
             parsed = self._unmatched_link_is_chat(user_id, text, parsed)
@@ -281,6 +296,25 @@ class TurnEngine:
         return p
 
     # ------------------------------------------------------------------ apps by voice
+    def _use_media_answer(self, uid: int, text: str, p: Parsed) -> Parsed:
+        """After "काय लावू? गाणं, भजन की बातम्या?" the next short answer is the query: "भजन" / "लता मंगेशकर"."""
+        asked = self._media_ask.get(uid)
+        if asked is None:
+            return p
+        if self._mono() - asked > _MEDIA_ASK_WINDOW_S:
+            self._media_ask.pop(uid, None)
+            return p
+        if p.intent not in ("CHAT", "UNKNOWN", "NEWS_READ"):
+            self._media_ask.pop(uid, None)  # a real command wins; the question is abandoned
+            return p
+        self._media_ask.pop(uid, None)
+        if p.intent == "NEWS_READ":  # "बातम्या" answers "गाणं, भजन की बातम्या?" with the news on screen
+            return Parsed("OPEN_MEDIA", 0.85, p.language, topic="news_video")
+        query = clean_query(text)
+        if not query:
+            return p
+        return Parsed("OPEN_MEDIA", 0.85, p.language, topic="youtube", query=query)
+
     def _unmatched_link_is_chat(self, uid: int, text: str, p: Parsed) -> Parsed:
         """A generic "... दाखव" that names nothing the family added is just talk, not "I could not find that"."""
         if p.intent != OPEN_LINK:
@@ -335,7 +369,10 @@ class TurnEngine:
                 found = self._named_links(links, text, p.query, kinds=("link",) + _YT_ALL)
                 if not found:
                     return res(a["link_none"])
-                return res(a["link_open"].format(label=found[0]["label"]), self._open_link(found[0]))
+                return res(
+                    a["link_open"].format(label=found[0]["label"]),
+                    {**self._open_link(found[0]), "label": found[0]["label"]},
+                )
             return self._open_media(uid, text, p, links, a, res)
         except (CoreError, httpx.HTTPError) as exc:
             log.warning("app command failed: %s", exc)
@@ -382,20 +419,26 @@ class TurnEngine:
             digits = "91" + digits  # an Indian mobile number without the country code
         return res(
             a["whatsapp_open"].format(name=link["label"]),
-            {"type": "open", "kind": "whatsapp", "value": f"https://wa.me/{digits}", "title": link["label"]},
+            {"type": "open", "kind": "whatsapp", "value": f"https://wa.me/{digits}", "title": link["label"],
+             "contact_id": str(contact["id"])},
         )
+
+    @staticmethod
+    def _media_action(action: dict[str, str], query: str) -> dict[str, str]:
+        """An open action carries the words she asked for too (a title for the screen, never a URL)."""
+        return {**action, "query": query}
 
     def _open_media(
         self, uid: int, text: str, p: Parsed, links: list[dict[str, Any]], a: dict[str, str],
         res: Callable[..., TurnResult],
     ) -> TurnResult:
-        if p.topic == "news_live":
+        if p.topic == "news_video":
             lives = [x for x in links if x["kind"] == "youtube_channel_live"]
             named_live = self._named_links(links, text, "", ("youtube_channel_live",))
             pick = named_live[0] if named_live else (lives[0] if lives else None)
-            if pick is None:
-                return res(a["news_live_none"])
-            return res(a["news_live"], self._open_link(pick))
+            if pick is None:  # no family channel: search live Marathi news on YouTube
+                return self._search_and_open(uid, text, "", a, res, kind="news_video")
+            return res(a["news_live"], self._media_action(self._open_link(pick), ""))
         query = p.query.strip()
         named = self._named_links(links, text, "", _YT_MUSIC)
         # A name she said picks that favourite only when it covers everything she asked for: "भजन" is the family's
@@ -405,35 +448,39 @@ class TurnEngine:
         if pick is None and not query:  # "गाणी लावा" / "यूट्यूब": the family's first favourite
             pick = next((x for x in sorted(links, key=lambda x: (x["sort"], x["id"])) if x["kind"] in _YT_MUSIC), None)
         if pick is not None and pick["kind"] != "youtube_query":
-            return res(a["youtube_open"] if p.topic == "youtube" else a["play"], self._open_link(pick))
+            return res(
+                a["youtube_open"] if p.topic == "youtube" else a["play"],
+                self._media_action(self._open_link(pick), query),
+            )
         if pick is not None:
             query = pick["value"]  # a saved search ("जुनी मराठी भजनं")
-        if not query:  # "यूट्यूब" with no favourite saved: open YouTube itself
-            home = {"type": "open", "kind": "link", "value": "https://www.youtube.com/", "title": "YouTube"}
-            return res(a["youtube_open"], home)
+        if not query:  # "यूट्यूब उघड" with no favourite saved: never open YouTube's home page
+            self._media_ask[uid] = self._mono()
+            return res(a["ask_query"])
         return self._search_and_open(uid, text, query, a, res)
 
     def _search_and_open(
-        self, uid: int, text: str, query: str, a: dict[str, str], res: Callable[..., TurnResult]
+        self, uid: int, text: str, query: str, a: dict[str, str], res: Callable[..., TurnResult],
+        *, kind: str | None = None,
     ) -> TurnResult:
-        norm = normalize(text)
-        if "भजन" in norm or "bhajan" in norm:
-            line = a["play_bhajan"]
-        elif any(t.startswith(("गाण", "song")) for t in tokens(norm)):
-            line = a["play_song"]
-        else:
-            line = a["play"]
         try:
-            found = self.core.youtube_search(uid, query)
+            found = self.core.youtube_search(uid, query, kind=kind)
         except CoreError as exc:
-            if exc.status in (503, 429):  # no API key / today's quota used: the YouTube results page does the search
-                url = "https://www.youtube.com/results?search_query=" + quote(query)
-                return res(a["play_results"], {"type": "open", "kind": "link", "value": url, "title": query})
+            if exc.status in (429, 502, 503):  # no key / Google down / today's quota: the results page does the search
+                fallback = query or _NEWS_SEARCH
+                url = "https://www.youtube.com/results?search_query=" + quote(fallback)
+                return res(
+                    a["play_results"],
+                    {"type": "open", "kind": "url", "value": url, "title": fallback},
+                )
             raise
         if not found:
             return res(a["play_none"])
         top = found[0]
-        return res(line, {"type": "open", "kind": "youtube_video", "value": top["video_id"], "title": top["title"]})
+        return res(
+            a["play_found"].format(title=_short_title(top["title"])),
+            {"type": "open", "kind": "youtube_video", "video_id": top["video_id"], "title": top["title"]},
+        )
 
     def _open_reminders(self, uid: int) -> list[dict[str, Any]]:
         try:
@@ -786,7 +833,10 @@ class TurnEngine:
         if intent in APP_INTENTS:  # only a spoken name or a control word; the link itself comes from the family's rows
             topic = data.get("media_control") if intent == MEDIA_CONTROL else rules.topic
             query = (data.get("link_label") or data.get("media_query") or "") if intent != MEDIA_CONTROL else ""
-            return Parsed(intent, float(data["confidence"]), lang, rules.draft, topic=topic, query=str(query)[:100]), "llm"
+            query = str(query)
+            if "http" in query.lower():  # the model may never turn her words into a URL
+                query = ""
+            return Parsed(intent, float(data["confidence"]), lang, rules.draft, topic=topic, query=query[:100]), "llm"
         return (
             Parsed(intent, float(data["confidence"]), lang, rules.draft, rules.contact_hint, rules.topic),
             "llm",
@@ -1321,9 +1371,34 @@ class TurnEngine:
             self.core.distress(uid, kind)
         except (CoreError, httpx.HTTPError) as exc:
             log.error("%s: could not record event / alert caregiver: %s", kind, exc)
-        r = rp.R[rp.lang_or_default(lang)]
+        # Build family_obj from contacts (son name) with fallback.
+        family_obj = "तुमच्या घरच्यांना"
+        try:
+            contacts = self.core.contacts(uid)
+            chosen = None
+            for c in contacts or []:
+                rel = str(c.get("relation", "")).lower()
+                if "son" in rel or "मुलगा" in str(c.get("relation", "")):
+                    chosen = c
+                    break
+            if chosen is None:
+                for c in contacts or []:
+                    rel = str(c.get("relation", "")).lower()
+                    if rel and "doctor" not in rel:
+                        chosen = c
+                        break
+            if chosen is None and contacts:
+                chosen = contacts[0]
+            if chosen is not None:
+                family_obj = f"{chosen.get('name')}ला"
+        except Exception:
+            pass
+        if kind == "emergency":
+            reply = f"मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा."
+        else:
+            reply = f"कुठे त्रास होतोय, सांगा. मी {family_obj} कळवलं आहे."
         intent = "EMERGENCY" if kind == "emergency" else "DISTRESS"
-        return TurnResult(r[kind], intent, "safety", lang, trace=self._t(trace, t0), screen="safety")
+        return TurnResult(reply, intent, "safety", lang, trace=self._t(trace, t0), screen="safety")
 
     @staticmethod
     def _t(trace: dict[str, Any], t0: float) -> dict[str, Any]:

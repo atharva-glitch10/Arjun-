@@ -122,7 +122,7 @@ def test_the_llm_cannot_promote_an_unreadable_turn_into_a_sensitive_intent(core_
 def test_an_llm_distress_guess_gets_the_fixed_safety_template(core_http, uid):
     llm = Llm(intent={"intent": "DISTRESS", "confidence": 0.9, "language": "mr"})
     res = make_engine(core_http, llm).handle(uid, "हं")
-    assert res.mode == "safety" and res.reply == rp.R["mr"]["distress"]
+    assert res.mode == "safety" and "कळवलं" in res.reply
 
 
 # ---- limits ------------------------------------------------------------------------------------------

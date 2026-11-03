@@ -57,7 +57,9 @@ class Google:
 
     def __call__(self, url, params=None, timeout=5.0):
         self.calls.append(params)
-        items = [{"id": {"videoId": v}, "snippet": {"title": f"शीर्षक {v}", "channelTitle": "Ch"}} for v in self.ids]
+        q = (params or {}).get("q", "")
+        # Titles contain the query words: core-api drops a result whose title matches none of them.
+        items = [{"id": {"videoId": v}, "snippet": {"title": f"{q} {v}", "channelTitle": "Ch"}} for v in self.ids]
         return httpx.Response(200, json={"items": items})
 
 
@@ -110,6 +112,20 @@ def test_user_stories_are_recognised(text, intent):
 
 
 @pytest.mark.parametrize(
+    "text, query",
+    [
+        ("भीमसेन जोशींचं भजन लावा", "भीमसेन जोशी भजन"),
+        ("लता मंगेशकरचं गाणं लाव", "लता मंगेशकर गाणं"),
+        ("मला विठ्ठलाची आरती लावा", "विठ्ठल आरती"),
+        ("यूट्यूबवर पु ल देशपांडे दाखव", "पु ल देशपांडे"),
+    ],
+)
+def test_query_extraction_keeps_subject_words_and_strips_possessives(text, query):
+    cmd = parse_app_command(text)
+    assert cmd is not None and cmd.query == query, text
+
+
+@pytest.mark.parametrize(
     "text, control",
     [("अर्जुन, थांबव", "stop"), ("बंद कर", "stop"), ("बंद करा", "stop"), ("आवाज कमी कर", "volume_down"),
      ("आवाज वाढव", "volume_up"), ("पुढचं गाणं", "next"), ("next", "next"), ("pause", "pause"),
@@ -149,22 +165,56 @@ def test_a_reminder_about_the_news_is_still_a_reminder(core_http, uid, household
 def test_youtube_opens_the_family_favourite(core_http, uid, household):
     res = engine(core_http).handle(uid, "मला यूट्यूब बघायचं आहे")
     assert res.intent == "OPEN_MEDIA" and res.reply == "यूट्यूब उघडलं."
-    assert res.action == {"type": "open", "kind": "youtube_playlist", "value": PLAYLIST, "title": "भक्तिगीते"}
+    assert res.action == {"type": "open", "kind": "youtube_playlist", "value": PLAYLIST, "title": "भक्तिगीते",
+                          "query": ""}
+
+
+def test_empty_query_asks_and_the_next_answer_becomes_the_query(core_http, uid, monkeypatch):
+    eng = engine(core_http)  # no app_links for this user: nothing to open and no search words
+    asked = eng.handle(uid, "यूट्यूब उघड")
+    assert asked.intent == "OPEN_MEDIA" and asked.action["type"] == "none"
+    assert asked.reply == "काय लावू? गाणं, भजन की बातम्या?"
+
+    g = with_google(monkeypatch)
+    res = eng.handle(uid, "भजन")
+    assert res.intent == "OPEN_MEDIA" and res.action["kind"] == "youtube_video"
+    assert g.calls[0]["q"] == "भजन"
+
+    media.reset_quota_for_tests()
+    eng2 = engine(core_http)
+    assert eng2.handle(uid, "व्हिडिओ लाव").reply == "काय लावू? गाणं, भजन की बातम्या?"
+    res = eng2.handle(uid, "लता मंगेशकर")
+    assert g.calls[-1]["q"] == "लता मंगेशकर" and res.action["kind"] == "youtube_video"
+
+
+def test_core_client_can_ask_core_api_for_the_same_match(core_http, uid, household):
+    core = CoreClient(core_http)
+    assert core.app_match(uid, "आज भजन लाव")["label"] == "भक्तिगीते"
+    assert core.app_match(uid, "काहीच नाही") is None
+
+
+def test_a_named_favourite_opens_before_any_search(core_http, uid, household, monkeypatch):
+    g = with_google(monkeypatch)
+    res = engine(core_http).handle(uid, "देवाची गाणी लाव")
+    assert res.action["type"] == "open" and res.action["kind"] == "youtube_playlist"
+    assert res.action["value"] == PLAYLIST and res.action["title"] == "भक्तिगीते"
+    assert g.calls == []  # the family's favourite, no quota spent
 
 
 def test_a_named_singer_is_searched_and_the_first_video_opens(core_http, uid, household, monkeypatch):
     g = with_google(monkeypatch, Google(("BBBBBBBBBBB", "CCCCCCCCCCC")))
     res = engine(core_http).handle(uid, "भीमसेन जोशींचं भजन लावा")
-    assert res.intent == "OPEN_MEDIA" and res.reply == "भजन लावतो."
-    assert res.action["type"] == "open" and res.action["kind"] == "youtube_video" and res.action["value"] == "BBBBBBBBBBB"
-    assert g.calls[0]["q"] == "भीमसेन जोशींचं भजन" and g.calls[0]["safeSearch"] == "strict"
+    assert res.intent == "OPEN_MEDIA" and res.reply == "लावतो: भीमसेन जोशी भजन BBBBBBBBBBB."
+    assert res.action == {"type": "open", "kind": "youtube_video", "video_id": "BBBBBBBBBBB",
+                          "title": "भीमसेन जोशी भजन BBBBBBBBBBB"}
+    assert g.calls[0]["q"] == "भीमसेन जोशी भजन" and g.calls[0]["safeSearch"] == "strict"
 
 
 def test_songs_by_a_singer_are_searched_too(core_http, uid, household, monkeypatch):
     g = with_google(monkeypatch)
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")
-    assert res.reply == "गाणं लावतो." and res.action["kind"] == "youtube_video"
-    assert g.calls[0]["q"] == "लता मंगेशकरची गाणी"
+    assert res.reply == "लावतो: लता मंगेशकर गाणी AAAAAAAAAAA." and res.action["kind"] == "youtube_video"
+    assert g.calls[0]["q"] == "लता मंगेशकर गाणी"
 
 
 def test_a_bare_bhajan_request_uses_the_family_playlist_without_a_search(core_http, uid, household, monkeypatch):
@@ -177,23 +227,24 @@ def test_a_bare_bhajan_request_uses_the_family_playlist_without_a_search(core_ht
 
 def test_without_a_key_the_youtube_results_page_opens_and_is_not_hidden(core_http, uid, household):
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")  # YOUTUBE_API_KEY is unset
-    assert res.action["kind"] == "link"
+    assert res.action["kind"] == "url"
     assert res.action["value"].startswith("https://www.youtube.com/results?search_query=")
-    assert "यूट्यूब उघडलं" in res.reply
+    assert res.reply == "यूट्यूबवर शोधलं आहे, हवं ते गाणं दाबा."
 
 
 def test_a_quota_error_also_falls_back_to_the_results_page(core_http, uid, household, monkeypatch):
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
     monkeypatch.setattr(media, "http_get", lambda *a, **k: httpx.Response(403, text="quotaExceeded"))
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")
-    assert res.action["value"].startswith("https://www.youtube.com/results")
+    assert res.action["kind"] == "url" and res.action["value"].startswith("https://www.youtube.com/results")
+    assert res.reply == "यूट्यूबवर शोधलं आहे, हवं ते गाणं दाबा."
 
 
 def test_nothing_found_and_google_down_are_fixed_lines(core_http, uid, household, monkeypatch):
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
     monkeypatch.setattr(media, "http_get", lambda *a, **k: httpx.Response(200, json={"items": []}))
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")
-    assert res.reply == "हे यूट्यूबवर सापडलं नाही." and res.action["type"] == "none"
+    assert res.reply == "हे मला सापडलं नाही. परत नाव सांगाल?" and res.action["type"] == "none"
 
     def down(*a, **k):
         raise httpx.ConnectError("down")
@@ -201,18 +252,21 @@ def test_nothing_found_and_google_down_are_fixed_lines(core_http, uid, household
     media.reset_quota_for_tests()
     monkeypatch.setattr(media, "http_get", down)
     res = engine(core_http).handle(uid, "आशा भोसलेची गाणी लाव")
-    assert res.action["type"] == "none" and "आत्ता" in res.reply
+    assert res.action["kind"] == "url" and res.reply == "यूट्यूबवर शोधलं आहे, हवं ते गाणं दाबा."
 
 
 def test_news_on_screen_plays_the_family_channel(core_http, uid, household):
     res = engine(core_http).handle(uid, "बातम्या बघायच्या आहेत")
     assert res.reply == "बातम्या लावतो."
-    assert res.action == {"type": "open", "kind": "youtube_channel_live", "value": CHANNEL, "title": "मराठी बातम्या"}
+    assert res.action == {"type": "open", "kind": "youtube_channel_live", "value": CHANNEL, "title": "मराठी बातम्या",
+                          "query": ""}
 
 
-def test_news_on_screen_without_a_channel_says_so(core_http, uid):
+def test_news_on_screen_without_a_family_channel_searches_live_marathi_news(core_http, uid, monkeypatch):
+    g = with_google(monkeypatch)
     res = engine(core_http).handle(uid, "बातम्या बघायच्या आहेत")
-    assert "अजून जोडलेलं नाही" in res.reply and res.action["type"] == "none"
+    assert g.calls[0]["eventType"] == "live" and g.calls[0]["q"] == "मराठी बातम्या live"
+    assert res.action["kind"] == "youtube_video" and res.reply.startswith("लावतो:")
 
 
 # ---- news aloud ---------------------------------------------------------------------------------------------------
@@ -252,8 +306,10 @@ def test_headlines_never_reach_an_llm(core_http, uid, household, monkeypatch):
 def test_whatsapp_opens_her_chat_with_that_contact_and_says_to_tap(core_http, uid, household):
     res = engine(core_http).handle(uid, "चंद्रकांतला व्हॉट्सॲप कर")
     assert res.intent == "OPEN_WHATSAPP"
-    assert res.reply == "चंद्रकांतचं व्हॉट्सॲप उघडलं आहे, हिरव्या बटणावर दाबा."
-    assert res.action == {"type": "open", "kind": "whatsapp", "value": "https://wa.me/919000000001", "title": "चंद्रकांत"}
+    assert res.reply == "चंद्रकांतचं व्हॉट्सॲप उघडलं आहे. हिरव्या बटणावर दाबा."
+    contact_id = core_http.get(f"/users/{uid}/contacts").json()[0]["id"]
+    assert res.action == {"type": "open", "kind": "whatsapp", "value": "https://wa.me/919000000001", "title": "चंद्रकांत",
+                          "contact_id": str(contact_id)}
 
 
 def test_whatsapp_call_without_a_name_uses_the_only_entry(core_http, uid, household):
@@ -283,7 +339,7 @@ def test_a_family_link_opens_by_its_label(core_http, uid, household):
     res = engine(core_http).handle(uid, "नातवाचे फोटो दाखव")
     assert res.intent == "OPEN_LINK" and res.reply == "नातवाचे फोटो उघडतो."
     assert res.action == {"type": "open", "kind": "link", "value": "https://photos.google.com/share/abc",
-                          "title": "नातवाचे फोटो"}
+                          "title": "नातवाचे फोटो", "label": "नातवाचे फोटो"}
 
 
 def test_something_she_shows_or_says_that_names_no_link_is_just_talk(core_http, uid, household):

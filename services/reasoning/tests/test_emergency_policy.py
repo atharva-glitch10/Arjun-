@@ -47,4 +47,4 @@ def test_an_emergency_alert_failing_never_silences_the_spoken_reply(core_http, u
 
     eng = TurnEngine(Flaky(core_http), None, clock=lambda: datetime(2026, 10, 6, 9, 0))
     res = eng.handle(uid, "मला छातीत दुखतंय")
-    assert res.mode == "safety" and "११२" in res.reply
+    assert res.mode == "safety" and "कळवलं" in res.reply

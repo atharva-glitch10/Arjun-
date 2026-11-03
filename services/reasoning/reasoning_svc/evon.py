@@ -72,6 +72,22 @@ _VIOLATIONS: dict[str, re.Pattern[str]] = {
 }
 _MAX_REPLY_CHARS = 160
 
+# A refusal followed by a topic change ("... बघता येत नाही, पण तुमची सकाळ कशी गेली?"): the real transcripts from the
+# elder screen showed Arjun saying he cannot do something and then asking an unrelated question. Never spoken: the
+# companion admits the limit in one fixed line and does not change the subject.
+_REFUSAL = re.compile(
+    r"येत\s+नाही\S*\s*[,;]?\s*पण\b"
+    r"|देता\s+येत\s+नाही"
+    r"|बघता\s+येत\s+नाही"
+    r"|\bcan(?:'|’)?t\b|\bcannot\b",
+    re.IGNORECASE,
+)
+_REFUSAL_LINE = {
+    "mr": "हे अजून मला जमत नाही, घरच्यांना सांगते.",
+    "hi": "यह अभी मला जमत नाही, घरवालों को बताती हूँ।",
+    "en": "I can't do that yet. I'll tell your family.",
+}
+
 
 def companion_violations(text: str, language: str) -> list[str]:
     """Names of the boundaries a companion reply breaks (empty = fine). Heuristic, not a proof."""
@@ -115,6 +131,8 @@ def sanitize_companion(text: str | None, language: str) -> tuple[str | None, lis
         return None, ["empty"]
     sentences = re.split(r"(?<=[.?!।])\s+", text.strip())
     cut = " ".join(sentences[:2]).strip()
+    if _REFUSAL.search(cut):  # "I cannot ... but tell me about your garden" is never spoken
+        return _REFUSAL_LINE.get(language, _REFUSAL_LINE["mr"]), []
     reasons = companion_violations(cut, language)
     return (None, reasons) if reasons else (cut, [])
 
@@ -398,6 +416,8 @@ class EvonClient:
             f"friends. "
             f"8. Ask about what she just said; never change the topic. Do not repeat a question you already "
             f"asked; never refer to anything from another day. "
+            f"9. If she asks you to DO something (open, play, show, call, send), never say you cannot and never "
+            f"change the subject; reply only: \"हे अजून मला जमत नाही, घरच्यांना सांगते.\" "
             f"GOOD replies: \"चिकन छान झालं! कोणी बनवलं?\" / \"गाणं कोणतं शिकलात आज?\" / "
             f"\"घरच्यांना कळवलं आहे. आता कसं वाटतंय?\" "
             f"BAD replies (never): \"मला समजलं, तो आवाज संदीपसारखाच वाटतोय. तुम्ही अविनाशला याआधी कधी भेटला आहात का?\" "

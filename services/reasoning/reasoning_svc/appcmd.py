@@ -22,20 +22,41 @@ CONTROLS = ("stop", "pause", "resume", "next", "volume_up", "volume_down")
 _YOUTUBE = re.compile(r"(?:यू|यु)\s?ट्य[ूु]ब|you\s?tube")
 _WHATSAPP = re.compile(r"व्?ह?[ाॉॅ]ट्?स\s?[अआएऐॲऍ][ॅ्]?[ं]?\s?[पप]|वाट्सऐप|whats\s?app|watsapp")
 
+# UNVERIFIED lexicon (no native-speaker review): these word lists were written from the user stories and need a
+# native speaker / real speech before a public demo.
 # words that are never part of a song / singer / name
 _FILLER = frozenset(
-    "मला मी आहे आहेत आहेस ना जरा आता तू तुम्ही अर्जुन arjun please वर ते ती एक एखादं एखादे काहीतरी काही "
-    "की आणि पण mujhe मुझे ek एक zara जरा abhi अभी kar कर kara करा karo करो de दे dya द्या".split()
+    "मला मी आहे आहेत आहेस ना जरा आता तू तुम्ही अर्जुन arjun please वर मध्ये ते ती एक एखादं एखादे काहीतरी काही "
+    "की आणि पण mujhe मुझे ek एक zara जरा abhi अभी kar कर kara करा karo करो de दे dya द्या "
+    "नाही नहीं nahi nahin नको nako".split()
+)
+# The request itself is never part of the search: "बघायचं" / "उघड" / "व्हिडिओ" are how she asks, not what she wants.
+_QUERY_DROP = _FILLER | frozenset(
+    "बघायचं बघायचा बघायची बघायचे ऐकायचं ऐकायचा ऐकायची ऐकायचे उघड उघडा open show please "
+    "व्हिडिओ व्हिडीओ व्हिडीयो video vidio लिंक link".split()
+)
+# Marathi possessives: "जोशींचं" -> "जोशी", "मंगेशकरचं/ची/चां" -> "मंगेशकर", "विठ्ठलाची" -> "विठ्ठल".
+# Longest first so "मंगेशकरांनी" never loses only the last two letters.
+_POSSESSIVE = (
+    "ांचं", "ांची", "ांचा", "ांचे",
+    "ाचं", "ाची", "ाचा", "ाचे",
+    "ंचं", "ंची", "ंचा", "ंचे",
+    "चं", "ची", "चा", "चे",
+    "ला", "ने",
 )
 _PLAY_EXACT = frozenset(
     "लाव लावा लावू लावतोस लावशील लावाल लावून लगा लगाओ लगाइए लगाना चलाओ चला चलाइए चलाना play chalao laga lagao lav lava "
-    "सुरू सुरु चालू सुनाओ सुनाइए सुनना देखना दिखाओ listen watch दाखव दाखवा".split()
+    "सुरू सुरु चालू सुनाओ सुनाइए सुनना देखना दिखाओ listen watch दाखव दाखवा उघड उघडा open show दे द्या देना sunao dikhao"
+    .split()
 )
 _PLAY_STEMS = ("ऐकव", "ऐकाय", "ऐकूया", "बघाय", "पाहाय", "पहाय", "पाहूया", "बघूया", "सुनाय", "देखन", "सुनन")
 _MEDIA_NOUN_STEMS = (
     "गाण", "भजन", "अभंग", "कीर्तन", "गीत", "संगीत", "लावणी", "पोवाड", "आरती", "गझल", "ग़ज़ल", "भक्तिगीत", "स्तोत्र",
     "song", "music", "bhajan", "gaan", "gana", "geet", "ghazal", "aarti", "gaane", "kirtan",
+    # a video / a video link is a media pointer, never part of a search query
+    "व्हिडिओ", "व्हिडीओ", "व्हिडीयो", "video", "vidio",
 )
+# "यूट्यूबची लिंक दे" / "video link": a pointer, not a song name (clean_query drops these too)
 _NEWS_NOUNS = ("बातम्या", "बातमी", "बातम्यां", "न्यूज", "न्यूझ", "न्यूज़", "समाचार", "खबर", "खबरें", "खबरे", "ख़बर", "ख़बरें",
                "news", "headlines", "headline", "ताज्या")
 _NEWS_WATCH_STEMS = ("बघ", "पाह", "पहा", "पहाय", "लाव", "दाखव", "देखन", "देखो", "दिखा", "चॅनल", "चैनल", "लाईव्ह", "लाइव", "टीव्ही", "टीवी")
@@ -52,14 +73,16 @@ _UP = frozenset("वाढव वाढवा जास्त मोठा म�
 _NEXT = frozenset("पुढचं पुढचे पुढचा पुढची पुढचंच अगला अगली अगले next agla skip".split())
 _PAUSE = frozenset("pause पॉज पॉझ".split())
 _RESUME = frozenset("सुरू सुरु चालू resume continue".split())
-_MAX_CONTROL_WORDS = 6
+# A control is only a control in a short phrase, or when it is addressed to Arjun ("अर्जुन, ...").
+_MAX_CONTROL_WORDS = 4
+_WAKE_NAMES = ("अर्जुन", "arjun")
 
 
 @dataclass
 class AppCmd:
     intent: str
     control: str | None = None  # MEDIA_CONTROL: stop | pause | resume | next | volume_up | volume_down
-    topic: str | None = None  # OPEN_MEDIA: "news_live" | "play" | "youtube"
+    topic: str | None = None  # OPEN_MEDIA: "news_video" | "youtube" | "play"
     query: str = ""  # the words left after the command words: a song / singer / name / link label
 
 
@@ -75,10 +98,35 @@ def media_noun(tok: str) -> bool:
     return any(tok.startswith(s) for s in _MEDIA_NOUN_STEMS)
 
 
+def _strip_possessive(tok: str) -> str:
+    """A name without its Marathi possessive ending ("जोशींचं" -> "जोशी"). Content words are left alone:
+    "गाणं" / "आरती" / "भजन" do not end in one of these suffixes after a real stem."""
+    for suffix in _POSSESSIVE:
+        if tok.endswith(suffix) and len(tok) - len(suffix) >= 2:
+            return tok[: -len(suffix)]
+    return tok
+
+
+def clean_query(text: str) -> str:
+    """The words worth searching for: request/filler words and YouTube/play words removed, name possessives stripped.
+    "भीमसेन जोशींचं भजन लावा" -> "भीमसेन जोशी भजन"; "यूट्यूबवर पु ल देशपांडे दाखव" -> "पु ल देशपांडे"."""
+    out = []
+    for tok in tokens(normalize(text)):
+        if not tok or tok in _QUERY_DROP or _YOUTUBE.search(tok) or _is(tok, _PLAY_EXACT, _PLAY_STEMS):
+            continue
+        tok = _strip_possessive(tok)
+        if tok:
+            out.append(tok)
+    return " ".join(out)
+
+
 def _control(toks: list[str]) -> str | None:
     """stop / pause / resume / next / volume, said as a short phrase ("अर्जुन, थांबव", "आवाज कमी कर")."""
+    addressed = bool(toks) and toks[0] in _WAKE_NAMES
+    if len(toks) > _MAX_CONTROL_WORDS and not addressed:
+        return None
     words = [t for t in toks if t not in _CONTROL_NOISE]
-    if not words or len(words) > _MAX_CONTROL_WORDS:
+    if not words:
         return None
     volume = any(t.startswith("आवाज") or t in ("volume", "awaaz", "awaz") for t in words)
     if volume or any(t in ("louder", "volume") for t in words):
@@ -122,7 +170,7 @@ def parse_app_command(text: str, *, remind: bool = False, links: bool = False) -
         watch = _has(toks, _NEWS_WATCH_EXACT, _NEWS_WATCH_STEMS)
         read = _has(toks, _NEWS_READ_EXACT, _NEWS_READ_STEMS)
         if watch and not (read and _has(toks, frozenset(), ("ऐकव", "ऐकाय", "सांग", "वाच"))):
-            return AppCmd(OPEN_MEDIA, topic="news_live")
+            return AppCmd(OPEN_MEDIA, topic="news_video")
         if read or len(toks) <= 3:
             return AppCmd(NEWS_READ)
         return None  # "आज बातम्यांमध्ये काय आलं ते मला कळलं नाही": talk, not a command
@@ -130,11 +178,12 @@ def parse_app_command(text: str, *, remind: bool = False, links: bool = False) -
     youtube = bool(_YOUTUBE.search(norm))
     play = _has(toks, _PLAY_EXACT, _PLAY_STEMS)
     noun = any(media_noun(t) for t in toks)
-    if youtube or (play and noun):
-        words = [t for t in toks if not _YOUTUBE.search(t) and t not in _FILLER and not _is(t, _PLAY_EXACT, _PLAY_STEMS)
-                 and t not in {"बघायचं", "बघायचे", "बघायची", "उघड", "उघडा", "open"}]
-        generic = all(media_noun(t) for t in words)
-        return AppCmd(OPEN_MEDIA, topic="youtube" if youtube and not words else "play", query="" if generic else " ".join(words))
+    # A mention of YouTube is not a command on its own ("माझ्या नातवाने यूट्यूबवर काम केलं"): she must also ask
+    # to play / see / open something, or name a song. This is what keeps stories out of the app commands.
+    if (youtube and play) or (play and noun):
+        words = clean_query(" ".join(toks))
+        generic = not words or all(media_noun(t) for t in tokens(words))
+        return AppCmd(OPEN_MEDIA, topic="youtube" if youtube else "play", query="" if generic else words)
 
     link_verb = links and _has(toks, _LINK_VERB_EXACT, _LINK_VERB_STEMS)  # generic "show ...": only as the LAST rule
     if link_verb:

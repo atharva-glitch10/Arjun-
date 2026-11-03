@@ -129,9 +129,17 @@ class CoreClient:
         """The apps and links the family allowed (YouTube favourites, news feeds, WhatsApp, web links)."""
         return self._req("GET", f"/users/{uid}/app-links")  # type: ignore[no-any-return]
 
-    def youtube_search(self, uid: int, q: str) -> list[dict[str, str]]:
-        """[{video_id, title, channel}] from core-api (the YouTube key never leaves it). 503 = no key, 429 = quota."""
-        return self._req("GET", "/media/youtube/search", params={"q": q, "user_id": uid})  # type: ignore[no-any-return]
+    def app_match(self, uid: int, q: str) -> dict[str, Any] | None:
+        """The family's app whose label / spoken name appears whole in `q` (core-api's own match), or null."""
+        return self._req("GET", f"/users/{uid}/apps/match", params={"q": q})  # type: ignore[no-any-return]
+
+    def youtube_search(self, uid: int, q: str, kind: str | None = None) -> list[dict[str, str]]:
+        """[{video_id, title, channel}] from core-api (the YouTube key never leaves it). 503 = no key, 429 = quota.
+        kind="news_video" asks core-api for live Marathi news."""
+        params: dict[str, Any] = {"q": q, "user_id": uid}
+        if kind:
+            params["kind"] = kind
+        return self._req("GET", "/media/youtube/search", params=params)  # type: ignore[no-any-return]
 
     def news(self, uid: int) -> list[dict[str, str]]:
         """Top headlines [{source_label, title}] from the family's feeds, verbatim; [] when none could be read."""

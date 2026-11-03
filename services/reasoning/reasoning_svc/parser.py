@@ -447,7 +447,10 @@ def parse(
     app = parse_app_command(text, remind=has_any(norm, REMIND))
     if app is not None:
         p = done(app.intent, 0.85)
+        # topic = the kind to open ("youtube" | "news_video") or the control word; query / contact_hint = the words
+        # left after the command ("भीमसेन जोशींचं भजन", "चंद्रकांतला", a link label).
         p.topic, p.query = app.control or app.topic, app.query
+        p.contact_hint = app.query or None
         return p
 
     if not has_any(norm, REMIND):
