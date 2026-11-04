@@ -168,21 +168,20 @@ def test_youtube_opens_the_family_favourite(core_http, uid, household):
     assert res.action == {"type": "open", "kind": "youtube_playlist", "value": PLAYLIST, "title": "भक्तिगीते",
                           "query": ""}
 
-
 def test_empty_query_asks_and_the_next_answer_becomes_the_query(core_http, uid, monkeypatch):
     eng = engine(core_http)  # no app_links for this user: nothing to open and no search words
     asked = eng.handle(uid, "यूट्यूब उघड")
     assert asked.intent == "OPEN_MEDIA" and asked.action["type"] == "none"
-    assert asked.reply == "काय लावू? गाणं, भजन की बातम्या?"
+    assert asked.reply == "काय बघायचं आहे — बातम्या, गाणी की रेसिपी?"
 
     g = with_google(monkeypatch)
     res = eng.handle(uid, "भजन")
     assert res.intent == "OPEN_MEDIA" and res.action["kind"] == "youtube_video"
-    assert g.calls[0]["q"] == "भजन"
+    assert g.calls[0]["q"].startswith("भजन")
 
     media.reset_quota_for_tests()
     eng2 = engine(core_http)
-    assert eng2.handle(uid, "व्हिडिओ लाव").reply == "काय लावू? गाणं, भजन की बातम्या?"
+    assert eng2.handle(uid, "व्हिडिओ लाव").reply == "काय बघायचं आहे — बातम्या, गाणी की रेसिपी?"
     res = eng2.handle(uid, "लता मंगेशकर")
     assert g.calls[-1]["q"] == "लता मंगेशकर" and res.action["kind"] == "youtube_video"
 
@@ -229,7 +228,7 @@ def test_without_a_key_the_youtube_results_page_opens_and_is_not_hidden(core_htt
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")  # YOUTUBE_API_KEY is unset
     assert res.action["kind"] == "url"
     assert res.action["value"].startswith("https://www.youtube.com/results?search_query=")
-    assert res.reply == "यूट्यूबवर शोधलं आहे, हवा असलेला व्हिडिओ दाबा."
+    assert res.reply == "यूट्यूबवर शोधलं आहे. हवा असलेला व्हिडिओ दाबा."
 
 
 def test_a_quota_error_also_falls_back_to_the_results_page(core_http, uid, household, monkeypatch):
@@ -237,7 +236,7 @@ def test_a_quota_error_also_falls_back_to_the_results_page(core_http, uid, house
     monkeypatch.setattr(media, "http_get", lambda *a, **k: httpx.Response(403, text="quotaExceeded"))
     res = engine(core_http).handle(uid, "लता मंगेशकरची गाणी लाव")
     assert res.action["kind"] == "url" and res.action["value"].startswith("https://www.youtube.com/results")
-    assert res.reply == "यूट्यूबवर शोधलं आहे, हवा असलेला व्हिडिओ दाबा."
+    assert res.reply == "यूट्यूबवर शोधलं आहे. हवा असलेला व्हिडिओ दाबा."
 
 
 def test_nothing_found_and_google_down_are_fixed_lines(core_http, uid, household, monkeypatch):
@@ -252,7 +251,7 @@ def test_nothing_found_and_google_down_are_fixed_lines(core_http, uid, household
     media.reset_quota_for_tests()
     monkeypatch.setattr(media, "http_get", down)
     res = engine(core_http).handle(uid, "आशा भोसलेची गाणी लाव")
-    assert res.action["kind"] == "url" and res.reply == "यूट्यूबवर शोधलं आहे, हवा असलेला व्हिडिओ दाबा."
+    assert res.action["kind"] == "url" and res.reply == "यूट्यूबवर शोधलं आहे. हवा असलेला व्हिडिओ दाबा."
 
 
 def test_news_on_screen_plays_the_family_channel(core_http, uid, household):
@@ -293,13 +292,17 @@ def test_headlines_never_reach_an_llm(core_http, uid, household, monkeypatch):
     seen = []
 
     def handler(req):
-        seen.append(req)
+        seen.append(json.loads(req.content))
         return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
 
     llm = EvonClient("https://llm.test/v1", "m", http=httpx.Client(transport=httpx.MockTransport(handler)),
                      schema=load_intent_schema(), provider="TestAI")
     engine(core_http, llm).handle(uid, "बातम्या ऐकवा")
-    assert seen == []  # the rules read the command; the feed text is never sent to a model
+    # One understanding call for the command, but the feed text itself is never sent to a model.
+    assert len(seen) == 1
+    sent = json.dumps(seen, ensure_ascii=False)
+    assert "बातमी अ1" not in sent and "बातमी ब1" not in sent
+    assert "बातम्या ऐकवा" in sent
 
 
 # ---- WhatsApp -----------------------------------------------------------------------------------------------------
@@ -382,7 +385,8 @@ def test_a_pending_question_is_repeated_not_replaced_by_a_video(core_http, uid, 
 def _llm(answer):
     def handler(req):
         body = json.loads(req.content)
-        content = json.dumps(answer) if body["temperature"] == 0.0 else "छान!"
+        understand = "Return ONLY one JSON object" in body["messages"][0]["content"]
+        content = json.dumps(answer) if understand else "छान!"
         return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
     return EvonClient("https://llm.test/v1", "m", http=httpx.Client(transport=httpx.MockTransport(handler)),

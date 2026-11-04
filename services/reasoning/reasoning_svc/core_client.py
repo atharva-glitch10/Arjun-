@@ -74,6 +74,14 @@ class CoreClient:
         """The one meal prompt still waiting for an answer; `heard` says a session really spoke it."""
         return self._req("GET", f"/users/{uid}/checkins/open")  # type: ignore[no-any-return]
 
+    def checkin_card(self, uid: int) -> list[dict[str, Any]]:
+        """Today's check-in card items: [{kind, label, at, state}] (done / missed / pending)."""
+        return self._req("GET", f"/users/{uid}/checkins/card")  # type: ignore[no-any-return]
+
+    def wellbeing_today(self, uid: int) -> dict[str, Any]:
+        """The family dashboard's today view: severity, mood, conversations, last_summary, last_at."""
+        return self._req("GET", f"/users/{uid}/wellbeing/today")  # type: ignore[no-any-return]
+
     def answer_checkin(self, uid: int, checkin_id: int, answer: str, mood: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {"answer": answer}
         if mood:

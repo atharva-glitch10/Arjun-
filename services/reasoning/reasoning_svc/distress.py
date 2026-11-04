@@ -128,9 +128,162 @@ _EMERGENCY_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 _EMERGENCY_FOLDED = tuple(fold(p) for p in EMERGENCY_PHRASES)
 
 
-def is_emergency(text: str) -> bool:
+def _is_emergency_basic(text: str) -> bool:
     folded = fold(text)
     return has_any(folded, _EMERGENCY_FOLDED) or any(p.search(folded) for p in _EMERGENCY_PATTERNS)
+
+
+def is_emergency(text: str) -> bool:
+    """A physical emergency by RULES: the original lexicon plus the English loanwords and STT spellings."""
+    return _is_emergency_basic(text) or loanword_emergency(text)
+
+
+# ---- English loanwords and speech-to-text spellings (2026-11-03) ------------------------------------------------------
+# "मला हार्ट अटॅक येतोय" got a chatty LLM reply because only the Latin "heart attack" was in the lexicon, while a
+# Marathi recogniser writes loanwords in Devanagari, spaced or not, with अटॅक / अटैक / अटेक / अॅटॅक spellings.
+# Matching runs on efold(): fold() + chandra-e / e -> ai, no word-final halant. Every pattern below is written in
+# natural spelling and folded the same way (_epat), exactly like the symptom patterns. Two views of the text are
+# searched: the spaced words, and the same text with all spaces removed ("हार्टअटॅक", "heartattack").
+# UNVERIFIED lexicon (no native speaker, little real ASR output): recall-biased, to be reviewed before a public demo.
+_E_TR = str.maketrans({"ॅ": "ै", "े": "ै", "ॲ": "अ", "ऍ": "अ"})
+_TRAILING_HALANT = re.compile("्(?=\\s|$)")
+
+
+def efold(text: str) -> str:
+    return _TRAILING_HALANT.sub("", fold(text).translate(_E_TR).replace("-", " ").replace("_", " "))
+
+
+def _epat(p: str) -> re.Pattern[str]:
+    return re.compile(unicodedata.normalize("NFC", p).translate(_DROP).translate(_FOLD).translate(_E_TR))
+
+
+_NOT_NEGATED = r"(?!\s+(?:नाही|नको|नहीं|नही))"
+_VERB_ATTACK = r"(?:आला|आलाय|आली|आलं|आलंय|येतोय|येतो|येतेय|येते|येतंय|येत\s+आहे|आ\s+गया|आया|आ\s+रहा|aala|aalay|yetoy|yete)\S*"
+_SPACED = tuple(
+    _epat(p)
+    for p in (
+        # heart attack with the verb and without the word "heart": "attack आला", "अटॅक येतोय"
+        rf"(?<!\S)(?:attack|atack|atak|अटॅक|अॅटॅक|एटॅक)\s+{_VERB_ATTACK}",
+        # heart pain
+        rf"(?<!\S)(?:हृदय|हार्ट|heart)\S*\s+(?:\S+\s+)?(?:दुख|दुःख|कळ|pain|hurts?|aches?)\S*{_NOT_NEGATED}",
+        # chest
+        rf"(?<!\S)छाती\S*\s+(?:\S+\s+)?(?:दुख|दुःख|कळ|दाब|दडपण|जड|आवळ|त्रास|धडधड)\S*{_NOT_NEGATED}",
+        r"\bchest\s+(?:\w+\s+)?(?:pain|pains|hurts?|aches?|tight|heavy)\b",
+        r"\bpain\s+in\s+(?:my\s+|the\s+)?chest\b",
+        r"\bchest\s+(?:\S+\s+)?(?:दुख|दुःख|कळ|दाब|जड|त्रास)\S*",
+        # blood pressure high / sugar low (the family-set readings flow is separate and frozen)
+        r"(?<!\S)(?:bp|बीपी|बी\s+पी|ब्लड\s+प्रेशर|blood\s+pressure|रक्तदाब)\s+(?:\S+\s+){0,3}(?:high|हाय|वाढ\S*|जास्त|कमी|low|लो|खाली)(?!\S)(?!\s+(?:होत))",
+        r"(?<!\S)(?:sugar|शुगर)\s+(?:\S+\s+)?(?:low|लो|कमी|खाली|drop\S*|उतर\S*)(?!\S)",
+        r"(?<!\S)(?:low|लो)\s+(?:sugar|शुगर)(?!\S)",
+        # stroke
+        r"(?<!\S)(?:stroke|स्ट्रोक|लकवा|लकवे|पक्षाघात|पॅरालिसिस|पैरालिसिस|पैरालीसिस|paralysis|paralyzed|paralysed)(?!\S)",
+        r"(?<!\S)तोंड\s+वाकड\S*",
+        r"(?<!\S)(?:हात|पाय)\s+(?:लुळा|लुळे|उचलता\s+येत\s+नाही)\S*",
+        r"(?<!\S)बोलता\s+येत\s+नाही",
+        # fainting
+        r"(?<!\S)(?:faint(?:ed|ing)?|unconscious|blackout|black\s+out|passed\s+out|भोवळ\S*|बेशुद्ध\S*|बेहोश\S*)(?!\S)",
+        r"(?<!\S)चक्कर\s+(?:येऊन|आऊन|आकर)\s+(?:\S+\s+)?पडल\S*",
+        # breathing
+        r"(?<!\S)श्वास\S*\s+घेता\s+येत\s+(?:नाही|नही|नहीं)\S*",
+        rf"(?<!\S)श्वास\S*\s+(?:\S+\s+)?(?:घेताना|अडक|कोंड|फुल|लाग|गुदमर|त्रास)\S*{_NOT_NEGATED}",
+        rf"(?<!\S)दम\s+(?:\S+\s+)?(?:लाग|कोंड|घुट|अडक)\S*{_NOT_NEGATED}",
+        r"(?<!\S)(?:सांस|साँस)\s+(?:\S+\s+)?(?:फूल|फुल|अटक)\S*",
+        r"\b(?:breathless\w*|short\s+of\s+breath|(?:difficulty|trouble|problem|hard)\s+(?:in\s+|to\s+)?breath\w*|breath\w*\s+(?:problem|trouble|difficulty|issue))\b",
+        r"(?<!\S)(?:ब्रीदिंग|ब्रिदिंग|breathing)\s+(?:\S+\s+)?(?:प्रॉब्लेम|प्रोब्लेम|त्रास|problem|trouble)",
+        # a fall NOW (spelling variants of the original pattern: पडलोय, पडलीय, खाली पडले, घसरून पडलो)
+        r"(?<!\S)(?:मी\s+)?(?:खाली\s+)?पडल(?:े|ो|ी)(?:य|ये|ंय)?(?:\s+आहे)?(?!\s*(?:होत|होतं))(?:\s|$)",
+        r"(?<!\S)(?:घसरून|तोल\s+जाऊन|तोल\s+गेला)\S*\s+(?:\S+\s+)?पडल\S*",
+        r"\b(?:i\s+)?(?:have\s+)?(?:fell|fallen)\s+(?:down|over)\b",
+        # blood
+        rf"(?<!\S)रक्त\S*\s+(?:\S+\s+)?(?:येत|पडत|निघत|वाहत|आल)\S*{_NOT_NEGATED}",
+        r"(?<!\S)रक्तस्(?:त्)?राव\S*",
+        r"\b(?:bleeding|blood\s+(?:is\s+)?(?:coming|flowing|everywhere))\b",
+    )
+)
+# Searched with the spaces removed: "हार्टअटॅक", "heartattack", "HeartAttack", "चेस्टपेन", "chestpain".
+_COMPACT = tuple(
+    _epat(p)
+    for p in (
+        r"h(?:ea?|aa?)rtat+a?c?k",  # heart/hart/haart + attack/atack/atak
+        r"हा?र्?ट[अएऐ]ै?ट[ैा]?क",  # हार्ट + अटॅक / अटैक / अटेक / अॅटॅक / एटॅक
+        r"chestpains?",
+        r"चेस्ट(?:पेन|पैन)",
+        r"paininmychest|paininthechest",
+    )
+)
+_PAST_MARK = re.compile(r"(?<!\S)(?:होता|होतं|होते|होती|होतो)(?!\S)")
+_NOW_MARK = re.compile(r"(?<!\S)(?:येतोय|येतो|येतेय|येते|येतंय|येत|आत्ता|आता|now|right|चाललाय|चाललंय)\S*")
+
+
+def loanword_emergency(text: str) -> bool:
+    spaced = efold(text)
+    compact = re.sub(r"\s+", "", spaced)
+    past_story = bool(_PAST_MARK.search(spaced)) and not _NOW_MARK.search(spaced)  # "वडिलांना ... आला होता"
+    if past_story:  # "त्यांना हार्ट अटॅक आला होता": a story about the past is not an emergency now
+        return False
+    return any(p.search(spaced) for p in _SPACED) or any(p.search(compact) for p in _COMPACT)
+
+
+# ---- Second layer: a health or body word that no rule recognised --------------------------------------------------------
+# The turn goes to a strict-JSON LLM check (2 s). If the LLM is unavailable, the FAIL-SAFE words below are treated as an
+# emergency. Recall-biased on purpose: a false alert costs a phone call; a missed heart attack costs far more.
+_HEALTH_WORDS = (
+    "छाती", "हृदय", "हार्ट", "heart", "chest", "श्वास", "सांस", "साँस", "दम", "बेशुद्ध", "बेहोश", "भोवळ", "चक्कर",
+    "रक्त", "खून", "blood", "bleeding", "अटैक", "अटॅक", "attack", "atak", "atack", "stroke", "स्ट्रोक", "लकवा", "paralysis",
+    "बीपी", "bp", "शुगर", "sugar", "दुखत", "वेदना", "त्रास", "पडल", "पडून", "fell", "fall", "faint",
+    "pain", "breath", "dizzy", "unwell", "बरं वाटत नाही", "ambulance", "रुग्णवाहिका"
+)
+_FAILSAFE_WORDS = ("attack", "atak", "atack", "अटैक", "छाती", "श्वास", "बेशुद्ध", "stroke", "स्ट्रोक", "chest")
+def _word_regex(words: tuple[str, ...]) -> re.Pattern[str]:
+    """Latin words must be whole words ("atak" must not be found inside "ata kay"); a Devanagari word matches at the
+    start of a token, so its inflections still match ("छातीत", "श्वासाचा")."""
+    parts = []
+    for w in words:
+        e = re.escape(efold(w))
+        parts.append(rf"(?<![a-z0-9]){e}(?![a-z0-9])" if w.isascii() else rf"(?<!\S){e}")
+    return re.compile("|".join(parts))
+
+
+_HEALTH_RE = _word_regex(_HEALTH_WORDS)
+_FAILSAFE_RE = _word_regex(_FAILSAFE_WORDS)
+
+
+def has_health_word(text: str) -> bool:
+    return bool(_HEALTH_RE.search(efold(text)))
+
+
+def has_failsafe_word(text: str) -> bool:
+    return bool(_FAILSAFE_RE.search(efold(text)))
+
+
+# ---- A reply that must never be spoken: medical advice for a heart attack, chest pain or stroke --------------------
+_CARDIAC = tuple(
+    efold(w)
+    for w in (
+        "हार्ट अटॅक", "हार्टअटॅक", "heart attack", "heartattack", "छातीत दुख", "छातीत कळ", "chest pain", "stroke",
+        "स्ट्रोक", "लकवा", "हृदयविकार", "हृदयाचा झटका", "हार्ट अटैक", "दिल का दौरा", "सीने में दर्द",
+    )
+)
+_ADVICE = tuple(
+    efold(w)
+    for w in (
+        "aspirin", "एस्प्रिन", "ॲस्पिरिन", "अस्पिरिन", "गोळी", "गोली", "औषध घ्या", "दवा लें", "tablet", "medicine",
+        "झोपा", "झोपून", "बसा", "बसून", "आराम करा", "विश्रांती", "दीर्घ श्वास", "खोल श्वास", "deep breath", "breathe deeply",
+        "lie down", "sit down", "rest", "relax", "पाणी प्या", "drink water", "शांत राहा", "आराम करें", "लेट जाइए", "बैठ जाइए",
+        "take a", "take an", "take two", "घ्या",
+    )
+)
+
+
+def mentions_cardiac(text: str) -> bool:
+    spaced = efold(text)
+    compact = re.sub(r"\s+", "", spaced)
+    return any(w in spaced or w.replace(" ", "") in compact for w in _CARDIAC) or loanword_emergency(text)
+
+
+def gives_medical_advice(reply: str) -> bool:
+    spaced = efold(reply)
+    return any(w in spaced for w in _ADVICE)
 
 
 # ---- Loneliness (NOT a safety check: it never overrides a care command or a pending question) -----------

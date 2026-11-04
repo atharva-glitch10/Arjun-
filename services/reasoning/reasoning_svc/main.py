@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -7,7 +8,7 @@ from . import config
 from .appcmd import MEDIA_CONTROL, parse_app_command
 from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency
-from .evon import EvonClient, Limiter
+from .evon import EvonClient, Limiter, debug_log, llm_debug_enabled
 from .ratelimit import TokenBucket
 from .textutil import collapse_repeats
 from .turn import TurnEngine
@@ -82,7 +83,7 @@ class TurnOut(BaseModel):
     awaiting_confirmation: bool
     screen: str = "reply"
     speech: str = ""  # what the voice says (may carry Timbre v3 tags); empty = say `reply`
-    action: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": ""}  # what the elder screen opens / does
+    action: dict[str, Any] = {"type": "none", "kind": "", "value": "", "title": ""}  # what the elder screen opens / does
     source: str  # rules | llm
     trace: dict[str, object]
 
@@ -173,6 +174,11 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
     background.add_task(
         get_tracker().record, body.user_id, body.text, res.reply, res.intent, res.action.get("title", "")
     )
+    if llm_debug_enabled():
+        debug_log(
+            "turn", user=body.user_id, stt=body.text, route=res.source, intent=res.intent,
+            mode=res.mode, final=res.speech or res.reply, trace=res.trace,
+        )
     return TurnOut(**res.__dict__)
 
 

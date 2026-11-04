@@ -154,3 +154,62 @@ safety is never ignored. The lexicons stay in reasoning (services share contract
 capped per day (`YOUTUBE_MAX_SEARCHES_PER_DAY`, default 80); a Google quota error blocks further calls until the next day; 503 `youtube_not_configured` /
 429 `youtube_quota` make reasoning open the YouTube results page. News: feeds fetched in parallel (5 s timeout), top 5 interleaved, cached 15 min in
 memory, a total failure is not cached. Not measured: real latency of search or feed fetch from the voice path.
+
+## 14. LLM-first turn understanding (2026-11-04)
+
+**Why the rules moved.** The rule parser was the first reader of every sentence. It could only see keywords, so it
+hijacked ordinary talk (a story containing "औषध" became a medicine question), it could not answer a question about her
+own day, and its miss path was a dead end ("मला समजलं नाही"). Marathi word order and STT noise make keyword reading
+worse than useless for conversation; the LLM needed the whole sentence, not a pre-digested intent.
+
+**One call, one contract.** `TurnEngine.handle` runs the safety floor first, then makes exactly one
+`EvonClient.understand_turn()` call for the turn (no second classification call). The model gets the full transcript,
+the last turns and a USER CONTEXT block; it must return strict JSON
+`{intent, slots, reply, confidence}` with intent in
+`chat | reminder_add | reminder_done | medicine_taken | medicine_query | media | news | call_family |
+message_family | today_query | undo | stop | health_complaint | unclear`. Legacy names (`OPEN_LINK`,
+`OPEN_WHATSAPP`, `MEDIA_CONTROL`, `MED_SNOOZE`, `TIME_QUERY`, `NEXT_UP`) are still accepted and marked `legacy`, and
+plain prose is used as the chat reply, so a provider that ignores the JSON contract costs no extra call.
+
+**Where the decision actually sits.** The LLM decides *what she means*; the existing deterministic code decides *what
+happens*. Action intents execute the same SQL-backed paths and fixed read-backs as before, so a hallucinated `reply`
+can never invent a reminder time or a medicine record. Deterministic state answers (pending yes/no, stop, medicine
+taken, time/next-up, greeting, hearing check) are still rule-decided after the call: state machines are cheaper and
+safer in code than in a prompt.
+
+**Fallback and logging.** Rules run only when the LLM times out, errors, returns invalid JSON, returns an unknown
+intent, or reports confidence below 0.4 for an action intent. Each such turn is logged with `source=rule` and a
+`route_reason`, so a regression is visible as a change in the LLM/rule ratio rather than as a vague "it feels dumber".
+The safety floor is never gated on the LLM: emergency/distress rules and the fail-safe second look work with the LLM
+and core-api down.
+
+**An answer must look like an answer.** Marathi puts "नाही" inside ordinary sentences, so the rule layer used to read
+"माझी तब्येत बरी नाही" and "माझा चस्मा सापडत नाही" as "no" to whatever question was open: the first cancelled the
+pending reminder and said the family was told help is not needed, the second undid the previous action. Now a yes/no
+is rule-decided only when it opens with a yes/no word or is at most two words ("हो", "नको", "नाही, नको"); a longer
+sentence goes to the LLM, and the pending question is repeated rather than cancelled. A correction of a pending
+reminder is still rule-decided, but only when the sentence restates a clock time ("सकाळी दहा वाजता … नाही जायचं"),
+which is what separates a correction from a fact about her day.
+
+**Context instead of memory in the prompt.** `_user_context` asks core-api for the facts the companion is allowed to
+know, caches them for 5 minutes and caps the block at 700 characters: name and address form, family names/relations
+(never phone numbers), date/day/festival, today's medicines taken/missed, appointments and reminders, recent check-in
+answers, interests, and only the last conversation summary. Nothing is stored by reasoning itself, and the block is
+built from SQL through `GET /users/{id}/checkins/card` and `GET /users/{id}/wellbeing/today`.
+
+**Output discipline.** `max_tokens` defaults to 250 (`LLM_MAX_TOKENS`), temperature 0.5, reasoning off.
+`finish_reason=length` trims the text back to the last complete sentence instead of speaking a cut line. The
+sanitizer rejects only what must not ship: medical advice/diagnosis, claims of being human or having a body/family,
+Latin script, more than 4 sentences or 300 characters. One retry with a corrective note, then a fixed fallback line.
+Rules the prompt owns (no guilt, no recipes, no invented facts, always offer a solution) are deliberately NOT
+duplicated in the sanitizer: a hard filter cannot tell a good recipe answer from a bad one, and would only mangle it.
+
+**How it is measured.** `scripts/eval_companion.py` runs 50 realistic utterances through the real `/turn` endpoint in a
+temporary stack (throwaway SQLite, Sarvam for the turn and for a strict-JSON judge on
+`relevant/understood/about_her/solution/natural_marathi/safe`), plus a replay of the last N real turnlog transcripts.
+Each utterance gets its own throwaway user: the rows are independent sentences, and a shared user leaked a pending
+reminder, an undo window and one conversation's history into the next item. `--legacy` sets the old 80-token budget;
+run the previous commit from a worktree to get the real "before". Treat the averages as a regression signal, not a
+benchmark: the judge is an LLM, the set is synthetic, and no native speaker has reviewed it. The averages are also
+noisy at temperature 0.5 - the stable signals are turns that complete, action-intent accuracy, the LLM/rule route
+count and banned-line count, so report those.

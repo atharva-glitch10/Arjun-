@@ -6,6 +6,7 @@ failure -> retry once -> caller falls back to the rule-based parser. The LLM nev
 
 import json
 import logging
+import os
 import re
 import time
 from datetime import datetime
@@ -19,6 +20,34 @@ from . import config
 
 log = logging.getLogger("arjun.llm")
 
+# Debug for the voice path: one redacted JSON line per LLM call and per turn, written only when
+# ARJUN_LLM_DEBUG=1. Off by default: the normal log line never carries her words or the reply.
+_PHONE = re.compile(r"(?<!\d)(?:\+?91[-\s]?)?[6-9]\d{9}(?!\d)")
+_EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+_TOKEN = re.compile(r"\b(?:sk|key|tok)[-_][A-Za-z0-9_-]{8,}\b", re.IGNORECASE)
+
+
+def llm_debug_enabled() -> bool:
+    return os.environ.get("ARJUN_LLM_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def redact(value: Any) -> Any:
+    """Redact phone numbers, e-mail addresses and token-shaped strings before anything is logged."""
+    if isinstance(value, str):
+        return _TOKEN.sub("[token]", _EMAIL.sub("[email]", _PHONE.sub("[number]", value)))
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    if isinstance(value, dict):
+        return {k: redact(v) for k, v in value.items()}
+    return value
+
+
+def debug_log(event: str, **fields: Any) -> None:
+    """Opt-in (ARJUN_LLM_DEBUG=1) redacted debug line on the arjun.llm logger."""
+    if not llm_debug_enabled():
+        return
+    log.info(json.dumps({"debug": event, **redact(fields)}, ensure_ascii=False, default=str))
+
 _LANG_NAMES = {
     "mr": ("Marathi", "Devanagari"),
     "hi": ("Hindi", "Devanagari"),
@@ -26,7 +55,11 @@ _LANG_NAMES = {
 }
 
 
-# ---- what the companion may NOT say: a safety net on top of the prompt (boundaries 4, 5, 9, 10) -------
+# ---- what the companion may NOT say: the narrow safety net on top of the prompt --------------------------
+# New contract (2026-11-04): reject ONLY medical advice / diagnosis, a claim to be human or to have a body or
+# family, Latin script when the turn is Marathi/Hindi, more than four sentences, or more than 300 characters.
+# Everything else (brevity, no guilt, no recipes from memory) is the prompt's job; the sanitizer must not throw
+# away a useful, slightly longer answer.
 _VIOLATIONS: dict[str, re.Pattern[str]] = {
     # claims to be human, or to have a family / body
     "human": re.compile(
@@ -37,20 +70,12 @@ _VIOLATIONS: dict[str, re.Pattern[str]] = {
         r"|माझी\s+(बायको|आई|मुलगी|बहीण)|माझा\s+(मुलगा|भाऊ|नवरा)",
         re.IGNORECASE,
     ),
-    # engagement tricks: "I missed you", guilt
-    "missed_you": re.compile(
-        r"\bi\s+(have\s+)?(really\s+)?miss(ed)?\s+you\b|\bmissing\s+you\b"
-        r"|(तुमची|तुझी|आपकी|तुम्हारी)\s*(खूप\s*|बहुत\s*)?(आठवण|याद)",
-        re.IGNORECASE,
-    ),
-    # medical advice: doses, "take the tablet", numbers with units
+    # medical advice: doses, "take the tablet", rest / water / doctor instructions, a diagnosis
     "medical": re.compile(
         r"\b\d+(\.\d+)?\s*(mg|ml|mcg)\b"
         r"|(गोळी|गोळ्या|औषध|औषधं|दवा|दवाई|टॅबलेट)\s*(घ्या|घे|घेत|खा|लो|खाओ|बंद|वाढवा)"
         r"|\b(take|taking|stop|skip|double)\b.{0,25}\b(tablet|tablets|pill|pills|medicine|medication|dose)\b"
         r"|\byou\s+should\s+(take|stop)\b"
-        # health advice (task C, boundary 5): rest, water, a pill, a doctor visit - in Marathi, Hindi and English.
-        # Pointing to a person ("डॉक्टरांना विचारा", "ask your doctor") is allowed; telling her what to DO is not.
         r"|पडून\s+रा[हह]\S*|झोपून\s+रा[हह]\S*|विश्रांती\s+(?:घ्या|घे)\S*|आराम\s+(?:करा|कर|घ्या|कीजिए|कीजिये|करें|करो)"
         r"|पाणी\s+(?:प्या|पी)\S*|पानी\s+(?:पी|पि)\S*"
         r"|(?:दवा|दवाई|गोली)\s+(?:ले|लें|लीजिए|खा)\S*"
@@ -63,14 +88,10 @@ _VIOLATIONS: dict[str, re.Pattern[str]] = {
         r"|\btake\s+rest\b|\bsee\s+a\s+doctor\b",
         re.IGNORECASE,
     ),
-    # recipes and facts from memory (the companion asks to be taught instead)
-    "recipe_fact": re.compile(
-        r"साहित्य|कृती|शिजवा|चमचा|\bingredients?\b|\brecipe\b|\btablespoons?\b|\bteaspoons?\b"
-        r"|राजधानी|लोकसंख्या|\bcapital\s+of\b|\bwas\s+born\s+in\b|\bpopulation\b",
-        re.IGNORECASE,
-    ),
 }
-_MAX_REPLY_CHARS = 160
+_MAX_REPLY_CHARS = 300  # a longer reply is a runaway, not a long answer; 1-3 sentences fit well under this
+_MAX_SENTENCES = 4  # more than four sentences is a runaway; a how-to may use three
+
 
 # A refusal followed by a topic change ("... बघता येत नाही, पण तुमची सकाळ कशी गेली?"): the real transcripts from the
 # elder screen showed Arjun saying he cannot do something and then asking an unrelated question. Never spoken: the
@@ -83,9 +104,9 @@ _REFUSAL = re.compile(
     re.IGNORECASE,
 )
 _REFUSAL_LINE = {
-    "mr": "हे अजून मला जमत नाही, घरच्यांना सांगते.",
-    "hi": "यह अभी मला जमत नाही, घरवालों को बताती हूँ।",
-    "en": "I can't do that yet. I'll tell your family.",
+    "mr": "मी मदत करतो — नक्की काय हवं आहे ते सांगा.",
+    "hi": "मैं मदद करता हूँ — ठीक से बताइए क्या चाहिए।",
+    "en": "I'll help — tell me exactly what you need.",
 }
 
 
@@ -96,6 +117,8 @@ def companion_violations(text: str, language: str) -> list[str]:
         reasons.append("script")  # asked for Devanagari, got Latin
     if len(text) > _MAX_REPLY_CHARS:
         reasons.append("too_long")
+    if len(re.split(r"(?<=[.?!।])\s+", text.strip())) > _MAX_SENTENCES:
+        reasons.append("sentences")
     return reasons
 
 
@@ -123,18 +146,28 @@ def strip_filler(text: str) -> str:
 
 
 def sanitize_companion(text: str | None, language: str) -> tuple[str | None, list[str]]:
-    """Strip leading fillers, keep at most two sentences, then reject the reply if it breaks a boundary."""
+    """Strip leading fillers, then reject the reply if it breaks a narrow boundary.
+
+    Keeps up to four sentences so a how-to answer can use three; never cuts by character count alone.
+    """
     if not text or not text.strip():
+        debug_log("sanitize", verdict="rejected", reasons=["empty"], text=text)
         return None, ["empty"]
     text = strip_filler(text)
     if not text:
+        debug_log("sanitize", verdict="rejected", reasons=["empty"], text=text)
         return None, ["empty"]
-    sentences = re.split(r"(?<=[.?!।])\s+", text.strip())
-    cut = " ".join(sentences[:2]).strip()
+    cut = text.strip()
     if _REFUSAL.search(cut):  # "I cannot ... but tell me about your garden" is never spoken
-        return _REFUSAL_LINE.get(language, _REFUSAL_LINE["mr"]), []
+        line = _REFUSAL_LINE.get(language, _REFUSAL_LINE["mr"])
+        debug_log("sanitize", verdict="replaced", reasons=["refusal"], text=text, out=line)
+        return line, []
     reasons = companion_violations(cut, language)
-    return (None, reasons) if reasons else (cut, [])
+    if reasons:
+        debug_log("sanitize", verdict="rejected", reasons=reasons, text=text)
+        return None, reasons
+    debug_log("sanitize", verdict="ok", reasons=[], text=text, out=cut)
+    return cut, []
 
 
 _LEADING_TAGS = re.compile(r"^((?:\s*<\s*[a-z][a-z ]{1,20}\s*>)*)\s*(.*)$", re.IGNORECASE | re.DOTALL)
@@ -187,6 +220,140 @@ def split_voice_tags(text: str, allowed: tuple[str, ...] = config.VOICE_TAGS, ma
     clean = re.sub(r"\s{2,}", " ", _TAG.sub("", text)).strip()
     voice = re.sub(r"\s{2,}", " ", _TAG.sub(spoken, text)).strip()
     return clean, voice
+
+
+UNDERSTAND_INTENTS = (
+    "chat", "reminder_add", "reminder_done", "medicine_taken", "medicine_query", "media", "news",
+    "call_family", "message_family", "today_query", "undo", "stop", "health_complaint", "unclear",
+)
+_OLD_TO_NEW = {
+    "CHAT": "chat", "CREATE_REMINDER": "reminder_add", "COMPLETE_REMINDER": "reminder_done",
+    "MED_TAKEN": "medicine_taken", "MED_SNOOZE": "medicine_taken", "MEDICAL_QUESTION": "medicine_query",
+    "OPEN_MEDIA": "media", "OPEN_LINK": "media", "OPEN_WHATSAPP": "message_family",
+    "NEWS_READ": "news", "CALL_FAMILY_REMINDER": "call_family", "REQUEST_CAREGIVER": "message_family",
+    "LIST_TODAY": "today_query", "GET_APPOINTMENT": "today_query", "CONFIRM_NO": "undo",
+    "DECLINE_TOPIC": "stop", "MEDIA_CONTROL": "stop", "TIME_QUERY": "today_query",
+    "NEXT_UP": "today_query", "UNKNOWN": "unclear", "DISTRESS": "health_complaint",
+    "SYMPTOM": "health_complaint",
+}
+
+
+def _conversation_rules(language: str) -> str:
+    lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
+    return (
+        f"You are Arjun, a warm, practical male voice companion for an elderly Marathi speaker. "
+        f"Always answer in {lang_name}, written in {script} script, the way a kind younger man in her family "
+        f"would speak. Speak as a man: use masculine forms for yourself (सांगतो, विचारतो, करतो, ऐकतो, बघतो; "
+        f"never सांगते / विचारते / करते). Address her with respectful तुम्ही / तुमचं, never तू. "
+        f"Her words come from speech-to-text and may be noisy, cut off or misspelled; infer the most likely "
+        f"meaning from the whole sentence and the conversation, and answer the meaning, not the noise. "
+        f"NEVER ACT DUMB. ALWAYS TRY TO GIVE A SOLUTION: if she asks how to do something, give the practical "
+        f"steps; if she asks about her day, medicines, reminders, family or an app, give the useful answer or the "
+        f"next step. Do not say 'I don't know' or 'I cannot' when a practical next step exists. "
+        f"Talk about HER life, memories, family and what she just said. Reply in 1-2 short sentences; a how-to "
+        f"may use up to 3 short sentences. Never write a list, a recipe from memory, or a long explanation. "
+        f"Never give medical advice or a diagnosis, never suggest a dose, rest, water or a doctor visit; if she "
+        f"mentions a health problem, acknowledge it and ask what she needs, or point her to her family. "
+        f"Never claim to be human or to have a body, feelings, a family or experiences. If she asks whether you "
+        f"are a human or a machine, say clearly that you are an AI companion. "
+        f"Never say you missed her, never make her feel guilty, and encourage her to talk to her family. "
+        f"Never invent facts about people or places she mentions. Do not end every reply with a generic "
+        f"how-are-you-feeling question, and never answer an actionable request by saying you cannot do it. "
+    )
+
+
+def _system_prompt(
+    language: str,
+    now: datetime | None,
+    interests: list[str] | None,
+    context: str,
+    *,
+    voice_tags: bool,
+    json_contract: bool,
+) -> str:
+    system = _conversation_rules(language)
+    if now is not None:
+        system += (
+            f"The current local time is {now:%H:%M} on {now:%A}, {now.date().isoformat()}; mention it only if "
+            f"she asks about the time or day. "
+        )
+    if interests:
+        system += (
+            f"Things she enjoys talking about: {', '.join(interests[:4])}. You may ask her to tell you about "
+            f"one of these. "
+        )
+    if context:
+        system += (
+            "USER CONTEXT (from the family dashboard and today's records; use it only when it helps the reply, "
+            "never read it out as a list, never mention that you have a dashboard):\n" + context + "\n"
+        )
+    if voice_tags:
+        system += (
+            "Your reply is spoken aloud. When it truly fits, you may put ONE voice tag right before the words "
+            f"it should colour, chosen from exactly: {' '.join(config.VOICE_TAGS)}. Most replies need no tag. "
+            "Never invent another tag. "
+        )
+    if json_contract:
+        system += (
+            "Return ONLY one JSON object, no prose and no markdown:\n"
+            '{"intent": one of ' + json.dumps(list(UNDERSTAND_INTENTS)) + ', '
+            '"slots": {"task": string|null, "date": "YYYY-MM-DD"|null, "time": "HH:MM"|null, '
+            '"time_ambiguous": true|false, "query": string|null, "media_kind": '
+            '"news|recipe|music|devotional|exercise|video|unknown"|null, "media_specific": true|false, '
+            '"control": "stop|pause|resume|next|volume_up|volume_down"|null, "contact": string|null, '
+            '"confirm": "yes"|"no"|null, "choice": integer|string|null, "checkin_answer": '
+            '"done|skipped"|null, "bp": {"systolic": integer, "diastolic": integer}|null}, '
+            '"reply": string, "confidence": number 0-1}\n'
+            "Intent meanings: chat = ordinary talk or a question you can answer; reminder_add = set a reminder; "
+            "reminder_done = she finished a task/reminder; medicine_taken = she says she took her medicine; "
+            "medicine_query = a question or worry about medicines/doses/side effects; media = play/open music, "
+            "bhajan, a video, a recipe, a family link or WhatsApp; news = read or play news; call_family = she "
+            "wants to call/remember to call family; message_family = send a message or ask family for help; "
+            "today_query = ask what is on today/tomorrow, the time, the date or the next appointment; undo = "
+            "cancel or undo what was just done; stop = stop the current media/topic; health_complaint = she "
+            "reports a symptom or feeling unwell; unclear = you truly cannot tell. "
+            "For chat, write the full reply in `reply`. For an action intent, put the details in `slots` and keep "
+            "`reply` short; the app reads the action back exactly. Never put a URL in any slot. Resolve relative "
+            "dates/times from the clock above; if AM/PM is unclear set time_ambiguous=true and time=null. "
+            "Never invent a task, date or time that was not said. A medicine question is NEVER answered here: "
+            "intent=medicine_query. If the utterance is a story or background talk that merely mentions a "
+            "medicine, media or family, it is chat, not an action."
+        )
+    return system
+
+
+def _parse_json_object(raw: str | None) -> dict[str, Any] | None:
+    """The first JSON object in a model reply; tolerates code fences and stray prose."""
+    if not raw:
+        return None
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else None
+    except (ValueError, TypeError):
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            data = json.loads(text[start:end + 1])
+            return data if isinstance(data, dict) else None
+        except (ValueError, TypeError):
+            return None
+
+
+def trim_to_sentence(text: str) -> str:
+    """Cut a reply that ran into max_tokens back to its last full sentence (never mid-word)."""
+    out = text.strip()
+    if not out:
+        return out
+    if out[-1] in ".!?।…":
+        return out
+    cut = max(out.rfind("."), out.rfind("!"), out.rfind("?"), out.rfind("।"), out.rfind("…"))
+    if cut >= 0:
+        return out[: cut + 1].strip()
+    return out
 
 
 class LlmBusy(httpx.TransportError):
@@ -245,7 +412,7 @@ class EvonClient:
         api_key: str = "",
         send_template_kwargs: bool = True,
         provider: str = "evon",
-        max_tokens: int = 80,
+        max_tokens: int = 250,  # LLM_MAX_TOKENS default; 80 cut replies mid-sentence
         timeout_s: float = 4.0,
         reasoning_off: bool = False,
         limiter: Limiter | None = None,
@@ -270,6 +437,7 @@ class EvonClient:
         temperature: float,
         purpose: str = "chat",
         timeout: float | None = None,
+        meta: dict[str, Any] | None = None,
         **extra: Any,
     ) -> str:
         body: dict[str, Any] = {
@@ -283,6 +451,12 @@ class EvonClient:
             body["chat_template_kwargs"] = {"enable_thinking": False}
         if self.reasoning_off:
             body["reasoning_effort"] = None  # Sarvam: answer directly, no hidden thinking tokens
+        debug_log(
+            "llm_request", purpose=purpose, provider=self.provider, model=self.model,
+            messages=messages, system_chars=len(messages[0]["content"]) if messages else 0,
+            history_count=max(0, len(messages) - 2), max_tokens=body.get("max_tokens"),
+            temperature=temperature,
+        )
         t0 = time.perf_counter()
         record: dict[str, Any] = {
             "provider": self.provider,
@@ -325,6 +499,8 @@ class EvonClient:
         finally:
             self.limiter.release()
         usage = data.get("usage") or {}
+        if meta is not None:
+            meta["finish_reason"] = finish
         self.usage["calls"] += 1
         self.usage["prompt_tokens"] += usage.get("prompt_tokens") or 0
         self.usage["completion_tokens"] += usage.get("completion_tokens") or 0
@@ -336,6 +512,11 @@ class EvonClient:
             finish_reason=finish,
         )
         log.info(json.dumps(record))
+        debug_log(
+            "llm_reply", purpose=purpose, raw=content, finish_reason=finish,
+            latency_ms=record["latency_ms"], prompt_tokens=record["prompt_tokens"],
+            completion_tokens=record["completion_tokens"],
+        )
         return content
 
     def extract_intent(
@@ -412,6 +593,31 @@ class EvonClient:
             return None
         return data if isinstance(data, dict) else None
 
+    def safety_check(self, text: str, timeout: float | None = None) -> dict[str, Any] | None:
+        """Second safety layer: strict JSON {emergency: bool, distress: bool} for ONE utterance. One attempt, no retry.
+
+        It only classifies. It never writes a reply and never gives advice. None = unusable (timeout, rate limit,
+        bad JSON), and the caller then applies its fail-safe words."""
+        system = (
+            "You are a safety classifier for Arjun, a voice companion for an older Marathi speaker. Speech-to-text "
+            "may be noisy and English words are often written in Devanagari (हार्ट अटॅक = heart attack). "
+            'Output ONLY one JSON object: {"emergency": true|false, "distress": true|false}. '
+            "emergency = she says she is having, right now, a heart attack, chest pain, trouble breathing, a stroke, "
+            "fainting, a fall, heavy bleeding or a dangerously high BP or low sugar. A story about the past, a film, "
+            "a question about someone else's past, or a figure of speech is false. "
+            "distress = she says she wants to die, is being hurt or is very afraid. No prose, no advice."
+        )
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
+        try:
+            raw = self._chat(
+                messages, 0.0, purpose="safety", timeout=timeout, max_tokens=40,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(raw)
+        except (httpx.HTTPError, ValueError, KeyError):
+            return None
+        return data if isinstance(data, dict) else None
+
     def checkin_understanding(self, topic: str, text: str, timeout: float | None = None) -> dict[str, Any] | None:
         """One strict-JSON reading of her answer to ONE check-in question: {topic, status, note}. One attempt.
 
@@ -436,6 +642,96 @@ class EvonClient:
             return None
         return data if isinstance(data, dict) else None
 
+    def understand_turn(
+        self,
+        text: str,
+        language: str,
+        now: datetime,
+        history: list[tuple[str, str]] | None = None,
+        context: str = "",
+        interests: list[str] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any] | None:
+        """ONE call for a non-safety turn: strict JSON {intent, slots, reply, confidence}.
+
+        The whole sentence, this conversation's history and the family/dashboard context go in together, so the
+        model reads meaning rather than keywords. Returns None when the provider is down, times out or returns
+        unusable JSON (the caller then uses the rule parser). A provider that ignores the JSON contract and
+        answers in plain prose is accepted as a chat reply (legacy/fake providers); an old intent-only JSON
+        shape is accepted too, marked `legacy`, and the caller may fetch a companion reply once.
+        """
+        system = _system_prompt(
+            language, now, interests, context, voice_tags=self.voice_tags, json_contract=True
+        )
+        messages = [{"role": "system", "content": system}]
+        messages += [{"role": role, "content": content} for role, content in (history or [])]
+        messages.append({"role": "user", "content": text})
+        meta: dict[str, Any] = {}
+        try:
+            raw = self._chat(
+                messages,
+                config.COMPANION_TEMPERATURE,
+                purpose="understand",
+                timeout=timeout,
+                meta=meta,
+                top_p=config.COMPANION_TOP_P,
+                max_tokens=self.max_tokens,
+                response_format={"type": "json_object"},
+            )
+        except (ValueError, KeyError):
+            return None
+        # httpx errors are deliberately NOT swallowed here: the caller logs the real reason (timeout vs provider).
+        data = _parse_json_object(raw)
+        if data is None:
+            # A provider that answered in plain prose: that prose is the reply. No second call.
+            prose = strip_thinking(raw)
+            if not prose or "{" in prose:
+                return None
+            return {
+                "intent": "chat", "slots": {}, "reply": prose, "confidence": 0.55,
+                "legacy": False, "legacy_reply": True, "finish_reason": meta.get("finish_reason"),
+            }
+        intent_raw = data.get("intent")
+        if not isinstance(intent_raw, str):
+            return None
+        legacy = False
+        if intent_raw in UNDERSTAND_INTENTS:
+            intent = intent_raw
+            slots = data.get("slots") if isinstance(data.get("slots"), dict) else {}
+        elif intent_raw in _OLD_TO_NEW:
+            legacy = True
+            intent = _OLD_TO_NEW[intent_raw]
+            slots = {
+                "task": data.get("task"), "date": data.get("date"), "time": data.get("time"),
+                "time_ambiguous": bool(data.get("time_ambiguous")),
+                "query": data.get("media_query") or data.get("link_label"),
+                "control": data.get("media_control"),
+            }
+        else:
+            return {
+                "intent": intent_raw, "slots": {}, "reply": "", "confidence": 0.0,
+                "legacy": False, "legacy_intent": "", "legacy_reply": False,
+                "finish_reason": meta.get("finish_reason"), "bad_intent": True,
+            }
+        try:
+            confidence = float(data.get("confidence", 0.6))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        confidence = min(1.0, max(0.0, confidence))
+        reply = str(data.get("reply") or "").strip()
+        if meta.get("finish_reason") == "length" and reply:
+            reply = trim_to_sentence(reply)
+        return {
+            "intent": intent,
+            "slots": slots,
+            "reply": reply,
+            "confidence": confidence,
+            "legacy": legacy,
+            "legacy_intent": intent_raw if legacy else "",
+            "legacy_reply": False,
+            "finish_reason": meta.get("finish_reason"),
+        }
+
     def companion_reply(
         self,
         text: str,
@@ -444,69 +740,34 @@ class EvonClient:
         history: list[tuple[str, str]] | None = None,
         interests: list[str] | None = None,
         timeout: float | None = None,
+        correction: str = "",
     ) -> str | None:
         """`history` is this conversation's earlier (role, text) turns, oldest first; never older."""
-        lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
-        clock = (
-            f"The current local time is {now:%H:%M} on {now:%A}; mention it only if the user asks "
-            f"about the time or day. "
-            if now
-            else ""
-        )
-        system = (
-            f"You are Arjun, an AI voice companion (not a human) talking with an elderly person. "
-            f"Always answer in {lang_name}, written in {script} script, the way they speak. "
-            f"Rules, in priority order: "
-            f"1. Reply with ONE short sentence (at most 12 words) and optionally ONE short question (at most 8 words). "
-            f"Nothing more. "
-            f"2. Talk about HER, never about yourself. Never start with or use \"मला वाटतं\", \"मला समजलं\", "
-            f"\"मला आनंद झाला\", \"I think\", \"I feel\", \"I understand\". No opinions, no exclamations like "
-            f"\"अरेरे\". "
-            f"3. Never guess or invent facts about people or places she mentions (who someone is, what a voice "
-            f"sounds like, what a bank will say). If something is unclear say: \"नीट ऐकू आलं नाही, परत सांगाल?\" "
-            f"4. No health or medical advice of any kind (no rest, water, medicine, doctor visits, doses, "
-            f"diagnosis). If she mentions pain or illness, do not advise; ask how she feels now. "
-            f"5. Never recite recipes, facts, news or history from your own knowledge: ask her to teach you. "
-            f"6. Never claim to be human, or to have feelings, a body, a family or experiences. "
-            f"7. Never say you missed her, never make her feel guilty, never discourage talking to family or "
-            f"friends. "
-            f"8. Ask about what she just said; never change the topic. Do not repeat a question you already "
-            f"asked; never refer to anything from another day. "
-            f"9. If she asks you to DO something (open, play, show, call, send), never say you cannot and never "
-            f"change the subject; reply only: \"हे अजून मला जमत नाही, घरच्यांना सांगते.\" "
-            f"GOOD replies: \"चिकन छान झालं! कोणी बनवलं?\" / \"गाणं कोणतं शिकलात आज?\" / "
-            f"\"घरच्यांना कळवलं आहे.\" "
-            f"BAD replies (never): \"मला समजलं, तो आवाज संदीपसारखाच वाटतोय. तुम्ही अविनाशला याआधी कधी भेटला आहात का?\" "
-            f"(guesses, long) / \"हो, हे तर बँकेशी बोलूनच ठरवता येईल. पण हे सगळं मॅन्युअली चेक करताना...\" "
-            f"(opinion, long) / \"डोक्याला त्रास होत असेल तर थोडा वेळ शांत पडून राहा\" (health advice). {clock}"
-        )
-        if self.voice_tags:
+        system = _system_prompt(language, now, interests, "", voice_tags=self.voice_tags, json_contract=False)
+        if correction:
             system += (
-                "Your reply is spoken aloud. When it truly fits the moment, you may put ONE voice tag right "
-                f"before the words it should colour, chosen from exactly: {' '.join(config.VOICE_TAGS)}. "
-                "For example <laugh> after something funny she said, <slow> for something important, <sigh> "
-                "when she shares something sad. Most replies need no tag. Never invent other tags. "
-            )
-        if interests:
-            system += (
-                f"Things they enjoy talking about: {', '.join(interests[:3])}. You may ask them to "
-                f"tell you about one of these, but never say anything about it yourself; ask them "
-                f"to teach you instead. "
+                "Your previous reply was rejected by the safety check (" + correction + "). Write a different "
+                "reply that keeps the same meaning, is 1-2 short sentences, gives a practical next step, and "
+                "breaks none of the rules above. Never mention the check. "
             )
         messages = [{"role": "system", "content": system}]
         messages += [{"role": role, "content": content} for role, content in (history or [])]
         messages.append({"role": "user", "content": text})
+        meta: dict[str, Any] = {}
         try:
             out = self._chat(
                 messages,
                 config.COMPANION_TEMPERATURE,
                 purpose="companion",
                 timeout=timeout,
+                meta=meta,
                 top_p=config.COMPANION_TOP_P,
                 max_tokens=self.max_tokens,
             )
         except (httpx.HTTPError, ValueError, KeyError):
             return None
+        if meta.get("finish_reason") == "length":
+            out = trim_to_sentence(out)
         return out.strip() or None
 
 

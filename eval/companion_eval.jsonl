@@ -1,0 +1,50 @@
+{"id": "c01", "text": "आज माझा नातू आला होता ना, दुपारी", "expect": "CHAT", "check_intent": false, "tags": ["story", "noisy"]}
+{"id": "c02", "text": "diwalila kay karaycha", "expect": "CHAT", "check_intent": false, "tags": ["stt-roman", "festival"]}
+{"id": "c03", "text": "मला झोप येत नाहीये", "expect": "SYMPTOM", "check_intent": true, "tags": ["health", "noisy"]}
+{"id": "c04", "text": "आज कोंता वार आहे", "expect": "CHAT", "check_intent": false, "tags": ["date", "noisy"]}
+{"id": "c05", "text": "पुरणपोळी कशी करतात थोडक्यात सांग", "expect": "CHAT", "check_intent": false, "tags": ["recipe"]}
+{"id": "c06", "text": "मी जेवलो", "expect": "CHAT", "check_intent": false, "tags": ["noisy", "gender"]}
+{"id": "c07", "text": "माझ्या मुलाचा फोन आला नाही", "expect": "CHAT", "check_intent": false, "tags": ["family"]}
+{"id": "c08", "text": "उद्या सकाळी आठ वाजता डॉक्टरकडे जायचं आठवण कर", "expect": "CREATE_REMINDER", "check_intent": true, "tags": ["reminder"]}
+{"id": "c09", "text": "बीपीची गोली घेतली", "expect": "MED_TAKEN", "check_intent": true, "tags": ["medicine", "noisy"]}
+{"id": "c10", "text": "मला भजन ऐकायचं आहे", "expect": "OPEN_MEDIA", "check_intent": true, "tags": ["media"]}
+{"id": "c11", "text": "राहुलला सांग मला फोण कर", "expect": "CALL_FAMILY_REMINDER", "check_intent": true, "tags": ["family", "noisy"]}
+{"id": "c12", "text": "माझा चस्मा सापडत नाही", "expect": "CHAT", "check_intent": false, "tags": ["problem", "noisy"]}
+{"id": "c13", "text": "टीव्ही चालू होत न्हाई", "expect": "CHAT", "check_intent": false, "tags": ["problem", "noisy"]}
+{"id": "c14", "text": "आज काय आहे?", "expect": "LIST_TODAY", "check_intent": true, "tags": ["today"]}
+{"id": "c15", "text": "मला छातीत दुखतंय", "expect": "EMERGENCY", "check_intent": true, "tags": ["safety"]}
+{"id": "c16", "text": "मी खूप एकटी वाटते", "expect": "LONELY", "check_intent": false, "tags": ["lonely"]}
+{"id": "c17", "text": "काल मी बागेत फिरायला गेले होते, खूप छान वाटलं", "expect": "CHAT", "check_intent": false, "tags": ["story"]}
+{"id": "c18", "text": "माझ्या बहिणीचं लग्न कसं झालं होतं, आठवतं का?", "expect": "CHAT", "check_intent": false, "tags": ["memory"]}
+{"id": "c19", "text": "मला पानी प्यायचं आहे", "expect": "CHAT", "check_intent": false, "tags": ["need", "noisy"]}
+{"id": "c20", "text": "औषधांची गोळी किती घ्यायची?", "expect": "MEDICAL_QUESTION", "check_intent": true, "tags": ["medicine"]}
+{"id": "c21", "text": "माझी गोळी चुकली तर काय करू?", "expect": "MEDICAL_QUESTION", "check_intent": true, "tags": ["medicine"]}
+{"id": "c22", "text": "आजच्या बातम्या सांगा ना", "expect": "NEWS_READ", "check_intent": true, "tags": ["news", "noisy"]}
+{"id": "c23", "text": "मला गाणी लावा थोडी", "expect": "OPEN_MEDIA", "check_intent": true, "tags": ["media", "noisy"]}
+{"id": "c24", "text": "आजचं जेवण काय आहे?", "expect": "CHAT", "check_intent": false, "tags": ["meal"]}
+{"id": "c25", "text": "उद्या सकाळी नऊ वाजता फोन करायची आठवण ठेव", "expect": "CREATE_REMINDER", "check_intent": true, "tags": ["reminder"]}
+{"id": "c26", "text": "मी आज सकाळी फिरायला गेलो होतो", "expect": "CHAT", "check_intent": false, "tags": ["story", "noisy"]}
+{"id": "c27", "text": "माझा मुलगा परदेशात आहे, त्याला भेटायचं आहे", "expect": "CHAT", "check_intent": false, "tags": ["family"]}
+{"id": "c28", "text": "मला एक गोष्ट सांग", "expect": "CHAT", "check_intent": false, "tags": ["chat"]}
+{"id": "c29", "text": "माझं काम झालं", "expect": "CHAT", "check_intent": false, "tags": ["chat"]}
+{"id": "c30", "text": "नको, आता बोलू नको", "expect": "DECLINE_TOPIC", "check_intent": true, "tags": ["stop"]}
+{"id": "c31", "text": "मला मदत हवी", "expect": "REQUEST_CAREGIVER", "check_intent": true, "tags": ["help"]}
+{"id": "c32", "text": "माझ्या नातवाला माझी आठवण येते का म्हणजे", "expect": "CHAT", "check_intent": false, "tags": ["family", "noisy"]}
+{"id": "c33", "text": "आज खूप थकवा आहे", "expect": "SYMPTOM", "check_intent": true, "tags": ["health"]}
+{"id": "c34", "text": "माझ्या पायात दुखतंय", "expect": "SYMPTOM", "check_intent": true, "tags": ["health"]}
+{"id": "c35", "text": "डोकं दुखतंय", "expect": "SYMPTOM", "check_intent": true, "tags": ["health"]}
+{"id": "c36", "text": "ताप आलाय", "expect": "SYMPTOM", "check_intent": true, "tags": ["health"]}
+{"id": "c37", "text": "मी काल पडले होते", "expect": "SYMPTOM", "check_intent": true, "tags": ["health"]}
+{"id": "c38", "text": "माझी औषधं कोणती आहेत?", "expect": "MEDICAL_QUESTION", "check_intent": true, "tags": ["medicine"]}
+{"id": "c39", "text": "माझ्या मुलाला सांग की मी ठीक आहे", "expect": "REQUEST_CAREGIVER", "check_intent": true, "tags": ["family", "message"]}
+{"id": "c40", "text": "आता थांब", "expect": "DECLINE_TOPIC", "check_intent": true, "tags": ["stop"]}
+{"id": "c41", "text": "यूट्यूबवर भजन लाव", "expect": "OPEN_MEDIA", "check_intent": true, "tags": ["media"]}
+{"id": "c42", "text": "मला पुरणपोळीचा व्हिडिओ दाखव", "expect": "OPEN_MEDIA", "check_intent": true, "tags": ["media", "recipe"]}
+{"id": "c43", "text": "माझं बीपी १४०/९० आहे", "expect": "BP_READING", "check_intent": true, "tags": ["health", "reading"]}
+{"id": "c44", "text": "आज माझी तब्येत बरी नाही", "expect": "SYMPTOM", "check_intent": true, "tags": ["health"]}
+{"id": "c45", "text": "माझ्या नातीने मला भेटायला यायचं आहे", "expect": "CHAT", "check_intent": false, "tags": ["family"]}
+{"id": "c46", "text": "मला एक भजन ऐकव", "expect": "OPEN_MEDIA", "check_intent": true, "tags": ["media"]}
+{"id": "c47", "text": "उद्या डॉक्टरकडे जायचं आहे, आठवण कर", "expect": "CREATE_REMINDER", "check_intent": true, "tags": ["reminder", "missing-time"]}
+{"id": "c48", "text": "मी घेतलेली गोळी विसरले", "expect": "MEDICAL_QUESTION", "check_intent": true, "tags": ["medicine"]}
+{"id": "c49", "text": "माझ्या घरी कोणी नाही, एकटं वाटतं", "expect": "LONELY", "check_intent": false, "tags": ["lonely"]}
+{"id": "c50", "text": "काल रात्री झोप लागली नाही", "expect": "SYMPTOM", "check_intent": true, "tags": ["health", "sleep"]}

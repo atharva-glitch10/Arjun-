@@ -62,9 +62,9 @@ def test_sanitize_strips_first_and_an_all_filler_reply_is_empty():
     assert sanitize_companion("वा, हो.", "mr") == (None, ["empty"])
 
 
-def test_a_reply_over_160_characters_is_too_long():
-    long_reply = "तुम्ही आज बागेत गेला होतात हे ऐकून " * 6
-    assert len(long_reply) > 160
+def test_a_reply_over_300_characters_is_too_long():
+    long_reply = "तुम्ही आज बागेत गेला होतात हे ऐकून " * 12
+    assert len(long_reply) > 300
     assert companion_violations(long_reply, "mr") == ["too_long"]
     assert companion_violations("चिकन छान झालं! कोणी बनवलं?", "mr") == []
 
@@ -110,7 +110,7 @@ def test_the_screen_and_the_voice_lose_the_same_filler(core_http, uid):
     res = eng.handle(uid, STORY)
     assert res.reply == "चिकन छान झालं! कोणी बनवलं?"
     assert res.speech == "<laugh> चिकन छान झालं! कोणी बनवलं?"
-    assert llm.calls[-1]["max_tokens"] == 80 and llm.calls[-1]["temperature"] == config.COMPANION_TEMPERATURE == 0.3
+    assert llm.calls[-1]["max_tokens"] == 250 and llm.calls[-1]["temperature"] == config.COMPANION_TEMPERATURE == 0.5
 
 
 def test_a_reply_that_is_only_filler_becomes_the_fixed_line(core_http, uid):
@@ -126,14 +126,16 @@ def test_an_advice_reply_from_the_llm_is_replaced(core_http, uid):
     assert "पडून" not in res.reply and res.source != "llm"
 
 
-def test_the_prompt_has_the_examples_and_keeps_tags_and_interests(core_http, uid):
+def test_the_prompt_has_the_companion_contract_and_keeps_tags_and_interests(core_http, uid):
     eng, llm = engine(core_http, "छान!")
     core_http.patch(f"/users/{uid}", json={"interests": ["भजन"]})
     eng.handle(uid, STORY)
     system = llm.calls[0]["messages"][0]["content"]
-    for needle in ("at most 12 words", "at most 8 words", "मला वाटतं", "Never guess", "नीट ऐकू आलं नाही, परत सांगाल?",
-                   "चिकन छान झालं! कोणी बनवलं?", "गाणं कोणतं शिकलात आज?", "पडून राहा", "<laugh>", "भजन"):
+    for needle in ("NEVER ACT DUMB", "ALWAYS TRY TO GIVE A SOLUTION", "सांगतो", "विचारतो", "करतो", "तुम्ही",
+                   "USER CONTEXT", "<laugh>", "भजन", "1-2 short sentences"):
         assert needle in system, needle
+    for banned in ("आता कसं वाटतंय?", "हे अजून मला जमत नाही", "at most 12 words", "मला वाटतं"):
+        assert banned not in system
 
 
 # ---- symptoms (new words, UNVERIFIED) ------------------------------------------------------------------------
@@ -153,13 +155,14 @@ def test_a_negated_pain_is_not_a_symptom(text):
     assert symptom_category(text) is None
 
 
-def test_the_symptom_reply_asks_how_she_feels_and_gives_no_llm_call(core_http, uid):
+def test_the_symptom_reply_is_fixed_and_still_makes_one_understanding_call(core_http, uid):
     eng, llm = engine(core_http, "छान!")
     res = eng.handle(uid, "सर्दी झाली आहे")
-    assert res.intent == "SYMPTOM" and res.mode == "companion" and llm.calls == []
+    assert res.intent == "SYMPTOM" and res.mode == "companion" and len(llm.calls) == 1
+    assert llm.calls[0]["messages"][-1]["content"] == "सर्दी झाली आहे"
     assert res.reply == "हे घरच्यांना किंवा डॉक्टरांना नक्की सांगा."  # no consent: no claim to have told them
     core_http.patch(f"/users/{uid}", json={"consent_distress_alert": True})
     told = eng.handle(uid, "ताप आलाय")
     assert told.reply == "घरच्यांना कळवलं आहे."
-    after = eng.handle(uid, STORY)  # the chat continues, and only now is the LLM asked
-    assert after.intent == "CHAT" and len(llm.calls) == 1
+    after = eng.handle(uid, STORY)  # the chat continues, and the LLM is asked again for this turn
+    assert after.intent == "CHAT" and len(llm.calls) == 3

@@ -1,0 +1,99 @@
+{"text": "मला हार्ट अटॅक येतोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "मला हार्टअटॅक येतोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "हार्ट अटैक आला", "expect": "emergency", "kind": "devanagari"}
+{"text": "मला हार्ट अॅटॅक येतोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "मला हार्ट एटॅक येतो", "expect": "emergency", "kind": "devanagari"}
+{"text": "हर्ट अटेक", "expect": "emergency", "kind": "devanagari"}
+{"text": "अटॅक येतोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "मला अटॅक आलाय", "expect": "emergency", "kind": "devanagari"}
+{"text": "हार्ट अटॅक", "expect": "emergency", "kind": "devanagari"}
+{"text": "चेस्ट पेन होतंय", "expect": "emergency", "kind": "devanagari"}
+{"text": "चेस्टपेन", "expect": "emergency", "kind": "devanagari"}
+{"text": "छातीत खूप दुखतंय", "expect": "emergency", "kind": "devanagari"}
+{"text": "छातीत दुखतं आहे", "expect": "emergency", "kind": "devanagari"}
+{"text": "माझ्या छातीत कळ येतेय", "expect": "emergency", "kind": "devanagari"}
+{"text": "बीपी वाढलं", "expect": "emergency", "kind": "devanagari"}
+{"text": "बीपी खूप वाढलंय", "expect": "emergency", "kind": "devanagari"}
+{"text": "शुगर कमी झालीय", "expect": "emergency", "kind": "devanagari"}
+{"text": "स्ट्रोक आला", "expect": "emergency", "kind": "devanagari"}
+{"text": "लकवा मारलाय", "expect": "emergency", "kind": "devanagari"}
+{"text": "पॅरालिसिस झालाय", "expect": "emergency", "kind": "devanagari"}
+{"text": "चक्कर येऊन पडले", "expect": "emergency", "kind": "devanagari"}
+{"text": "बेशुद्ध पडलो", "expect": "emergency", "kind": "devanagari"}
+{"text": "भोवळ येतेय", "expect": "emergency", "kind": "devanagari"}
+{"text": "श्वास घेता येत नाहीये", "expect": "emergency", "kind": "devanagari"}
+{"text": "श्वास घेताना त्रास होतोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "दम लागतोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "दम लागतो खूप", "expect": "emergency", "kind": "devanagari"}
+{"text": "मी पडलोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "मी पडले", "expect": "emergency", "kind": "devanagari"}
+{"text": "रक्त येत आहे", "expect": "emergency", "kind": "devanagari"}
+{"text": "रक्त येतंय", "expect": "emergency", "kind": "devanagari"}
+{"text": "खूप रक्तस्त्राव होतोय", "expect": "emergency", "kind": "devanagari"}
+{"text": "हृदयात दुखतंय", "expect": "emergency", "kind": "devanagari"}
+{"text": "ब्रीदिंग प्रॉब्लेम आहे", "expect": "emergency", "kind": "devanagari"}
+{"text": "तोंड वाकडं झालंय", "expect": "emergency", "kind": "devanagari"}
+{"text": "heart attack", "expect": "emergency", "kind": "latin"}
+{"text": "Heart Attack", "expect": "emergency", "kind": "latin"}
+{"text": "HEART ATTACK", "expect": "emergency", "kind": "latin"}
+{"text": "heartattack", "expect": "emergency", "kind": "latin"}
+{"text": "HeartAttack", "expect": "emergency", "kind": "latin"}
+{"text": "hart attack", "expect": "emergency", "kind": "latin"}
+{"text": "hart atak", "expect": "emergency", "kind": "latin"}
+{"text": "I think I am having a heart attack", "expect": "emergency", "kind": "latin"}
+{"text": "chest pain", "expect": "emergency", "kind": "latin"}
+{"text": "Chest Pain", "expect": "emergency", "kind": "latin"}
+{"text": "chestpain", "expect": "emergency", "kind": "latin"}
+{"text": "pain in my chest", "expect": "emergency", "kind": "latin"}
+{"text": "BP high", "expect": "emergency", "kind": "latin"}
+{"text": "bp is very high", "expect": "emergency", "kind": "latin"}
+{"text": "sugar low", "expect": "emergency", "kind": "latin"}
+{"text": "low sugar", "expect": "emergency", "kind": "latin"}
+{"text": "stroke", "expect": "emergency", "kind": "latin"}
+{"text": "I had a stroke", "expect": "emergency", "kind": "latin"}
+{"text": "I fainted", "expect": "emergency", "kind": "latin"}
+{"text": "breathing problem", "expect": "emergency", "kind": "latin"}
+{"text": "I can't breathe", "expect": "emergency", "kind": "latin"}
+{"text": "short of breath", "expect": "emergency", "kind": "latin"}
+{"text": "I fell down", "expect": "emergency", "kind": "latin"}
+{"text": "bleeding", "expect": "emergency", "kind": "latin"}
+{"text": "paralysis", "expect": "emergency", "kind": "latin"}
+{"text": "mala heart attack yetoy", "expect": "emergency", "kind": "mixed"}
+{"text": "मला heart attack येतोय", "expect": "emergency", "kind": "mixed"}
+{"text": "Heart Attack येतोय मला", "expect": "emergency", "kind": "mixed"}
+{"text": "मला attack आलाय", "expect": "emergency", "kind": "mixed"}
+{"text": "attack आला", "expect": "emergency", "kind": "mixed"}
+{"text": "BP high झालंय", "expect": "emergency", "kind": "mixed"}
+{"text": "बीपी high आहे", "expect": "emergency", "kind": "mixed"}
+{"text": "sugar low झालीय", "expect": "emergency", "kind": "mixed"}
+{"text": "शुगर low", "expect": "emergency", "kind": "mixed"}
+{"text": "मला chest pain होतंय", "expect": "emergency", "kind": "mixed"}
+{"text": "chest मध्ये दुखतंय", "expect": "emergency", "kind": "mixed"}
+{"text": "मला stroke आलाय", "expect": "emergency", "kind": "mixed"}
+{"text": "मी fainted", "expect": "emergency", "kind": "mixed"}
+{"text": "breathing त्रास होतोय", "expect": "emergency", "kind": "mixed"}
+{"text": "mi padlo", "expect": "emergency", "kind": "mixed"}
+{"text": "mala chakkar aali", "expect": "emergency", "kind": "mixed"}
+{"text": "सर १० १५ मला हार्ट अटॅक येतोय", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "इमॅजिनेशन मला हार्ट अटॅक येतो", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "मला हार्ट अटॅक येतोय मला हार्ट अटॅक येतोय मला हार्ट अटॅक येतोय", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "मी बरी आहे मला असं वाटतं की मला हार्ट अटॅक येतोय", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "माझ्या छातीत खूप दुखतं आहे बहुतात मला हार्ट अटॅक येत आहे", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "मला हार्ट अटॅक येतोय.", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "मला, हार्ट अटॅक, येतोय!", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "  मला   हार्ट   अटॅक   येतोय  ", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "मला हार्ट् अटॅक् येतोय", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "ह र्ट अटॅक", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "मला हार्टचा अटॅक येतोय", "expect": "emergency", "kind": "stt_noisy"}
+{"text": "हार्ट चांगलं आहे", "expect": "not_emergency", "kind": "harmless"}
+{"text": "attack वाला सिनेमा बघितला", "expect": "not_emergency", "kind": "harmless"}
+{"text": "छातीला थंडी वाजते", "expect": "not_emergency", "kind": "harmless"}
+{"text": "मी लहानपणी पडले होते", "expect": "not_emergency", "kind": "harmless"}
+{"text": "बीपी तपासा", "expect": "not_emergency", "kind": "harmless"}
+{"text": "साखर संपली आहे", "expect": "not_emergency", "kind": "harmless"}
+{"text": "आज हवा छान आहे", "expect": "not_emergency", "kind": "harmless"}
+{"text": "माझ्या वडिलांना हार्ट अटॅक आला होता", "expect": "not_emergency", "kind": "harmless"}
+{"text": "डोकं दुखतं", "expect": "not_emergency", "kind": "harmless"}
+{"text": "मला झोप येत नाही", "expect": "not_emergency", "kind": "harmless"}
+{"text": "दुपारचं जेवण झालं", "expect": "not_emergency", "kind": "harmless"}
+{"text": "उद्या सकाळी दहा वाजता डॉक्टरकडे जायचं आहे", "expect": "not_emergency", "kind": "harmless"}

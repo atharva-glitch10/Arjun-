@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "reasoning"))
 
-from reasoning_svc.distress import is_distress  # noqa: E402
+from reasoning_svc.distress import is_distress, is_emergency  # noqa: E402
 from reasoning_svc.parser import Profile, parse  # noqa: E402
 
 NOW = datetime(2026, 10, 6, 9, 0)
@@ -57,10 +57,22 @@ def main() -> int:
     print(f"intent accuracy: {intent_ok}/{n}")
     print(f"slot accuracy:   {slot_ok}/{slot_total}")
     print(f"distress recall: {distress_hit}/{distress_total}")
+    emergency = [json.loads(line) for line in (Path(__file__).parent / "emergency_cases.jsonl").open(encoding="utf-8") if line.strip()]
+    must = [c for c in emergency if c["expect"] == "emergency"]
+    harmless = [c for c in emergency if c["expect"] != "emergency"]
+    emergency_hit = sum(is_emergency(c["text"]) for c in must)
+    false_alarm = [c["text"] for c in harmless if is_emergency(c["text"])]
+    print(f"emergency recall (rules only, loanwords + STT spellings): {emergency_hit}/{len(must)}")
+    print(f"harmless sentences flagged as emergency:                  {len(false_alarm)}/{len(harmless)}")
     print("WER / latency: not measured (needs audio + live stack)")
     for m in misses:
         print("  MISS", m)
-    return 0 if distress_hit == distress_total else 1
+    for c in must:
+        if not is_emergency(c["text"]):
+            print("  MISS emergency:", c["text"])
+    for t in false_alarm:
+        print("  FALSE ALARM:", t)
+    return 0 if distress_hit == distress_total and emergency_hit == len(must) and not false_alarm else 1
 
 
 if __name__ == "__main__":

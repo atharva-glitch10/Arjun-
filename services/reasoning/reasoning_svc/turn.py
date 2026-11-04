@@ -34,14 +34,23 @@ from .appcmd import (
     covers,
     is_media_request,
     media_kind,
+    media_specific,
     media_topic,
     name_matches,
 )
 from .checkins import answer_for, topic_of, volunteered_topic
 from .clock import local_now
 from .core_client import CoreClient, CoreError
-from .distress import is_distress, is_emergency, is_lonely, symptom_category
-from .media_understanding import understand_media
+from .distress import (
+    gives_medical_advice,
+    has_failsafe_word,
+    has_health_word,
+    is_distress,
+    is_emergency,
+    is_lonely,
+    mentions_cardiac,
+    symptom_category,
+)
 from .evon import (
     EvonClient,
     sanitize_companion,
@@ -68,6 +77,7 @@ from .textutil import collapse_repeats, detect_language, has_any, normalize, tok
 log = logging.getLogger("reasoning.turn")
 
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
+_ACTION_CONFIDENCE_FLOOR = 0.4  # below this an LLM action intent is ignored and the rules decide
 # What the LLM may SUGGEST for a turn the rules could not read. Medicines, confirmations, forgetting and
 # sharing are deliberately absent: those come only from the deterministic parser.
 _LLM_INTENTS = frozenset(
@@ -151,6 +161,7 @@ NO_ACTION: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": "
 _ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY"})
 _SAFETY_HOLD_S = 120.0  # no reminder / medicine prompt is spoken this soon after a safety reply
 _HISTORY_IDLE = timedelta(minutes=30)  # a longer silence starts a fresh conversation
+_SAFETY_LLM_S = 2.0  # the second-layer safety check: past this the fail-safe words decide
 _CHAT_QUIET_S = 120.0  # a check-in question is not asked within this long of her last turn
 _CHECKIN_UNDERSTAND_S = 3.0  # the one LLM reading of an answer the word rules could not tell
 _OFFER_WINDOW_S = 120.0  # "त्याला निरोप पाठवू का?" waits this long for her yes
@@ -160,6 +171,20 @@ _HISTORY_CARE_CHARS = 140  # a care turn goes into the LLM history as short text
 # Bare answers that are not "stop talking": in a chat they are part of the chat. "नको" / "nako" stays a stop.
 _SOFT_ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO"})
 _STOP_NO = ("nako", "नको", "mat", "नही")
+# First words that make a turn an answer to an open yes/no rather than a declarative sentence. "नाही, घेतली नाही"
+# is an answer; "माझा चस्मा सापडत नाही" is a sentence that happens to end in "नाही".
+_ANSWER_OPENERS = frozenset({
+    "हो", "होय", "हं", "होते", "बरं", "ठीक", "करा", "लाव", "नाही", "नको", "नका", "थांब", "रद्द",
+    "yes", "yeah", "yep", "ok", "okay", "sure", "no", "nope", "stop", "cancel",
+})
+
+
+def _looks_like_an_answer(text: str) -> bool:
+    """True for a bare yes/no ("हो", "नको", "नाही, नको") or a two-word reply. A full sentence is not one."""
+    words = normalize(text).split()
+    if len(words) <= 2:
+        return True
+    return words[0].strip(".,!?;:").lower() in _ANSWER_OPENERS
 
 _AI_QUESTIONS = (
     "are you human", "are you a robot", "are you real", "are you a person", "tu manus aahes ka",
@@ -223,6 +248,8 @@ class TurnEngine:
         self._family_offer: dict[int, tuple[float, str, str]] = {}  # user -> (when, name, relation) of the offer
         # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
         self._history: dict[int, list[tuple[datetime, str, str]]] = {}
+        # USER CONTEXT for the LLM: built from core-api, cached per user for five minutes, never persisted.
+        self._context_cache: dict[int, tuple[float, str]] = {}
 
     # ------------------------------------------------------------------ public
     def _llm_remaining(self) -> float:
@@ -238,14 +265,21 @@ class TurnEngine:
         # 0/1. emergency, then distress: both override everything and must not depend on
         # core-api being reachable. The replies are fixed templates, so a failed lookup only
         # costs the language default.
-        if is_emergency(text) or is_distress(text) or "त्रास" in text and ("होतोय" in text or "होते" in text or "होता" in text):
+        emergency = is_emergency(text)
+        distress = not emergency and (
+            is_distress(text) or "त्रास" in text and ("होतोय" in text or "होते" in text or "होता" in text)
+        )
+        if not (emergency or distress):  # second layer: a body / health word no rule recognised
+            verdict = self._second_look(text)
+            emergency, distress = verdict == "emergency", verdict == "distress"
+        if emergency or distress:
             self._media_choice.pop(user_id, None)  # an emergency closes the cards: nothing is playing
             try:
                 default_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
                 default_lang = "mr"
             lang = detect_language(text, default_lang)
-            if is_emergency(text):
+            if emergency:
                 return self._safety(user_id, lang, trace, t0, kind="emergency")
             return self._distress(user_id, lang, trace, t0)
 
@@ -261,15 +295,22 @@ class TurnEngine:
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
 
+        # 3. ONE LLM call for every non-safety turn: the whole sentence, this conversation's history and the
+        # family/dashboard context together. The rules are only the fallback (no LLM, timeout, bad JSON, or a
+        # low-confidence action intent). Safety above this line never waits for the model.
+        llm, llm_reason, llm_attempted = self._understand(user_id, text, lang, now, user)
+        trace["route"] = "llm" if llm else "rules"
+        if llm is None:
+            trace["route_reason"] = llm_reason
+
         # 2. AI disclosure
         if has_any(normalize(text), _AI_QUESTIONS):
             return TurnResult(r["ai_disclosure"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
 
-        offered = self._family_offer_answer(user_id, text, lang, trace, t0)
+        offered = self._family_offer_answer(user_id, text, lang, trace, t0, llm)
         if offered is not None:
             return offered
 
-        # 3. intent
         profile = Profile(user["wake_time"], user["lunch_time"], user["dinner_time"], lang)
         try:
             pending = self.core.pending(user_id)
@@ -281,7 +322,7 @@ class TurnEngine:
         if pending is not None or draft is not None:
             self._media_choice.pop(user_id, None)  # a reminder / medicine question wins over the cards
         else:
-            picked = self._answer_choice(user_id, text, lang, trace, t0)
+            picked = self._answer_choice(user_id, text, lang, trace, t0, llm)
             if picked is not None:
                 if picked.intent == "CHAT" and picked.mode == "companion":
                     self._convo_at[user_id] = self._mono()
@@ -292,10 +333,10 @@ class TurnEngine:
         # A meal / walk prompt that a session really spoke takes a clear done/skipped answer - but only when
         # nothing else is waiting: no yes/no, no reminder draft, no undo window, no recent medicine prompt.
         if pending is None and draft is None and recent is None and self._recent_dose(user_id) is None:
-            reading = self._record_bp(user_id, text, lang, trace, t0)
+            reading = self._record_bp(user_id, text, lang, trace, t0, llm)
             if reading is not None:
                 return reading
-            checkin = self._answer_open_checkin(user_id, text, lang, trace, t0)
+            checkin = self._answer_open_checkin(user_id, text, lang, trace, t0, llm)
             if checkin is not None:
                 return checkin
         self._note_volunteered(user_id, text, now)
@@ -304,7 +345,8 @@ class TurnEngine:
             answerable = "MEDICINE_TAKEN"  # "हो" / "घेतली" right after a medicine prompt
         conversing = pending is None and draft is None and self._conversing(user_id)
         parsed, source = self._intent(
-            text, profile, now, lang, answerable is not None, draft, answerable, conversing=conversing
+            text, profile, now, lang, answerable is not None, draft, answerable, conversing=conversing,
+            llm=llm, llm_attempted=llm_attempted,
         )
         if pending is None and draft is None:
             parsed = self._use_media_answer(user_id, text, parsed)
@@ -316,6 +358,11 @@ class TurnEngine:
         trace["intent_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         if parsed.intent == "DISTRESS":
             return self._distress(user_id, lang, trace, t0)
+        if parsed.intent == "SYMPTOM" and answerable != "MEDICINE_TAKEN":
+            # A health complaint wins over whatever question was open; the pending action stays open and is
+            # asked again later. "नाही" to the medicine question is handled by the rule branch above.
+            category = symptom_category(text) or "unwell"
+            return self._symptom(user_id, text, category, lang, trace, t0, now)
         if pending is not None and not self._answers_pending(parsed.intent, pending):
             return self._repeat_pending(user_id, pending, lang, now, trace, t0)
         # 3b. a health complaint, then loneliness: only when nothing else was asked for (a care command or a pending
@@ -329,21 +376,179 @@ class TurnEngine:
 
         # 4. dispatch
         try:
-            result = self._dispatch(user_id, text, parsed, pending, draft, profile, now, lang)
+            result = self._dispatch(user_id, text, parsed, pending, draft, profile, now, lang, llm)
         except CoreError as exc:
             log.warning("core error: %s", exc)
             # a half-built reminder must not swallow her next sentences (seen in the 2026-10-31 smoke run)
             self._drafts.pop(user_id, None)
             result = TurnResult(r["error"], parsed.intent, "care", lang)
-        if result.source != "llm":  # a companion reply the LLM wrote already says so
-            result.source = source
+        if result.source != "llm" and not (result.intent == "CHAT" and result.mode == "companion"):
+            result.source = source  # a companion reply keeps its own provenance (LLM or fixed fallback)
         result.trace = self._t({**trace, "intent": parsed.intent}, t0)
         if result.intent == "CHAT" and result.mode == "companion":
             self._convo_at[user_id] = self._mono()
         if result.mode != "safety":
+            guarded = self._guard_cardiac_reply(user_id, text, result, lang, trace, t0)
+            if guarded is not None:
+                return guarded
             self._remember(user_id, now, text, result)
         log.info(json.dumps({"user": user_id, "intent": parsed.intent, **result.trace}))
         return result
+
+    # ------------------------------------------------------------------ LLM-first understanding
+    def _understand(
+        self, uid: int, text: str, lang: str, now: datetime, user: dict[str, Any]
+    ) -> tuple[dict[str, Any] | None, str, bool]:
+        """One LLM reading of this turn, or None + why + whether a call was attempted.
+
+        `attempted` matters: when the unified call was tried and failed we must NOT call the old intent
+        extractor as a second model call; the rule parser answers instead.
+        """
+        if self.evon is None:
+            return None, "no_llm", False
+        if not hasattr(self.evon, "understand_turn"):
+            return None, "legacy_client", False  # a fake/old provider: the old path decides
+        if self._llm_remaining() < _MIN_LLM_BUDGET_S:
+            return None, "no_budget", True
+        history = [(role, said) for _, role, said in self._recent_history(uid, now)]
+        try:
+            data = self.evon.understand_turn(  # type: ignore[attr-defined]
+                text, lang, now, history=history, context=self._user_context(uid, now, user),
+                interests=user.get("interests") or [], timeout=self._llm_remaining(),
+            )
+        except httpx.TimeoutException:
+            log.info("llm understanding timed out")
+            return None, "timeout", True
+        except httpx.HTTPError as exc:
+            log.info("llm understanding failed: %s", type(exc).__name__)
+            return None, "provider_error", True
+        except Exception as exc:  # noqa: BLE001 - a slow/broken provider never breaks the turn
+            log.info("llm understanding failed: %s", type(exc).__name__)
+            return None, "error", True
+        if not isinstance(data, dict):
+            return None, "invalid_json", True
+        intent = str(data.get("intent") or "")
+        if intent not in (
+            "chat", "reminder_add", "reminder_done", "medicine_taken", "medicine_query", "media", "news",
+            "call_family", "message_family", "today_query", "undo", "stop", "health_complaint", "unclear",
+        ):
+            return None, "bad_intent", True
+        try:
+            confidence = float(data.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if intent not in ("chat", "unclear") and confidence < _ACTION_CONFIDENCE_FLOOR:
+            return None, "low_confidence", True
+        return data, "ok", True
+
+    def _user_context(self, uid: int, now: datetime, user: dict[str, Any]) -> str:
+        """A short, private context block for the companion LLM (<=700 chars), cached for five minutes.
+
+        Only what helps a reply: how to address her, family names/relations (never numbers), the date/day,
+        today's medicines and check-ins, today's appointments/reminders, interests and the last conversation
+        summary. No transcript, no phone number, no medical detail beyond what the family already recorded.
+        """
+        hit = self._context_cache.get(uid)
+        if hit is not None and self._mono() - hit[0] < config.USER_CONTEXT_TTL_S:
+            return hit[1]
+        parts: list[str] = []
+        name = re.sub(r"\s*\([^)]*\)", "", str(user.get("name") or "")).strip()
+        honorific = str(user.get("honorific") or "").strip()
+        if name:
+            parts.append(f"Name: {name}" + (f"; address her as {honorific}" if honorific else ""))
+        try:
+            contacts = self.core.contacts(uid) or []
+            family = [
+                f"{c.get('name')} ({c.get('relation')})" for c in contacts
+                if c.get("name") and "doctor" not in str(c.get("relation", "")).lower()
+            ]
+            if family:
+                parts.append("Family: " + ", ".join(family[:6]))
+        except (CoreError, httpx.HTTPError):
+            pass
+        parts.append(f"Today: {now:%A} {now.date().isoformat()}")
+        if user.get("interests"):
+            parts.append("Interests: " + ", ".join(str(x) for x in user["interests"][:4]))
+        try:
+            card = self.core.checkin_card(uid) or []
+            meds = [
+                f"{i.get('label') or i.get('kind')}: {i.get('state')}"
+                for i in card if str(i.get("kind")) == "medicine"
+            ]
+            if meds:
+                parts.append("Medicines today: " + ", ".join(meds[:6]))
+            meals = [
+                f"{i.get('kind')}: {i.get('state')}" for i in card
+                if str(i.get("kind")) in ("sleep", "breakfast", "lunch", "dinner", "walk", "bp")
+            ]
+            if meals:
+                parts.append("Check-ins: " + ", ".join(meals[:6]))
+        except (CoreError, httpx.HTTPError):
+            pass
+        try:
+            day = self.core.day(uid)
+            rows = [
+                f"{i['at'][11:16]} {i.get('label') or i.get('kind')}"
+                for i in day.get("items", [])
+                if i.get("kind") in ("appointment", "reminder", "medicine")
+                and i.get("status") not in ("done", "taken", "unconfirmed")
+            ]
+            if rows:
+                parts.append("On today: " + "; ".join(rows[:5]))
+        except (CoreError, httpx.HTTPError):
+            pass
+        try:
+            w = self.core.wellbeing_today(uid) or {}
+            summary = str(w.get("last_summary") or "").strip()
+            if summary:
+                parts.append("Last conversation: " + summary[:160])
+        except (CoreError, httpx.HTTPError):
+            pass
+        context = "\n".join(parts)
+        if len(context) > config.USER_CONTEXT_MAX_CHARS:
+            context = context[: config.USER_CONTEXT_MAX_CHARS].rsplit(" ", 1)[0]
+        self._context_cache[uid] = (self._mono(), context)
+        return context
+
+    # ------------------------------------------------------------------ second layer and reply guard
+    def _second_look(self, text: str) -> str | None:
+        """For a turn the rules did not flag but that has a body / health word: ask the LLM for a strict-JSON
+        {emergency, distress} verdict (2 s). Returns "emergency", "distress" or None.
+
+        FAIL-SAFE: with no LLM, a timeout, a rate limit or unusable JSON, the words in distress.FAILSAFE_WORDS
+        (attack / अटॅक / छाती / श्वास / बेशुद्ध ...) count as an emergency. A complaint the symptom flow already handles
+        ("डोकं दुखतं") skips the call. The LLM only classifies: it never writes a reply here."""
+        if not has_health_word(text):
+            return None
+        failsafe = has_failsafe_word(text)
+        if symptom_category(text) and not failsafe:
+            return None
+        verdict = None
+        if self.evon is not None and hasattr(self.evon, "safety_check"):
+            try:
+                verdict = self.evon.safety_check(text, timeout=_SAFETY_LLM_S)  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001 - never let the safety net itself break the turn
+                log.warning("safety check failed (%s): fail-safe words decide", type(exc).__name__)
+        if isinstance(verdict, dict) and isinstance(verdict.get("emergency"), bool) and isinstance(verdict.get("distress"), bool):
+            return "emergency" if verdict["emergency"] else "distress" if verdict["distress"] else None
+        return "emergency" if failsafe else None
+
+    def _guard_cardiac_reply(
+        self, uid: int, said: str, result: TurnResult, lang: str, trace: dict[str, Any], t0: float
+    ) -> TurnResult | None:
+        """The LLM never answers a heart attack, chest pain or stroke itself. A reply that carries medical advice for
+        one (aspirin, "lie down", "breathe deeply" ...) is replaced: by the emergency flow when SHE spoke of it, by the
+        fixed "ask the doctor" line when only the reply did. Rules and fixed templates are never touched."""
+        if result.source != "llm" and result.mode != "companion":
+            return None
+        if not gives_medical_advice(result.reply) or not (mentions_cardiac(said) or mentions_cardiac(result.reply)):
+            return None
+        log.warning("guard: a reply with medical advice for a cardiac complaint was replaced (user %s)", uid)
+        if mentions_cardiac(said):
+            return self._safety(uid, lang, trace, t0, kind="emergency")
+        r = rp.R[rp.lang_or_default(lang)]
+        return TurnResult(r["med_deflect"], "MEDICAL_QUESTION", "care", lang, awaiting_confirmation=True,
+                          screen="confirm", trace=self._t(trace, t0))
 
     # ------------------------------------------------------------------ conversation mode
     def _conversing(self, uid: int) -> bool:
@@ -397,7 +602,10 @@ class TurnEngine:
         query = clean_query(text)
         if not query:
             return p
-        return Parsed("OPEN_MEDIA", 0.85, p.language, topic="youtube", query=query)
+        specific = media_specific(query, media_kind(text), query)
+        return Parsed(
+            "OPEN_MEDIA", 0.85, p.language, topic="youtube", query=query, media_specific=specific
+        )
 
     def _unmatched_link_is_chat(self, uid: int, text: str, p: Parsed) -> Parsed:
         """A generic "... दाखव" that names nothing the family added is just talk, not "I could not find that"."""
@@ -526,28 +734,36 @@ class TurnEngine:
         specific = bool(p.media_specific)
 
         if kind == "unknown":
-            self._media_ask[uid] = self._mono()  # the existing 2-minute "what should I play?" state
-            return res(a["ask_media_kind"])
+            if query:  # a named thing after "what should I play?" is a video search, not "what kind?"
+                kind = "video"
+            else:
+                # She only said "YouTube" / "a video" with no subject. If the family curated exactly one
+                # YouTube favourite, open it; otherwise ask the one short question.
+                favourites = [x for x in links if x["kind"] in _YT_MUSIC]
+                if len(favourites) == 1:
+                    return res(a["youtube_open"], self._media_action(self._open_link(favourites[0]), ""))
+                self._media_ask[uid] = self._mono()  # the existing 2-minute "what should I play?" state
+                return res(a["ask_media_kind"])
         if kind == "news":
             return self._offer_news(uid, text, links, a, res)
 
-        # A family favourite she NAMED (and that covers everything she asked for) is the best match. A category
-        # alone ("भजन लाव") goes to search + three cards, so the family's curation never hides other choices.
-        named = self._named_links(links, text, "", _YT_MUSIC)
-        named = [x for x in named if not query or covers(self._link_names(x), query)]
-        if specific and named:
-            pick = named[0]
-            if pick["kind"] == "youtube_query":
-                query = pick["value"]  # a saved search ("जुनी मराठी भजनं")
-            else:
-                return res(a["play"], self._media_action(self._open_link(pick), query))
+        # A family music row that covers what she asked is the best match: an explicitly named favourite
+        # ("देवाची गाणी") or a category ("भजन", "गाणी"). A singer/song name the family did not save is searched.
+        if query:
+            family = [x for x in links if x["kind"] in _YT_MUSIC and covers(self._link_names(x), query)]
+            if family:
+                pick = family[0]
+                if pick["kind"] == "youtube_query":
+                    query = pick["value"]  # a saved search ("जुनी मराठी भजनं")
+                else:
+                    return res(a["play"], self._media_action(self._open_link(pick), query))
 
         if not query:  # a category with no words: search the category in Marathi
             query = {
                 "music": "मराठी गाणी", "devotional": "मराठी भजन", "recipe": "मराठी रेसिपी",
                 "exercise": "मराठी व्यायाम", "video": "मराठी व्हिडिओ",
             }.get(kind, "")
-        query = self._with_marathi(query)
+        query = self._with_marathi(query, specific)
         if not query:
             self._media_ask[uid] = self._mono()
             return res(a["ask_media_kind"])
@@ -585,10 +801,13 @@ class TurnEngine:
         return self._offer(uid, "news", "", items, a, res)
 
     @staticmethod
-    def _with_marathi(query: str) -> str:
-        """Search in Marathi unless she already said it: "पुरणपोळी" -> "पुरणपोळी मराठी"."""
+    def _with_marathi(query: str, specific: bool = False) -> str:
+        """Search in Marathi for a category, but never change a named singer/song: "पुरणपोळी" -> "पुरणपोळी मराठी",
+        while "भीमसेन जोशी भजन" is searched exactly as she said it."""
         q = " ".join(query.split())[:100]
-        return q if not q or "मराठी" in q else f"{q} मराठी"
+        if specific or not q or "मराठी" in q:
+            return q
+        return f"{q} मराठी"
 
     def _search(self, uid: int, query: str, *, kind: str | None = None) -> list[dict[str, Any]] | None:
         """core-api search; None means "no key / quota / Google down", which opens the results page instead."""
@@ -678,6 +897,7 @@ class TurnEngine:
     # ---- the answer to the three cards ----------------------------------------------------------------------
     def _answer_choice(
         self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float,
+        llm: dict[str, Any] | None = None,
     ) -> TurnResult | None:
         """A spoken / tapped answer to the cards, or None (the cards are cleared and the turn goes on normally).
 
@@ -715,7 +935,9 @@ class TurnEngine:
                  "choices": page},
             )
         page = state.items[state.offset:state.offset + 3]
-        index = self._ordinal(toks, len(page))
+        index = self._llm_choice_index((llm or {}).get("slots") or {}, page)
+        if index is None:
+            index = self._ordinal(toks, len(page))
         if index is None:
             index = self._named_card(page, norm)
         if index is None:  # not an answer: the cards go, the sentence takes the normal path
@@ -733,6 +955,30 @@ class TurnEngine:
     @staticmethod
     def _is_choice_cancel(toks: list[str]) -> bool:
         return any(t in _CHOICE_CANCEL for t in toks)
+
+    @staticmethod
+    def _llm_choice_index(slots: dict[str, Any], page: list[dict[str, Any]]) -> int | None:
+        """The card the LLM chose: an integer (1-based), a digit, an ordinal word, or a short title."""
+        choice = slots.get("choice")
+        if isinstance(choice, bool) or choice is None:
+            return None
+        if isinstance(choice, int):
+            index = choice - 1
+            return index if 0 <= index < len(page) else None
+        text = normalize(str(choice))
+        if not text:
+            return None
+        if text.isdigit():
+            index = int(text) - 1
+            return index if 0 <= index < len(page) else None
+        for index, words in _CHOICE_ORDINALS.items():
+            if index < len(page) and any(w in text.split() for w in words):
+                return index
+        for i, item in enumerate(page):
+            title = normalize(str(item.get("short") or item.get("title") or ""))
+            if title and (title in text or text in title):
+                return i
+        return None
 
     @staticmethod
     def _ordinal(toks: list[str], page_len: int) -> int | None:
@@ -847,9 +1093,19 @@ class TurnEngine:
         )
 
     # ------------------------------------------------------------------ T8: deliveries
-    def _record_bp(self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
+    def _record_bp(
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float,
+        llm: dict[str, Any] | None = None,
+    ) -> TurnResult | None:
         """Store a spoken BP reading and repeat the same numbers back. Never a judgement, never advice."""
         numbers = parse_bp(text)
+        slots = (llm or {}).get("slots") or {}
+        bp = slots.get("bp")
+        if numbers is None and isinstance(bp, dict):
+            try:
+                numbers = (int(bp["systolic"]), int(bp["diastolic"]))
+            except (KeyError, TypeError, ValueError):
+                numbers = None
         if numbers is None:
             return None
         systolic, diastolic = numbers
@@ -927,9 +1183,11 @@ class TurnEngine:
                 return item
         return None
 
-    def _read_checkin_answer(self, kind: str, text: str) -> str | None:
+    def _read_checkin_answer(self, kind: str, text: str, llm_answer: str | None = None) -> str | None:
         """done / skipped: the word rules first, then ONE short strict-JSON LLM reading (3 s). "unclear" = None, and
         the sentence is then treated as ordinary talk. The LLM sees only this one answer; nothing it says is kept."""
+        if llm_answer in ("done", "skipped"):
+            return llm_answer
         answer = answer_for(kind, text)
         if answer is not None or self.evon is None or not hasattr(self.evon, "checkin_understanding"):
             return answer
@@ -945,7 +1203,8 @@ class TurnEngine:
         return {"done": "done", "not_done": "skipped"}.get(str(data.get("status")))
 
     def _answer_open_checkin(
-        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float,
+        llm: dict[str, Any] | None = None,
     ) -> TurnResult | None:
         """Record her done / skipped answer for the open check-in, on a fixed template, and say ONE short line.
 
@@ -960,11 +1219,14 @@ class TurnEngine:
             return None  # queued but never spoken: the words are not an answer to it
         if symptom_category(text) or is_lonely(text):
             return None
-        answer = self._read_checkin_answer(c["kind"], text)
+        slots = (llm or {}).get("slots") or {}
+        llm_answer = str(slots.get("checkin_answer") or "") or None
+        answer = self._read_checkin_answer(c["kind"], text, llm_answer)
         if answer is None:
             return None
         try:
             self.core.answer_checkin(uid, c["id"], answer)
+            self._context_cache.pop(uid, None)
         except CoreError as exc:
             log.warning("could not record the check-in answer: %s", exc)
             return None
@@ -987,7 +1249,8 @@ class TurnEngine:
         return TurnResult(line, intent, "care", lang, trace=self._t(trace, t0))
 
     def _family_offer_answer(
-        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float,
+        llm: dict[str, Any] | None = None,
     ) -> TurnResult | None:
         """Her reply to "त्याला निरोप पाठवू का?": yes sends the family the usual help message (with the undo window),
         no drops it. Anything else drops the offer and is handled as a normal sentence."""
@@ -996,11 +1259,13 @@ class TurnEngine:
             return None
         norm = normalize(text)
         r = rp.R[rp.lang_or_default(lang)]
-        if len(tokens(norm)) > 4:
+        slots = (llm or {}).get("slots") or {}
+        confirm = str(slots.get("confirm") or "").lower()
+        if len(tokens(norm)) > 4 and confirm not in ("yes", "no"):
             return None
-        if has_any(norm, NO):
+        if confirm == "no" or (not confirm and has_any(norm, NO)):
             return TurnResult(r["checkin_offer_no"], "CHECKIN_SKIPPED", "care", lang, trace=self._t(trace, t0))
-        if not has_any(norm, YES):
+        if confirm != "yes" and not has_any(norm, YES):
             return None
         message = r["checkin_offer_message"].format(name=offer[1])
         try:
@@ -1060,6 +1325,7 @@ class TurnEngine:
                 pass
             raise
         self._last_done[uid] = (done, self._mono())
+        self._context_cache.pop(uid, None)
         return done
 
     def _recent_done(self, uid: int) -> dict[str, Any] | None:
@@ -1174,8 +1440,29 @@ class TurnEngine:
         draft: Draft | None,
         pending_action: str | None = None,
         conversing: bool = False,
+        llm: dict[str, Any] | None = None,
+        llm_attempted: bool = False,
     ) -> tuple[Parsed, str]:
         rules = parse(text, profile, now, lang, has_pending, pending_action)
+        # A health complaint is never an answer to an open question. "आज माझी तब्येत बरी नाही" used to end in
+        # "नाही" -> CONFIRM_NO -> cancel the pending reminder and say the family was told help is not needed.
+        # The medicine question is the one exception: "नाही, घेतली नाही" must still record a missed dose.
+        if (
+            rules.intent == "CONFIRM_NO"
+            and pending_action != "MEDICINE_TAKEN"
+            and symptom_category(text)
+        ):
+            rules.intent = "SYMPTOM"
+        # A yes/no is an ANSWER only when it looks like one ("हो", "नको", "नाही, नको"). A declarative sentence
+        # that merely contains a negation is not: "माझा चस्मा सापडत नाही" used to undo the last action and say
+        # "घरच्यांना कळवलं की आता मदत नको". The LLM reads those; the rules only answer the short forms.
+        if (
+            rules.intent in ("CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC")
+            and pending_action != "MEDICINE_TAKEN"
+            and rules.topic != "correction"  # "… दहा डॉक्टरांकडे नाही जायचं" corrects the pending reminder
+            and not _looks_like_an_answer(text)
+        ):
+            rules.intent = "UNKNOWN"
         if pending_action == "MEDICINE_TAKEN":  # the open question is "did you take it?"
             norm = normalize(text)
             if rules.intent in ("COMPLETE_REMINDER", "MED_TAKEN") and has_any(norm, MED_TAKEN_WORDS):
@@ -1189,20 +1476,21 @@ class TurnEngine:
         if draft is not None and rules.intent in ("UNKNOWN", "CHAT", "CREATE_REMINDER"):
             rules.intent = "CREATE_REMINDER"
             return rules, "rules"
-        # Media understanding. The rules know this is a media-ish request (YouTube / बघायचं / लाव / a recipe
-        # question) but not always WHAT it is. One strict-JSON call decides kind / topic / specific, with a 3 s
-        # budget; a slow or invalid answer leaves the rule answer in place. Safety, medicine and reminders were
-        # already decided above and never reach this call.
-        # Media understanding intentionally disabled here: existing rule paths (family favourites, named
-        # singers, empty-query ask, fixed fallbacks) must run first. Re-enable only for generic requests
-        # that produce no rule result, in a follow-up.
+        # Deterministic state answers (yes/no, stop, confirmations, greetings) stay on the rules. They are
+        # state, not language understanding; the LLM call still happened and its slots were used above.
+        deterministic = (
+            "CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY", "MED_TAKEN", "MED_SNOOZE",
+            "TIME_QUERY", "NEXT_UP", "GREETING", "HEARING_CHECK",
+        )
+        if llm is not None and rules.intent not in deterministic:
+            parsed = self._parsed_from_llm(llm, rules, lang)
+            if parsed is not None:
+                return parsed, "llm"
         if rules.intent == "UNKNOWN" and symptom_category(text):
-            return rules, "rules"  # a health complaint gets the fixed template; the LLM never hears it
-        if conversing and rules.intent == "UNKNOWN":
-            return rules, "rules"  # mid-chat an odd turn is chat (_reshape); the intent extractor is not asked
-        # The LLM is asked ONLY about turns the rules cannot read. Care commands, times, medicines,
-        # confirmations and safety were decided above/before and never wait for it. Nor does it hear
-        # anything while a yes/no is pending: the only valid turns then are an answer or a correction.
+            return rules, "rules"  # a health complaint the LLM could not read still gets the fixed template
+        if llm_attempted:
+            return rules, "rules"  # already asked this turn; never a second intent call
+        # Legacy provider without `understand_turn`: the old path, only for turns the rules cannot read.
         if (
             self.evon is None
             or has_pending
@@ -1231,12 +1519,6 @@ class TurnEngine:
             else:
                 d.time = data["time"]
             return Parsed(intent, float(data["confidence"]), lang, d), "llm"
-        # confirmations / decline always come from the deterministic parser (safer, no latency)
-        if rules.intent in (
-            "CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY", "MED_TAKEN", "MED_SNOOZE",
-            "TIME_QUERY", "NEXT_UP", "GREETING", "HEARING_CHECK",
-        ):
-            return rules, "rules"
         if intent in APP_INTENTS:  # only a spoken name or a control word; the link itself comes from the family's rows
             topic = data.get("media_control") if intent == MEDIA_CONTROL else rules.topic
             query = (data.get("link_label") or data.get("media_query") or "") if intent != MEDIA_CONTROL else ""
@@ -1249,6 +1531,92 @@ class TurnEngine:
             "llm",
         )
 
+    def _parsed_from_llm(
+        self, data: dict[str, Any], rules: Parsed, lang: str
+    ) -> Parsed | None:
+        """Translate the unified JSON intent + slots into the internal Parsed the dispatcher already speaks.
+
+        `legacy_reply` (a provider that ignored the JSON contract and wrote prose) may only speak; it never
+        overrides a clear rule action such as a reminder, a medicine report or an app command.
+        """
+        intent = str(data.get("intent") or "")
+        slots = data.get("slots") if isinstance(data.get("slots"), dict) else {}
+        try:
+            confidence = float(data.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if data.get("legacy_reply") and rules.intent not in ("CHAT", "UNKNOWN"):
+            return None
+        confirm = str(slots.get("confirm") or "").lower()
+        if confirm in ("yes", "no"):
+            return Parsed("CONFIRM_YES" if confirm == "yes" else "CONFIRM_NO", confidence, lang, rules.draft)
+        query = str(slots.get("query") or "")
+        if "http" in query.lower():
+            query = ""
+        kind = str(slots.get("media_kind") or "")
+        # An old intent-only JSON from a fake/legacy provider keeps its exact meaning. OPEN_LINK and
+        # OPEN_WHATSAPP must not become a media search, and a control word is not a topic decline.
+        legacy_intent = str(data.get("legacy_intent") or "")
+        if legacy_intent == "OPEN_LINK":
+            return Parsed("OPEN_LINK", confidence, lang, rules.draft, query=query[:100])
+        if legacy_intent == "OPEN_WHATSAPP":
+            return Parsed("OPEN_WHATSAPP", confidence, lang, rules.draft, contact_hint=query or rules.contact_hint)
+        if legacy_intent == "MEDIA_CONTROL":
+            control = str(slots.get("control") or "")
+            return Parsed(MEDIA_CONTROL, confidence, lang, rules.draft, topic=control or rules.topic)
+        if legacy_intent == "MED_SNOOZE":
+            return Parsed("MED_SNOOZE", confidence, lang, rules.draft)
+        if legacy_intent in ("TIME_QUERY", "NEXT_UP"):
+            return Parsed(legacy_intent, confidence, lang, rules.draft, topic=rules.topic)
+        if intent == "chat":
+            return Parsed("CHAT", confidence, lang, rules.draft, rules.contact_hint, rules.topic)
+        if intent == "unclear":
+            return Parsed("UNKNOWN", confidence, lang, rules.draft)
+        if intent == "reminder_add":
+            d = Draft(task=slots.get("task") or rules.draft.task, date=slots.get("date") or rules.draft.date)
+            if slots.get("time_ambiguous") or not slots.get("time"):
+                if rules.draft.ambiguous_hour:
+                    d.ambiguous_hour = rules.draft.ambiguous_hour
+                elif rules.draft.time:
+                    d.time = rules.draft.time
+            else:
+                d.time = str(slots["time"])
+            return Parsed("CREATE_REMINDER", confidence, lang, d)
+        if intent == "reminder_done":
+            return Parsed("COMPLETE_REMINDER", confidence, lang, rules.draft, topic=rules.topic)
+        if intent == "medicine_taken":
+            return Parsed("MED_TAKEN", confidence, lang, rules.draft)
+        if intent == "medicine_query":
+            return Parsed("MEDICAL_QUESTION", confidence, lang, rules.draft)
+        if intent == "media":
+            topic = "news_video" if kind == "news" else (kind or rules.media_kind)
+            p = Parsed(
+                OPEN_MEDIA, confidence, lang, rules.draft, topic=topic, query=query[:100],
+                media_kind=kind or rules.media_kind, media_specific=bool(slots.get("media_specific") or rules.media_specific),
+            )
+            return p
+        if intent == "news":
+            return Parsed(NEWS_READ, confidence, lang, rules.draft)
+        if intent == "call_family":
+            return Parsed("CALL_FAMILY_REMINDER", confidence, lang, rules.draft, contact_hint=query or rules.contact_hint)
+        if intent == "message_family":
+            return Parsed("REQUEST_CAREGIVER", confidence, lang, rules.draft, contact_hint=query or rules.contact_hint)
+        if intent == "today_query":
+            p = Parsed("LIST_TODAY", confidence, lang, rules.draft)
+            p.topic = rules.topic
+            return p
+        if intent == "undo":
+            return Parsed("CONFIRM_NO", confidence, lang, rules.draft)
+        if intent == "stop":
+            control = str(slots.get("control") or "")
+            if control in CONTROLS or rules.intent == MEDIA_CONTROL:
+                return Parsed(MEDIA_CONTROL, confidence, lang, rules.draft, topic=control or rules.topic)
+            return Parsed("DECLINE_TOPIC", confidence, lang, rules.draft)
+        if intent == "health_complaint":
+            return Parsed("SYMPTOM", confidence, lang, rules.draft)
+        return None
+
+
     # ------------------------------------------------------------------ dispatch
     def _dispatch(
         self,
@@ -1260,6 +1628,7 @@ class TurnEngine:
         profile: Profile,
         now: datetime,
         lang: str,
+        llm: dict[str, Any] | None = None,
     ) -> TurnResult:
         r = rp.R[rp.lang_or_default(lang)]
         intent = p.intent
@@ -1463,7 +1832,9 @@ class TurnEngine:
                     self._last_done.pop(uid, None)
                 else:
                     self._last_done[uid] = before
-            reply, speech, from_llm = self._chat_reply(uid, text, lang, now)
+            reply, speech, from_llm = self._chat_reply(
+                uid, text, lang, now, llm_reply=(llm or {}).get("reply") or ""
+            )
             res = out(reply, "companion")
             res.speech = speech
             if from_llm:
@@ -1672,30 +2043,39 @@ class TurnEngine:
         return out(r["auto_snooze"])
 
     def _chat_reply(
-        self, uid: int, text: str, lang: str, now: datetime | None = None
+        self, uid: int, text: str, lang: str, now: datetime | None = None, llm_reply: str = ""
     ) -> tuple[str, str, bool]:
         """(text for the screen, text for the voice, written by the LLM?). The voice text may carry Timbre voice
-        tags the LLM chose."""
+        tags the LLM chose. `llm_reply` is the reply from the unified call; only chat/unclear turns pass it."""
         now = now or self.clock()
         reply: str | None = None
         speech = ""
-        if self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
-            recent = self._recent_history(uid, now)
-            interests = self.core.user(uid).get("interests") or []
+        raw = llm_reply or None
+        challenged = False
+        if raw is None and self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
             raw = self.evon.companion_reply(
-                text, lang, now, history=[(role, said) for _, role, said in recent], interests=interests,
-                timeout=self._llm_remaining(),
+                text, lang, now, history=self._chat_history(uid, now),
+                interests=self.core.user(uid).get("interests") or [], timeout=self._llm_remaining(),
             )
+        while raw is not None:
             # voice tags out first, so the boundary checks see only words
-            clean, voiced = split_voice_tags(raw) if raw else (None, "")
+            clean, voiced = split_voice_tags(raw)
             if clean is not None:  # same words on the screen and in the voice (the leading tag stays on the voice)
                 clean, voiced = strip_filler(clean), strip_filler_voiced(voiced)
-            # two sentences at most, and no boundary broken (human / missed you / medical / recipes, facts)
             reply, reasons = sanitize_companion(clean, lang)
-            if raw and reasons:
-                log.warning("companion reply rejected (%s); using the fixed line", ",".join(reasons))
-            if reply is not None and clean is not None and reply == clean.strip() and voiced != reply:
-                speech = voiced  # untrimmed: the tags still sit on the right words
+            if reply is not None:
+                if clean is not None and reply == clean.strip() and voiced != reply:
+                    speech = voiced  # untrimmed: the tags still sit on the right words
+                break
+            log.warning("companion reply rejected (%s)", ",".join(reasons))
+            if challenged or self.evon is None or self._llm_remaining() < _MIN_LLM_BUDGET_S:
+                break
+            challenged = True  # one corrective retry, then the fixed line
+            raw = self.evon.companion_reply(
+                text, lang, now, history=self._chat_history(uid, now),
+                interests=self.core.user(uid).get("interests") or [], timeout=self._llm_remaining(),
+                correction=",".join(reasons),
+            )
         from_llm = reply is not None
         if reply is None:
             n = self._chat_counter.get(uid, 0)
@@ -1706,6 +2086,9 @@ class TurnEngine:
         turns += [(now, "user", text), (now, "assistant", reply)]
         self._history[uid] = turns[-self._history_cap:]
         return reply, speech, from_llm
+
+    def _chat_history(self, uid: int, now: datetime) -> list[tuple[str, str]]:
+        return [(role, said) for _, role, said in self._recent_history(uid, now)]
 
     def _recent_history(self, uid: int, now: datetime) -> list[tuple[datetime, str, str]]:
         turns = self._history.get(uid, [])

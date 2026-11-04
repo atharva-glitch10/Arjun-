@@ -84,11 +84,14 @@ optional, e.g. `sarvam-105b-conversations`). Thinking is OFF (`reasoning_effort:
 It also writes the family's conversation summary (JSON, enums validated). Calls are limited (concurrency 4,
 60/min, back-off after a provider 429) and never queue: over a limit, the rules answer.
 
-Layered brain so the app works with no LLM at all: safety rules -> rules + Marathi time grammar -> the hosted
-LLM, asked only for companion/chat replies and for turns the rules return UNKNOWN (it may then only suggest
-CREATE_REMINDER / LIST_TODAY / GET_APPOINTMENT / CALL_FAMILY_REMINDER / REQUEST_CAREGIVER / CHAT; everything
-still needs the pending action and a spoken yes). Care mode, times, medicines, confirmations and safety never
-wait for it. Intent extraction: temperature 0. Companion: one fixed value (0.3 since 2026-11-02, lowered from 0.6 after long, guessing replies; not yet chosen by a proper test). Send `chat_template_kwargs` only to vLLM/Evon (`LLM_SEND_TEMPLATE_KWARGS=0`
+Layered brain so the app works with no LLM at all: safety rules -> ONE LLM understanding call for every non-safety
+turn (intent, slots, reply, confidence) -> the rule parser ONLY as a fallback when that call times out, errors,
+returns bad JSON or reports confidence < 0.4 for an action. Action intents still execute the deterministic SQL-backed
+paths, so the model chooses the meaning and the code decides the action; a chat reply can never invent a reminder or
+a medicine record. Deterministic state answers (pending yes/no, stop, medicine taken, time/next-up, greeting, hearing
+check) stay in code. Care mode, times, medicines, confirmations and safety never wait for the LLM.
+Understanding temperature: 0. Companion: 0.5 since 2026-11-04 (was 0.3, 0.6 before that), chosen by the 50-turn
+companion eval, not by feel. Send `chat_template_kwargs` only to vLLM/Evon (`LLM_SEND_TEMPLATE_KWARGS=0`
 for hosted providers).
 
 ## Voice path facts (verified)

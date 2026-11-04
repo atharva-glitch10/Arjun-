@@ -1,4 +1,4 @@
-"""When the hosted LLM may be called, what it may do, and what it may say.
+"""LLM-first understanding: one call per non-safety turn, the rule fallback, and what the companion may say.
 
 Boundaries: 1 (the LLM never touches the DB), 4-6 (AI, no medical advice, medicines), 8 (safety first),
 9 (no engagement tricks), 10 (no recipes or facts from memory). Evon is not involved.
@@ -20,35 +20,63 @@ STORY = "आज मी बागेत फिरायला गेलो हो
 GOOD = "छान वाटलं असेल. त्या बागेत तुम्ही काय पाहिलं?"
 
 
-def _resp(content, usage=None):
-    body = {"choices": [{"message": {"content": content}}]}
-    if usage:
-        body["usage"] = usage
-    return httpx.Response(200, json=body)
+def _resp(content, finish=None):
+    choice = {"message": {"content": content}}
+    if finish:
+        choice["finish_reason"] = finish
+    return httpx.Response(200, json={"choices": [choice]})
+
+
+def _payload(reply=GOOD, intent="chat", confidence=0.9, **slots):
+    return {
+        "intent": intent,
+        "slots": {"task": None, "date": None, "time": None, "time_ambiguous": False, "query": None,
+                  "media_kind": None, "media_specific": False, "control": None, "contact": None,
+                  "confirm": None, "choice": None, "checkin_answer": None, "bp": None, **slots},
+        "reply": reply,
+        "confidence": confidence,
+    }
 
 
 class Llm:
-    """A fake provider that records every request."""
+    """A fake provider that records every request and separates the one understand call from safety."""
 
-    def __init__(self, intent=None, companion=GOOD):
+    def __init__(self, payload=None, companion=GOOD, finish=None, error=None):
         self.calls: list[dict] = []
-        self.intent, self.companion = intent, companion
-        self.on_call = None
+        self.payload = payload if payload is not None else _payload()
+        self.companion = companion
+        self.finish = finish
+        self.error = error
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
         body = json.loads(req.content)
+        system = body["messages"][0]["content"]
+        if "Return ONLY one JSON object" in system:
+            purpose = "understand"
+        elif "safety classifier" in system:
+            purpose = "safety"
+        elif "check-in question" in system:
+            purpose = "checkin"
+        else:
+            purpose = "companion"
+        body["_purpose"] = purpose
         body["_timeout"] = req.extensions["timeout"]["read"]
-        body["_purpose"] = "intent" if body["temperature"] == 0.0 else "companion"
         self.calls.append(body)
-        if self.on_call:
-            self.on_call(body)
-        if body["_purpose"] == "intent":
-            return _resp(json.dumps(self.intent or {"intent": "CHAT", "confidence": 0.9, "language": "mr"}))
+        if self.error is not None:
+            raise self.error
+        if purpose == "understand":
+            return _resp(json.dumps(self.payload), self.finish)
+        if purpose == "safety":
+            return _resp(json.dumps({"emergency": False, "distress": False}))
         return _resp(self.companion)
 
     @property
     def purposes(self):
         return [c["_purpose"] for c in self.calls]
+
+    @property
+    def last(self):
+        return self.calls[-1]
 
 
 def make_engine(core_http, llm, **kw):
@@ -70,78 +98,128 @@ def make_engine(core_http, llm, **kw):
         "ऐकू येतंय का",
         "हो",
         "नको",
-        "औषधाबद्दल विचारायचं आहे दोन गोळ्या घेऊ का",
         "मी तुला सांगितलं ते विसर",
     ],
 )
-def test_care_commands_never_reach_the_llm(core_http, uid, text):
+def test_every_non_safety_turn_makes_exactly_one_understanding_call(core_http, uid, text):
     llm = Llm()
     make_engine(core_http, llm).handle(uid, text)
-    assert llm.calls == [], text
+    assert llm.purposes == ["understand"], text
 
 
 @pytest.mark.parametrize("text", ["मला छातीत दुखतंय", "mala jagaychi iccha nahi"])
 def test_emergency_and_distress_run_before_and_without_any_llm_call(core_http, uid, text):
-    llm = Llm()
+    llm = Llm(error=AssertionError("safety must not call the LLM"))
     res = make_engine(core_http, llm).handle(uid, text)
     assert res.mode == "safety" and llm.calls == []
 
 
-def test_an_ordinary_chat_turn_makes_exactly_one_companion_call(core_http, uid):
-    llm = Llm()
-    res = make_engine(core_http, llm).handle(uid, STORY)
-    assert llm.purposes == ["companion"] and res.mode == "companion" and res.reply == GOOD
+def test_a_story_that_mentions_medicine_stays_chat(core_http, uid):
+    # The old keyword parser took the medicine word and recorded a dose; the whole sentence is chat.
+    llm = Llm(payload=_payload(reply="बरं वाटलं असेल. बागेत काय पाहिलं?"))
+    res = make_engine(core_http, llm).handle(uid, "आज मी औषध घेतलं आणि बागेत फिरायला गेलो, खूप छान वाटलं")
+    assert res.intent == "CHAT" and res.reply == "वाटलं असेल. बागेत काय पाहिलं?"
+    assert llm.purposes.count("understand") == 1
 
 
-def test_an_unreadable_turn_asks_the_llm_for_the_intent(core_http, uid):
-    llm = Llm(intent={"intent": "CREATE_REMINDER", "task": "doctor", "date": "2026-10-07", "time": "10:00",
-                      "time_ambiguous": False, "confidence": 0.86, "language": "mr"})
+# ---- each intent does the right thing --------------------------------------------------------------
+def test_llm_reminder_add_becomes_a_pending_reminder(core_http, uid):
+    llm = Llm(payload=_payload(intent="reminder_add", task="doctor", date="2026-10-07", time="10:00"))
     res = make_engine(core_http, llm).handle(uid, "udya doctor")
-    assert llm.purposes == ["intent"] and res.source == "llm"
-    # it only SUGGESTED: the action is pending and waits for a spoken yes
-    assert res.awaiting_confirmation and res.screen == "confirm"
+    assert res.source == "llm" and res.awaiting_confirmation and res.screen == "confirm"
     assert core_http.get(f"/users/{uid}/reminders").json() == []
     assert core_http.get(f"/users/{uid}/actions/pending").json()["payload"]["time"] == "10:00"
 
 
-def test_unreadable_then_chat_uses_two_calls_in_that_order(core_http, uid):
-    llm = Llm()  # intent CHAT, then a companion reply
+@pytest.mark.parametrize(
+    "intent,slots,expected",
+    [
+        ("medicine_taken", {}, "MED_TAKEN"),
+        ("medicine_query", {}, "MEDICAL_QUESTION"),
+        ("news", {}, "NEWS_READ"),
+        ("today_query", {}, "LIST_TODAY"),
+        ("media", {"media_kind": "unknown"}, "OPEN_MEDIA"),
+        ("call_family", {}, "CALL_FAMILY_REMINDER"),
+        ("message_family", {}, "REQUEST_CAREGIVER"),
+        ("stop", {"control": "stop"}, "MEDIA_CONTROL"),
+        ("undo", {}, "DECLINE_TOPIC"),  # nothing was just done, so "undo" is a topic decline
+        ("health_complaint", {}, "SYMPTOM"),
+        ("chat", {}, "CHAT"),
+        ("unclear", {}, "UNKNOWN"),
+    ],
+)
+def test_each_llm_intent_reaches_its_action(core_http, uid, intent, slots, expected):
+    llm = Llm(payload=_payload(intent=intent, **slots))
     res = make_engine(core_http, llm).handle(uid, "हं")
-    assert llm.purposes == ["intent", "companion"] and res.mode == "companion"
+    assert res.intent == expected
+    assert llm.purposes == ["understand"]
 
 
-@pytest.mark.parametrize("intent", ["MED_TAKEN", "MED_SNOOZE", "CONFIRM_YES", "CONFIRM_NO", "FORGET_MEMORY",
-                                    "SHARE_STORY_WITH_FAMILY", "COMPLETE_REMINDER", "MEDICAL_QUESTION"])
-def test_the_llm_cannot_promote_an_unreadable_turn_into_a_sensitive_intent(core_http, uid, intent):
-    llm = Llm(intent={"intent": intent, "confidence": 0.99, "language": "mr"})
-    res = make_engine(core_http, llm).handle(uid, "हं")
-    assert res.source == "rules" and res.intent == "UNKNOWN" and res.reply == rp.R["mr"]["unknown"]
+def test_a_long_sentence_is_not_a_no_to_an_action_that_was_already_done(core_http, uid):
+    # Companion-eval regression: after "राहुलला सांग मला फोन कर", "माझा चस्मा सापडत नाही" was read as "नाही",
+    # undid the family message and said "घरच्यांना कळवलं की आता मदत नको". A longer sentence is not an undo.
+    llm = Llm(payload=_payload(intent="message_family"))
+    eng = make_engine(core_http, llm, ask_first=False)
+    first = eng.handle(uid, "राहुलला सांग मला फोन कर")
+    assert first.intent == "REQUEST_CAREGIVER" and not first.awaiting_confirmation
+
+    llm.payload = _payload(intent="chat", reply="चस्मा कुठे ठेवला होता? मी शोधायला मदत करतो.")
+    res = eng.handle(uid, "माझा चस्मा सापडत नाही")
+    assert res.intent == "CHAT"
+    assert res.reply.startswith("चस्मा कुठे")
+    assert "मदत नको" not in res.reply
+
+
+def test_a_health_complaint_is_not_a_no_to_an_open_question(core_http, uid):
+    # Regression from the companion eval: "आज माझी तब्येत बरी नाही" ended in "नाही", so the rule parser read
+    # it as a no, cancelled the pending reminder, and said the family was told help is not needed.
+    eng = make_engine(core_http, Llm(payload=_payload(intent="reminder_add", task="doctor",
+                                                     date="2026-10-07", time="10:00")))
+    eng.handle(uid, DOCTOR)
+    assert core_http.get(f"/users/{uid}/actions/pending").json() is not None
+
+    llm = Llm(payload=_payload(intent="health_complaint"))
+    res = make_engine(core_http, llm).handle(uid, "आज माझी तब्येत बरी नाही")
+    assert res.intent == "SYMPTOM" and res.mode == "companion"
+    assert "मदत नको" not in res.reply
+    assert core_http.get(f"/users/{uid}/actions/pending").json() is not None  # still open, asked again later
+    assert llm.purposes == ["understand"]
+
+
+# ---- the rules are the fallback, and every fallback says why ----------------------------------------
+def test_a_timeout_falls_back_to_the_rules_and_logs_the_reason(core_http, uid):
+    llm = Llm(error=httpx.ReadTimeout("slow"))
+    res = make_engine(core_http, llm).handle(uid, STORY)
+    assert res.source != "llm" and res.reply in rp.CHAT["mr"]
+    assert res.trace["route"] == "rules" and res.trace["route_reason"] == "timeout"
+
+
+def test_invalid_json_falls_back_without_a_second_intent_call(core_http, uid):
+    class Bad(Llm):
+        def __call__(self, req):
+            body = json.loads(req.content)
+            self.calls.append({**body, "_purpose": "understand"})
+            return _resp("{not json")  # look like JSON, fail to parse: not the accepted plain-prose path
+
+    llm = Bad()
+    res = make_engine(core_http, llm).handle(uid, "udya doctor")
+    understands = [c for c in llm.calls if "response_format" in c]
+    assert len(understands) == 1  # no legacy extract_intent call after the unified call failed
+    assert res.trace["route_reason"] == "invalid_json"
+
+
+def test_a_low_confidence_action_intent_is_ignored(core_http, uid):
+    llm = Llm(payload=_payload(intent="reminder_add", confidence=0.2, task="doctor", date="2026-10-07",
+                               time="10:00"))
+    res = make_engine(core_http, llm).handle(uid, "udya doctor")
+    assert res.trace["route_reason"] == "low_confidence"
     assert core_http.get(f"/users/{uid}/actions/pending").json() is None
 
 
-def test_an_llm_distress_guess_gets_the_fixed_safety_template(core_http, uid):
-    llm = Llm(intent={"intent": "DISTRESS", "confidence": 0.9, "language": "mr"})
-    res = make_engine(core_http, llm).handle(uid, "हं")
-    assert res.mode == "safety" and "कळवलं" not in res.reply  # no consent: never claim the family was told
-    assert "मुलाला फोन लाव" in res.reply
-
-
-# ---- limits ------------------------------------------------------------------------------------------
-def test_one_time_budget_covers_all_calls_in_a_turn(core_http, uid):
-    clock = {"t": 0.0}
+def test_no_budget_means_no_call(core_http, uid):
     llm = Llm()
-    llm.on_call = lambda body: clock.__setitem__("t", clock["t"] + 3.0) if body["_purpose"] == "intent" else None
-    make_engine(core_http, llm, llm_timeout_s=4.0, mono=lambda: clock["t"]).handle(uid, "हं")
-    assert llm.purposes == ["intent", "companion"]
-    assert llm.calls[0]["_timeout"] == pytest.approx(4.0) and llm.calls[1]["_timeout"] == pytest.approx(1.0)
-
-
-def test_with_no_budget_left_the_fixed_line_is_used(core_http, uid):
-    clock = {"t": 0.0}
-    llm = Llm()
-    llm.on_call = lambda body: clock.__setitem__("t", clock["t"] + 3.9)
-    res = make_engine(core_http, llm, llm_timeout_s=4.0, mono=lambda: clock["t"]).handle(uid, "हं")
-    assert llm.purposes == ["intent"] and res.reply in rp.CHAT["mr"]
+    res = make_engine(core_http, llm, llm_timeout_s=0.1).handle(uid, STORY)
+    assert llm.calls == [] and res.trace["route"] == "rules" and res.trace["route_reason"] == "no_budget"
 
 
 def test_a_slow_or_failing_provider_falls_back_to_the_fixed_line(core_http, uid):
@@ -152,12 +230,28 @@ def test_a_slow_or_failing_provider_falls_back_to_the_fixed_line(core_http, uid)
     client = EvonClient("https://llm.test/v1", "m", http=http, schema=load_intent_schema())
     eng = TurnEngine(CoreClient(core_http), client, clock=lambda: NOW)
     res = eng.handle(uid, STORY)
-    assert res.mode == "companion" and res.reply in rp.CHAT["mr"]
-    # mid-chat an unreadable turn stays in the chat (conversation mode) with the fixed companion line ...
-    assert eng.handle(uid, "हं").reply in rp.CHAT["mr"]
-    # ... and with no chat going, unreadable + no provider still asks to repeat
-    fresh = TurnEngine(CoreClient(core_http), client, clock=lambda: NOW)
-    assert fresh.handle(uid, "हं").reply == rp.R["mr"]["unknown"]
+    assert res.source != "llm" and res.reply in rp.CHAT["mr"]
+
+
+def test_a_bad_intent_name_is_rejected(core_http, uid):
+    llm = Llm(payload=_payload(intent="DROP_TABLE"))
+    res = make_engine(core_http, llm).handle(uid, "udya doctor")
+    assert res.trace["route_reason"] == "bad_intent"
+
+
+# ---- context and prompt -----------------------------------------------------------------------------
+def test_the_prompt_carries_context_masculine_forms_and_no_banned_lines(core_http, uid):
+    core_http.post(f"/users/{uid}/contacts", json={"name": "Rahul", "relation": "son", "phone": "0000000000"})
+    llm = Llm()
+    make_engine(core_http, llm).handle(uid, STORY)
+    system = llm.last["messages"][0]["content"]
+    for needle in ("USER CONTEXT", "Aaji", "Rahul", "son", "Today:", "NEVER ACT DUMB",
+                   "ALWAYS TRY TO GIVE A SOLUTION", "सांगतो", "विचारतो", "करतो", "तुम्ही",
+                   "1-2 short sentences", "Never say you missed her"):
+        assert needle in system, needle
+    for banned in ("आता कसं वाटतंय?", "हे अजून मला जमत नाही", "at most 12 words", "मला वाटतं"):
+        assert banned not in system
+    assert "0000000000" not in system  # family names and relations, never numbers
 
 
 def test_only_the_last_four_exchanges_are_sent(core_http, uid):
@@ -165,58 +259,72 @@ def test_only_the_last_four_exchanges_are_sent(core_http, uid):
     eng = make_engine(core_http, llm, history_exchanges=4)
     for i in range(7):
         eng.handle(uid, f"{STORY} {i}")
-    last = llm.calls[-1]["messages"]
+    last = llm.last["messages"]
     assert [m["role"] for m in last] == ["system"] + ["user", "assistant"] * 4 + ["user"]
     assert last[1]["content"].endswith(" 2")  # exchanges 0-2 were dropped
-    assert llm.calls[-1]["max_tokens"] == 80
-    assert llm.calls[-1]["temperature"] == 0.3
+    assert llm.last["max_tokens"] == 250
+    assert llm.last["temperature"] == 0.5
 
 
-def test_nothing_that_identifies_the_elder_is_sent(core_http, uid):
-    core_http.post(f"/users/{uid}/contacts", json={"name": "Rahul", "relation": "son", "phone": "0000000000"})
-    llm = Llm()
-    make_engine(core_http, llm).handle(uid, STORY)
-    sent = json.dumps(llm.calls, ensure_ascii=False)
-    assert "Aaji (synthetic)" not in sent and "Rahul" not in sent and "0000000000" not in sent
+def test_finish_reason_length_cuts_the_reply_to_its_last_full_sentence(core_http, uid):
+    llm = Llm(payload=_payload(reply="एक छान वाक्य. अर्धवट"), finish="length")
+    res = make_engine(core_http, llm).handle(uid, STORY)
+    assert res.reply == "एक छान वाक्य."
 
 
-# ---- what it may say ----------------------------------------------------------------------------------
-def test_the_companion_prompt_states_every_boundary(core_http, uid):
-    llm = Llm()
-    make_engine(core_http, llm).handle(uid, STORY)
-    system = llm.calls[0]["messages"][0]["content"].lower()
-    for needle in ("marathi", "devanagari", "at most 12 words", "question", "मला वाटतं", "never guess", "not a human", "medical",
-                   "recipes", "facts", "teach", "never say you missed"):
-        assert needle in system, needle
-
-
+# ---- what it may say ---------------------------------------------------------------------------------
 @pytest.mark.parametrize(
     "bad,reason",
     [
         ("मी माणूस आहे, मला पण भूक लागली.", "human"),
         ("I am a real person like you.", "human"),
-        ("मला तुमची खूप आठवण आली.", "missed_you"),
-        ("I missed you so much.", "missed_you"),
         ("रोज सकाळी 500 mg ची गोळी घ्या.", "medical"),
         ("तुम्ही हे औषध घ्या आणि बरं वाटेल.", "medical"),
-        ("पुरणपोळीसाठी साहित्य: दोन कप गव्हाचं पीठ.", "recipe_fact"),
-        ("भारताची राजधानी दिल्ली आहे.", "recipe_fact"),
         ("That sounds nice, tell me more.", "script"),
+        ("छान " * 100, "too_long"),
+        ("एक. दोन. तीन. चार. पाच.", "sentences"),
     ],
 )
-def test_replies_that_break_a_boundary_are_rejected(bad, reason):
+def test_replies_that_break_a_narrow_boundary_are_rejected(bad, reason):
     text, reasons = sanitize_companion(bad, "mr")
     assert text is None and reason in reasons
 
 
-def test_a_rejected_llm_reply_is_replaced_by_the_fixed_line(core_http, uid):
-    llm = Llm(companion="मी माणूस आहे, मला तुमची आठवण आली.")
+def test_missed_you_and_a_recipe_fact_are_the_prompts_job_not_the_sanitizer():
+    # The sanitizer was narrowed on 2026-11-04: it must not throw away a useful answer for these.
+    assert sanitize_companion("मला तुमची खूप आठवण आली.", "mr")[0] is not None
+    assert sanitize_companion("भारताची राजधानी दिल्ली आहे.", "mr")[0] is not None
+
+
+def test_a_rejected_llm_reply_is_retried_once_then_replaced(core_http, uid):
+    calls = {"companion": 0}
+
+    def handler(req):
+        body = json.loads(req.content)
+        system = body["messages"][0]["content"]
+        if "Return ONLY one JSON object" in system:
+            return _resp(json.dumps(_payload(reply="मी माणूस आहे, मला तुमची आठवण आली.")))
+        calls["companion"] += 1
+        return _resp(GOOD)
+
+    client = EvonClient("https://llm.test/v1", "m", http=httpx.Client(transport=httpx.MockTransport(handler)),
+                        schema=load_intent_schema(), provider="TestAI")
+    res = TurnEngine(CoreClient(core_http), client, clock=lambda: NOW).handle(uid, STORY)
+    assert res.reply == GOOD and res.source == "llm"
+    assert calls["companion"] == 1  # exactly one corrective retry
+
+
+def test_a_reply_that_stays_bad_gets_the_fixed_line(core_http, uid):
+    llm = Llm(payload=_payload(reply="मी माणूस आहे, मला तुमची आठवण आली."), companion="I am a real person.")
     res = make_engine(core_http, llm).handle(uid, STORY)
     assert res.reply in rp.CHAT["mr"] and "माणूस" not in res.reply
+    assert llm.purposes.count("companion") == 1  # one retry, not a loop
 
 
-def test_a_good_reply_passes_and_a_long_one_is_cut_to_two_sentences():
+def test_a_good_reply_passes_and_more_than_four_sentences_is_rejected():
     assert sanitize_companion(GOOD, "mr") == (GOOD, [])
-    long = "छान वाटलं. बाग सुंदर असेल. मग पुढे काय झालं? तिथे कोण होतं?"
+    long = "छान वाटलं. बाग सुंदर असेल. मग पुढे काय झालं? तिथे कोण होतं? आणि नंतर?"
     text, reasons = sanitize_companion(long, "mr")
-    assert text == "छान वाटलं. बाग सुंदर असेल." and reasons == []
+    assert text is None and reasons == ["sentences"]
+    four = "छान वाटलं. बाग सुंदर असेल. मग पुढे काय झालं? तिथे कोण होतं?"
+    assert sanitize_companion(four, "mr") == (four, [])

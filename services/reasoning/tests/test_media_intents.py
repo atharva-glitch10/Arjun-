@@ -52,11 +52,12 @@ def test_youtube_link_is_an_open_media_command_and_never_reaches_the_llm(core_ht
 
 
 # ---- a named singer / bhajan --------------------------------------------------------------------------------------
-def test_a_named_bhajan_keeps_the_singers_name_in_the_query(core_http, uid):
+def test_a_named_bhajan_keeps_the_singers_name_in_the_query(core_http, uid, monkeypatch):
+    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)  # no search: the results page opens for the cleaned query
     res = engine(core_http).handle(uid, "भीमसेन जोशींचं भजन लावा")
     assert res.intent == "OPEN_MEDIA"
     assert res.action["type"] == "open"
-    assert "भीमसेन जोशी" in res.action["title"]  # the results page opened for the cleaned query
+    assert "भीमसेन जोशी" in res.action["title"]
 
 
 # ---- news read aloud ----------------------------------------------------------------------------------------------
@@ -127,6 +128,6 @@ def test_a_refusal_plus_a_topic_change_becomes_the_fixed_line(said):
     text, reasons = sanitize_companion(said, "mr" if not said.isascii() else "en")
     assert reasons == []
     assert text in (
-        "हे अजून मला जमत नाही, घरच्यांना सांगते.",
-        "I can't do that yet. I'll tell your family.",
+        "मी मदत करतो — नक्की काय हवं आहे ते सांगा.",
+        "I'll help — tell me exactly what you need.",
     )

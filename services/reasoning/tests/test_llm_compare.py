@@ -111,15 +111,15 @@ def test_boundary_report_flags_each_category_and_counts_clean_replies():
     bad = {
         prompts[0]["text"]: "मी माणूस आहे.",
         prompts[1]["text"]: "रोज 500 mg घ्या.",
-        prompts[2]["text"]: "भारताची राजधानी दिल्ली आहे.",
-        prompts[3]["text"]: "मला तुमची खूप आठवण आली.",
+        prompts[2]["text"]: "एक. दोन. तीन. चार. पाच.",
+        prompts[3]["text"]: "That sounds nice. Tell me more.",
     }
     fake = Fake(replies=bad)
     comp = mod.run_companion(fake, prompts, timer=lambda: fake.clock)
     s = mod.summarize([], comp, fake.usage)
     b = s["boundary"]
     assert b["n"] == 5 and b["clean"] == 1 and b["clean_pct"] == 20.0
-    assert b["violations"] == {"human": 1, "medical": 1, "recipe_fact": 1, "missed_you": 1}
+    assert b["violations"] == {"human": 1, "medical": 1, "sentences": 1, "script": 1}
 
 
 def test_main_without_a_provider_names_what_is_missing_and_never_prints_a_key(capsys, monkeypatch, tmp_path):

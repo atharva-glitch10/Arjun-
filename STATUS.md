@@ -1,3 +1,87 @@
+# STATUS (2026-11-04, LLM-first understanding + companion context)
+
+## Built 2026-11-04: one LLM call understands the whole sentence, rules are only the fallback
+- Why: the rule parser answered normal Marathi with "मला समजलं नाही" / "आता कसं वाटतंय?" style lines, hijacked
+  sentences that merely mentioned a keyword (a story with "औषध" became a medicine question) and ignored who she is.
+- `evon.understand_turn()`: ONE call per non-safety turn. The prompt gets the full sentence, the last turns and a
+  USER CONTEXT block; it must answer strict JSON
+  `{"intent": "chat|reminder_add|reminder_done|medicine_taken|medicine_query|media|news|call_family|
+  message_family|today_query|undo|stop|health_complaint|unclear", "slots": {...}, "reply": "...", "confidence": 0-1}`.
+  Legacy intent names (`OPEN_LINK`, `OPEN_WHATSAPP`, `MEDIA_CONTROL`, `MED_SNOOZE`, `TIME_QUERY`, `NEXT_UP`) are still
+  accepted and marked `legacy`, and plain prose is treated as a chat reply, so old tests and a provider that ignores
+  the JSON contract do not need a second call.
+- Safety floor unchanged and first: emergency/distress rules + the second look run BEFORE the LLM call and work with
+  the LLM/core-api down. Deterministic state answers stay rule-decided even after the call: pending yes/no, stop,
+  medicine taken, time/next-up, greeting, hearing check.
+- Rules are fallback only: LLM timeout, provider error, invalid JSON, unknown intent, or confidence < 0.4 for an
+  action intent. Every rule-routed turn is logged with the reason (`source=rule`, `route_reason`), and no keyword
+  hijack remains: a sentence that only mentions "औषध" stays chat.
+- Action intents still execute the existing SQL-backed code and fixed read-backs; the LLM `reply` is used for
+  `chat` / `unclear` only.
+- USER CONTEXT (core-api, cached 5 min, <=700 chars): name + address form, family names/relations (never numbers),
+  date/day/festival, today's medicines taken/missed, appointments/reminders, check-in answers, interests, and the last
+  conversation summary only. New core-api calls: `GET /users/{id}/checkins/card`, `GET /users/{id}/wellbeing/today`.
+- Companion prompt: male companion, masculine Marathi (`सांगतो`, `विचारतो`, `करतो`), respectful `तुम्ही`, noisy STT,
+  NEVER ACT DUMB, ALWAYS TRY TO GIVE A SOLUTION, replies about her life, 1-2 short sentences (how-to up to 3), no
+  medical advice, no human/body/family claims, no guilt, encourage family contact. "आता कसं वाटतंय?" and
+  "हे अजून मला जमत नाही" are removed everywhere.
+- Limits: `LLM_MAX_TOKENS` default 250, temperature 0.5, reasoning off. `finish_reason=length` trims back to the last
+  full sentence instead of shipping a cut line.
+- Sanitizer narrowed to what must not ship: medical advice/diagnosis, human claims, Latin script, >4 sentences or
+  >300 chars (no `too_long` under 300). One corrective retry, then a fixed fallback line.
+- Media behaviour preserved and pinned: empty query opens the only family favourite, a named singer/song is not
+  suffixed with "मराठी", a bare category/bhajan uses a family playlist that covers it, an unknown kind with a query
+  becomes a video search, results line "यूट्यूबवर शोधलं आहे. हवा असलेला व्हिडिओ दाबा."
+- Two rule hijacks found by the eval and fixed: "आज माझी तब्येत बरी नाही" was read as "नाही" to an open question
+  (cancelled it and said the family was told help is not needed), and "माझा चस्मा सापडत नाही" undid the last action.
+  Now a yes/no is the answer only when it looks like one ("हो", "नको", "नाही, नको"), and the parser marks a
+  correction only when the sentence restates a clock time.
+- Measured with `scripts/eval_companion.py` (real `/turn`, throwaway SQLite, ONE throwaway user per utterance,
+  Sarvam for the turn AND the judge; the old code was run from a worktree at the previous commit with `--legacy`):
+  - companion eval 50 utterances, before: 46/50 turns reached a reply (4 requests failed in the old stack, 1 judge
+    failure; 45 scored), relevant 1.47, understood 1.58, about_her 1.40, solution 0.91, natural_marathi 1.73,
+    safe 1.0/1; action intent 20/27; routes 17 LLM / 29 rules; 3 replies used a line that is now banned.
+  - after: 50/50 turns, 0 judge failures, relevant 1.54, understood 1.62, about_her 1.38, solution 0.98,
+    natural_marathi 1.8, safe 0.98/1; action intent 26/30; routes 49 LLM / 1 rules; 0 banned lines.
+  - turnlog replay 30 real transcripts: before 23/30 LLM + 7/30 rules (and "हे अजून मला जमत नाही" spoken);
+    after 29/30 answered (1 client timeout), 28 LLM / 1 rule, 31 calls, 0 `finish_reason=length`, 1 sanitizer
+    rejection (medical).
+  - The judge averages move less than the failure count: the fixed templates were already "safe", so the win is
+    turns that used to be a dead end or a hijack, not a large jump in a 0-2 means. `solution` (0.91 -> 0.98) and
+    action intent (+6) are the parts that moved.
+  - Still weak: a missed-pill / dose question gets the fixed doctor line, a recipe ask ("पुरणपोळी कशी करतात") can
+    get the doctor line, and severe STT noise is honestly "समजलं नाही".
+- Suites 2026-11-04: reasoning 894, core-api 244, voice-agent 209, scheduler 8, vitest 114, `tsc` clean,
+  `ruff check .` clean, `eval/run_eval.py` intent 42/42, slots 12/12, distress 5/5, emergency 87/87, false alarms 0/12.
+- The root `.env` still says `LLM_MAX_TOKENS=80`; the code default is 250. The eval child sets the value itself, so the
+  numbers above are not affected, but a live stack keeps the 80-token cut until that line is changed (not edited here).
+
+# STATUS (2026-11-03, emergency detection for loanwords + STT variants)
+
+## Fixed 2026-11-03: "मला हार्ट अटॅक येतोय" got a chatty LLM reply instead of the emergency flow
+- Cause (from eval/results/turns.jsonl): the recogniser wrote it correctly in Devanagari; `distress.py` only knew Latin
+  "heart attack", so no rule fired and the companion LLM answered "आता कसं वाटतंय?" (source=llm, mode=companion).
+  Six such turns are in the log (the STT provider on those rows was gnani; sarvam rows have no heart-attack turn yet).
+- `distress.py`: `efold()` (fold + chandra-e/e -> ai, trailing halant, hyphen/underscore -> space) and two views of the text,
+  spaced and space-removed, so हार्ट अटॅक / हार्टअटॅक / अटैक / अटेक / अॅटॅक / HeartAttack / hart atak all match. Also: attack+verb
+  without "heart", heart/chest pain, चेस्ट पेन, BP high / बीपी वाढलं, sugar low / शुगर कमी, stroke / लकवा / पॅरालिसिस,
+  fainting / भोवळ / चक्कर येऊन पडले, breathing (श्वास घेता येत नाही, श्वास घेताना त्रास, दम लागतोय, breathing problem),
+  a fall now (पडलोय, घसरून पडलो), blood (रक्त येतंय, रक्तस्त्राव). A past-tense story ("आला होता") is not an emergency
+  unless a present marker is also there. Lexicon UNVERIFIED (no native speaker).
+- Second layer (`TurnEngine._second_look`): no rule matched but the turn has a body/health word -> strict-JSON LLM check
+  `{emergency, distress}` (2 s, `EvonClient.safety_check`). No LLM, timeout, rate limit or bad JSON -> the fail-safe words
+  (attack / अटॅक / छाती / श्वास / बेशुद्ध / stroke / chest) count as an emergency. Known cost: "छातीला थंडी वाजते" is an
+  emergency when the check fails. A complaint the symptom flow handles ("डोकं दुखतं") skips the call.
+- Emergency flow itself is unchanged (core-api alert incl. Telegram, "मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा.").
+- Guard (`_guard_cardiac_reply`): an LLM reply with medical advice for a heart attack / chest pain / stroke is replaced: by the
+  emergency flow if she spoke of it, by the fixed "ask the doctor" line (no alarm) if only the reply did.
+- voice-agent `safety_words.py` carries a copy (media mode lets these through to reasoning); a reasoning test checks the copy.
+- Tests: `reasoning/tests/test_emergency_loanwords.py` (174), cases in `eval/emergency_cases.jsonl` (87 emergency in 4 kinds,
+  12 harmless), `eval/run_eval.py` now prints emergency recall 87/87 and 0/12 false alarms (rules only; text, not audio).
+- Suites 2026-11-03: core-api 244, reasoning 880 pass + 8 FAIL, voice-agent 209, scheduler 8; ruff clean.
+  The 8 failures are `tests/test_app_commands.py` (media work on hold, already failing before this change).
+- NOT verified: a real spoken heart-attack sentence through Sarvam or Gnani, the live LLM safety check, any native-speaker review.
+
 # STATUS (2026-11-03, proactive day check-ins)
 
 ## Built 2026-11-03: proactive day check-ins for any user (tested; NOT tried with a real voice session or a phone)

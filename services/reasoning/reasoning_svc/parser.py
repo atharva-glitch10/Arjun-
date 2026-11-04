@@ -435,14 +435,18 @@ def parse(
         return done("DECLINE_TOPIC", 0.85)
 
     # Medicine talk is classified before anything else: a "nako"/"nahi" about medicine is a
-    # medical decision to deflect, not a topic decline or a cancellation.
+    # medical decision to deflect, not a topic decline or a cancellation. A longer story that merely
+    # mentions a medicine ("मी लहानपणी औषध घ्यायचो...") is chat: only a short turn or a real medicine
+    # cue (question, taken, snooze) may take the medicine path.
     if has_med_word(norm) and not has_any(norm, REMIND):
-        if has_any(norm, MED_Q):
-            return done("MEDICAL_QUESTION", 0.8)
-        if has_any(norm, MED_TAKEN_WORDS) or has_any(norm, DONE):
-            return done("MED_TAKEN", 0.8)
-        if has_any(norm, SNOOZE_WORDS) or has_any(norm, MINUTE_WORDS):
-            return done("MED_SNOOZE", 0.75)
+        cue = has_any(norm, MED_Q) or has_any(norm, MED_TAKEN_WORDS) or has_any(norm, SNOOZE_WORDS)
+        if n <= 8 or cue:
+            if has_any(norm, MED_Q):
+                return done("MEDICAL_QUESTION", 0.8)
+            if has_any(norm, MED_TAKEN_WORDS) or has_any(norm, DONE):
+                return done("MED_TAKEN", 0.8)
+            if has_any(norm, SNOOZE_WORDS) or has_any(norm, MINUTE_WORDS):
+                return done("MED_SNOOZE", 0.75)
     if has_any(norm, MINUTE_WORDS) and not has_any(norm, REMIND):
         return done("MED_SNOOZE", 0.6)  # "१५ मिनिटांनी सांग"; dispatch checks a dose is due
 
@@ -488,13 +492,16 @@ def parse(
             return done("CONFIRM_YES", 0.9)
 
     # A "no" inside a longer sentence while a reminder (or similar) awaits its yes/no is a correction:
-    # cancel it and ask again. Without a pending action, or for a pending story, it stays chat.
+    # cancel it and ask again. Without a pending action, or for a pending story, it stays chat. The sentence
+    # must restate a clock time: "सकाळी दहा वाजता … नाही जायचं" is a correction, "माझ्या घरी कोणी नाही"
+    # and "माझी तब्येत बरी नाही" are her life, not answers.
     if (
         has_pending
         and pending_action in CORRECTABLE
         and has_any(norm, NO)
         and not has_any(norm, YES)
         and not has_any(norm, REMIND)
+        and _CLOCK_WORD.search(norm)
     ):
         p = done("CONFIRM_NO", 0.7)
         p.topic = "correction"
