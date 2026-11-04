@@ -225,6 +225,17 @@ export interface WatchSample {
   source: string;
 }
 
+/** One thing Arjun remembers about her life (short wording, never a transcript). */
+export interface Fact {
+  id: number;
+  fact: string;
+  kind: "person" | "like" | "dislike" | "routine" | "place" | "event" | "concern" | "note";
+  source_date: string;
+  last_used: string | null;
+  confidence: number;
+  source: "auto" | "explicit";
+}
+
 export interface LivekitToken {
   url: string;
   token: string;
@@ -292,6 +303,9 @@ export const api = {
   deleteAppLink: (id: number, linkId: number) => core<void>(`/users/${id}/app-links/${linkId}`, { method: "DELETE" }),
   // Caregiver view: ONLY stories the elder explicitly shared. Never calls /stories.
   memoryBook: (id: number) => core<SharedStory[]>(`/users/${id}/memory-book`),
+  // What Arjun knows about her life. Empty unless the family switched "share how she is doing" on (same consent as summaries).
+  facts: (id: number) => core<Fact[]>(`/users/${id}/facts?audience=family`),
+  deleteFact: (id: number, factId: number) => core<void>(`/users/${id}/facts/${factId}`, { method: "DELETE" }),
   caregiverRequests: (id: number) => core<Note[]>(`/users/${id}/caregiver-requests`),
   notifications: (id: number) => core<Note[]>(`/users/${id}/notifications`),
   activity: (id: number) => core<Activity>(`/users/${id}/activity`),

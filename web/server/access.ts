@@ -50,6 +50,8 @@ export const FAMILY_ROUTES: Route[] = [
   route("DELETE", `/users/${ID}/(?:reminders|app-links|medicines)/${ID}`),
   route("PATCH", `/users/${ID}/medicines/${ID}`),
   route("GET", `/users/${ID}/appointments/next`),
+  route("GET", `/users/${ID}/facts`), // "अर्जुनला माहीत असलेल्या गोष्टी": core-api hides it without the consent flag
+  route("DELETE", `/users/${ID}/facts/${ID}`),
   route("GET", "/media/status"),
   route(
     "GET",

@@ -82,3 +82,6 @@ the LLM and core-api down. Everything is committed locally, nothing is pushed.
 - **One browser media pipeline (issue 5).** `voice/state.ts::parseActionAttribute` -> `elder/media.ts::planAction/embedSrc`
   (used by `useAppActions`) and `voice/action.ts::parseAction/embedSrc` (used by `MediaScreen`, `Gallery`) do the same job
   twice and can drift. Merge into one parser and one `embedSrc`.
+
+## Memory task progress
+- core-api user_facts store + family dashboard list + tunnel-lock routes: done (commit 1 of 3)

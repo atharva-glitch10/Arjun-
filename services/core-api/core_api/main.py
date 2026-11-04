@@ -18,6 +18,7 @@ from .db import Base, engine, ensure_columns, get_db
 from .deliveries import ack_item, enqueue
 from .deliveries import router as deliveries_router
 from .deps import check_api_key_configured, get_now, require_key
+from .facts import router as facts_router
 from .family_call import router as family_router
 from .feed import router as feed_router
 from .feed import ws_router as feed_ws_router
@@ -763,5 +764,6 @@ app.include_router(readings_router)
 app.include_router(wellbeing_router)
 app.include_router(applinks_router)
 app.include_router(media_router)
+app.include_router(facts_router)
 app.include_router(feed_router)
 app.include_router(feed_ws_router)

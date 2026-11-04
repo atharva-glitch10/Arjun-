@@ -143,6 +143,8 @@ describe("the /core proxy", () => {
       ["PATCH", "/core/users/1"],
       ["POST", "/core/users"],
       ["GET", "/core/users/1/feed"],
+      ["GET", "/core/users/1/facts"],
+      ["POST", "/core/users/1/facts/forget"],
       ["GET", "/core/ws/users/1/feed"],
       ["POST", "/core/users/1/distress"],
       ["POST", "/core/internal/reminders/fire-due"],
@@ -164,6 +166,8 @@ describe("the /core proxy", () => {
       ["GET", "/core/users/1/feed?after=4"],
       ["GET", "/core/ws/users/1/feed?after=4"],
       ["GET", "/core/users/1/wellbeing/today"],
+      ["GET", "/core/users/1/facts?audience=family"],
+      ["DELETE", "/core/users/1/facts/3"],
     ] as const) {
       expect(run(a, viaTunnel({ method, url, cookie })).next, `${method} ${url}`).toHaveBeenCalledOnce();
     }

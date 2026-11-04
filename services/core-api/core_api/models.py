@@ -336,3 +336,22 @@ class YoutubeSearchCache(Base):
     query_key: Mapped[str] = mapped_column(String(200), primary_key=True)
     results: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserFact(Base):
+    """One durable thing Arjun knows about her life ("नातू आर्यन", "she likes bhajans", "Vimal visits on Friday").
+
+    Short wording only: never a transcript, never a number, an address, money, a medicine or a diagnosis (facts.py
+    refuses those). Written by reasoning after a conversation (source "auto") or when she says "हे लक्षात ठेव"
+    (source "explicit"); the family can delete any row from the dashboard."""
+
+    __tablename__ = "user_facts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    fact: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(12), default="note")  # person|like|dislike|routine|place|event|concern|note
+    source_date: Mapped[date] = mapped_column(Date)  # the day she said it (updated when she says it again)
+    last_used: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # last time it went into a reply
+    confidence: Mapped[float] = mapped_column(default=0.7)
+    source: Mapped[str] = mapped_column(String(10), default="auto")  # auto | explicit
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
