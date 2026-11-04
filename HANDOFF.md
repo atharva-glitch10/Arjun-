@@ -61,9 +61,24 @@ the LLM and core-api down. Everything is committed locally, nothing is pushed.
    after numbers above; do not judge by reading one reply.
 
 ## Phone test (about 10 minutes)
-1. `scripts\dev-up.ps1 -Phone`, open the elder page on the phone, tap to start, let the greeting finish.
+1. Put `ARJUN_ACCESS_CODE=<6+ chars>` in the root `.env` (never printed; see `.env.example`), then `scripts\dev-up.ps1 -Phone`.
+   It prints the full links WITH the code (`<tunnel>/?user=1&k=<code>` and `<tunnel>/?view=family&user=1&k=<code>`). Open the
+   elder link on the phone, tap to start, let the greeting finish.
 2. Talk normally for a minute: a story with "औषध" in it must stay a story; "आज काय करायचंय?" must mention her real
    day; "मला एकटं वाटतंय" must point at a named family member, not a generic line.
 3. Ask a reminder ("उद्या सकाळी दहाला ... आठवण करून दे"), confirm it is read back with the right day/time, then ask
    "उद्या काय आहे?" and check the same reminder comes back from SQL.
 4. Turn the network off for a moment / stop reasoning and say "मला छातीत दुखतंय": the emergency flow must still run.
+
+## After demo (from graphify-output/ISSUES.md; deliberately NOT done before Nov 8)
+- **Per-user authorization (issue 2).** There is still ONE shared API key and `user_id` is a path parameter nobody checks
+  against the caller. The tunnel lock (2026-11-04) now limits a phone to its role's routes, but an elder link for user 1
+  can still read user 2. Real fix: per-user tokens, a service secret on `reasoning` (it has no auth, only a loopback
+  bind), no key in the browser path. Frozen item "login/roles".
+- **Split `TurnEngine` (issue 4).** `reasoning_svc/turn.py` is ~2,200 lines, ~145 methods and per-user state in
+  in-memory dicts. Seams, least risky first: media cards, delivery rendering, check-in answers, companion chat. Extract
+  the safety path (the top of `handle`) last, and keep every suite green after each move. Same story, smaller:
+  `Dashboard.tsx` (1,155 lines) and `core_api/main.py` (767 lines).
+- **One browser media pipeline (issue 5).** `voice/state.ts::parseActionAttribute` -> `elder/media.ts::planAction/embedSrc`
+  (used by `useAppActions`) and `voice/action.ts::parseAction/embedSrc` (used by `MediaScreen`, `Gallery`) do the same job
+  twice and can drift. Merge into one parser and one `embedSrc`.

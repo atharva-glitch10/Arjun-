@@ -169,7 +169,9 @@ def _ws_key_ok(ws: WebSocket) -> bool:
     expected = os.environ.get("CORE_API_KEY")
     if not expected:
         return testing()
-    given = ws.headers.get("x-api-key") or ws.query_params.get("key") or ""
+    if "key" in ws.query_params:  # a key in the URL ends up in proxy / tunnel logs: refuse it, even when it is right
+        return False
+    given = ws.headers.get("x-api-key") or ""
     return hmac.compare_digest(given.encode(), expected.encode())
 
 

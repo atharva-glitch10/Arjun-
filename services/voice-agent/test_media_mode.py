@@ -14,7 +14,7 @@ from media import (
     starts_with_wake_word,
     strip_wake_word,
 )
-from safety_words import DISTRESS_PHRASES, EMERGENCY_PHRASES
+from safety_words import DISTRESS_PHRASES, EMERGENCY_PHRASES, is_safety_phrase
 from screenstate import ACTION, attributes_for
 from turnlog import TurnLog
 
@@ -24,8 +24,11 @@ SONG = "ये जिंदगी उसी की है"
 # ---- safety lexicon copy -------------------------------------------------------------------------------------
 def test_the_local_safety_copy_has_the_phrases_that_matter():
     copy = " ".join(EMERGENCY_PHRASES + DISTRESS_PHRASES)
-    for phrase in ("छातीत दुखतंय", "श्वास घेता येत नाही", "मी पडले", "मला मरायचं आहे", "chest pain"):
+    for phrase in ("छातीत दुखतंय", "श्वास घेता येत नाही", "chest pain"):
         assert phrase in copy
+    # "I have fallen" is a PATTERN in distress.py (not a phrase), and the generated copy carries the patterns too
+    for text in ("मी पडले", "मी पडलो", "मला मरायचं आहे"):
+        assert is_safety_phrase(text)
 
 
 # ---- should_send ---------------------------------------------------------------------------------------------

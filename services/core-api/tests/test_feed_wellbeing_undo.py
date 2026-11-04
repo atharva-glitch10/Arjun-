@@ -105,6 +105,20 @@ def test_websocket_pushes_new_rows_and_refuses_a_bad_key(client, uid, monkeypatc
     assert closed.value.code == 4401
 
 
+def test_websocket_refuses_the_key_in_the_url_even_when_it_is_right(client, uid, monkeypatch):
+    monkeypatch.setenv("CORE_API_KEY", "secret")
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect(f"/ws/users/{uid}/feed?key=secret") as ws:
+            ws.receive_json()
+    assert closed.value.code == 4401
+    with client.websocket_connect(f"/ws/users/{uid}/feed", headers={"x-api-key": "secret"}) as ws:
+        client.post(f"/users/{uid}/distress", params={"kind": "emergency"}, headers={"x-api-key": "secret"})
+        msg = ws.receive_json()
+        while msg["type"] == "ping":
+            msg = ws.receive_json()
+        assert msg["type"] == "event"
+
+
 # ---- rate limiting -------------------------------------------------------------------------------------------
 def test_token_bucket_allows_a_burst_then_refills():
     t = [0.0]

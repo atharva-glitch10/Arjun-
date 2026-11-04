@@ -5,6 +5,8 @@
 # Usage: scripts\dev-up.ps1 [-Only core-api|reasoning|scheduler|voice-agent|web] [-Phone]
 #   -Phone also starts a Cloudflare quick tunnel to :5173, writes its URL to BASE_URL in .env and
 #   (re)starts core-api so family-call links use it. Only the BASE_URL line is changed.
+#   -Phone needs ARJUN_ACCESS_CODE (6+ characters) in .env: it also restarts web so the tunnel is locked, and prints
+#   the phone links WITH the code. Without the code the tunnel would hand the API to anyone, so it is refused.
 param(
     [ValidateSet("core-api", "reasoning", "scheduler", "voice-agent", "web")][string]$Only,
     [switch]$Phone
@@ -74,6 +76,26 @@ function Stop-Tunnel {
     } catch { }
     foreach ($proc in (Get-TunnelProcesses)) {
         Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Stop-WebDev {
+    # Used by -Phone: a running web server only reads ARJUN_ACCESS_CODE when it starts, so restart it.
+    try {
+        Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.Name -match '^powershell' -and $_.CommandLine -match 'arjun web'
+        } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch { }
+    $listeners = @()
+    try { $listeners = @(Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction Stop) } catch { }
+    foreach ($ownerPid in ($listeners | Select-Object -ExpandProperty OwningProcess -Unique)) {
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction SilentlyContinue
+        if (-not $proc -or $proc.CommandLine -notmatch 'vite') { continue }
+        Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue
+    }
+    for ($i = 0; $i -lt 20; $i++) {
+        if (-not (Test-PortListening 5173)) { return }
+        Start-Sleep -Milliseconds 250
     }
 }
 
@@ -171,7 +193,7 @@ $services = [ordered]@{
     "voice-agent" = @{ Dir = "services\voice-agent"; Cmd = "& '$py' agent.py dev"
                        Vars = "REASONING_URL", "REASONING_TIMEOUT_S", "ARJUN_USER_ID", "ARJUN_TZ", "ARJUN_VOICE_PROVIDER",
                        "ARJUN_SARVAM_SPEAKER", "SARVAM_API_KEY" }
-    "web"         = @{ Dir = "web"; Cmd = "npm run dev"; Vars = "CORE_API_KEY", "CORE_API_URL" }  # the Vite proxy injects the key; the browser never talks to reasoning
+    "web"         = @{ Dir = "web"; Cmd = "npm run dev"; Vars = "CORE_API_KEY", "CORE_API_URL", "ARJUN_ACCESS_CODE" }  # the Vite proxy injects the key; the browser never talks to reasoning
 }
 
 function Wait-Health([string]$url, [string]$label) {
@@ -183,6 +205,13 @@ function Wait-Health([string]$url, [string]$label) {
 }
 
 if ($Phone) {
+    $accessCode = (Get-Setting "ARJUN_ACCESS_CODE")
+    if (-not $accessCode -or $accessCode.Length -lt 6) {
+        throw "ARJUN_ACCESS_CODE is missing or shorter than 6 characters. Add it to the root .env (see .env.example), then run again. A tunnel without it would give the API to anyone with the URL."
+    }
+    if ($accessCode -notmatch '^[A-Za-z0-9_-]+$') {
+        throw "ARJUN_ACCESS_CODE may contain only letters, digits, '-' and '_' (it goes into a link)."
+    }
     $script:tunnelUrl = Start-PhoneTunnel
     Set-EnvBaseUrl $script:tunnelUrl
     Write-Host "BASE_URL set to $script:tunnelUrl (only that .env line changed)"
@@ -190,7 +219,8 @@ if ($Phone) {
 
 foreach ($name in $services.Keys) {
     if ($Only -and $Only -ne $name) { continue }
-    if ($Phone -and $name -ne "core-api" -and (Test-ServiceRunning $name)) {
+    if ($Phone -and $name -eq "web" -and (Test-ServiceRunning $name)) { Write-Host "restarting web so it applies the access lock"; Stop-WebDev }
+    if ($Phone -and $name -notin @("core-api", "web") -and (Test-ServiceRunning $name)) {
         Write-Host "$name is already running; leaving it alone"
         continue
     }
@@ -219,15 +249,18 @@ if ($Phone) {
         Write-Warning "-Only ${Only}: core-api was not restarted, so it may still have the old BASE_URL. Run -Only core-api to apply it."
     }
     if ($script:tunnelUrl) {
-        $elder = "$($script:tunnelUrl)/?user=1"
-        $family = "$($script:tunnelUrl)/?view=family&user=1"
+        $elder = "$($script:tunnelUrl)/?user=1&k=$accessCode"
+        $family = "$($script:tunnelUrl)/?view=family&user=1&k=$accessCode"
         Write-Host ""
         Write-Host "================= PHONE URLS (HTTPS) =================" -ForegroundColor Green
         Write-Host ""
         Write-Host "  ELDER   $elder" -ForegroundColor Green
         Write-Host "  FAMILY  $family" -ForegroundColor Green
         Write-Host ""
-        Write-Host "  The tunnel exposes the dev proxy (and its API key): demo data only."
+        Write-Host "  The links carry the access code: share them only with the people who should see this."
+        Write-Host "  A phone opens a link once; the code is then swapped for a 12 h cookie and removed from the address."
+        Write-Host "  A link without the code, or with a wrong one, shows 'हा दुवा चालत नाही'. Telegram join links need no code."
+        Write-Host "  Demo data only."
         Write-Host "======================================================" -ForegroundColor Green
         Write-Host ""
     }

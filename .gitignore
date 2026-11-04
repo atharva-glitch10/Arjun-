@@ -45,3 +45,6 @@ omkar_test.wav
 
 # Marketing video renders: large binaries, kept on disk only
 ad_video/
+
+# Scratch pytest output dumps in the repo root (e.g. `pytest > final.txt`). Root-level only; docs live in .md files.
+/*.txt

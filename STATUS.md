@@ -1,5 +1,36 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Built 2026-11-04 (late): tunnel access lock, one safety-word source, repo cleanup (from graphify-output/ISSUES.md)
+- **Tunnel lock (issue 1).** Before this, the Vite proxy added `CORE_API_KEY` to every `/core/*` call, so anyone with the
+  Cloudflare URL held the whole API. Now `web/server/access.ts` (a Vite middleware + proxy hooks) decides first:
+  this laptop (loopback socket + localhost Host + no Cloudflare/forwarded headers) is trusted; anything else needs the
+  HttpOnly `arjun_access` cookie (role elder|family, 12 h, SameSite=Lax, Secure over https, HMAC keyed by
+  `ARJUN_ACCESS_CODE` + `CORE_API_KEY`). `/?user=1&k=<code>` or `/auth?k=` swaps the code for the cookie and redirects
+  without `k`. Elder cookie: day, deliveries/open, reminders, appointments/next, contacts, medicines/due, dose
+  taken/snooze, delivery ack, livekit token. Family cookie: the dashboard routes (api.ts list) + feed REST + WS.
+  Everything else 403, no cookie 401, bad code = Marathi page. `/core/family/join` and `/?view=join` stay public. The API
+  key is added to a proxied request only when it passed, and the cookie is not forwarded. 10 wrong codes a minute -> 429.
+  No code set (or < 6 chars) = every remote request refused. `scripts/dev-up.ps1 -Phone` refuses to start without the
+  code, restarts web, prints the full links with the code. New var in `.env.example` only; `.env` was not touched.
+- **WebSocket `?key=` removed.** core-api `_ws_key_ok` is header-only and refuses any `key` query parameter, even a
+  correct one; the proxy answers 400 for it. (core-api test + proxy tests.)
+- **Safety words, one source (issue 3).** `services/voice-agent/safety_words.py` is now GENERATED from
+  `reasoning_svc/distress.py` by `scripts/gen_safety_words.py` (phrases, regex patterns, loanword patterns, fail-safe
+  words); `test_safety_words_sync.py` fails when it is stale and checks every phrase of `eval/emergency_cases.jsonl`
+  (87 emergencies) is detected by BOTH sides, and that both agree on the 12 non-emergencies. The copy now also carries
+  the distress/fall PATTERNS, so media mode catches a superset of what it did before.
+- **Cleanup (issue O1).** The 8 tracked pytest-output `.txt` files in the repo root are `git rm`'d; `/*.txt` is ignored.
+- Noted in HANDOFF.md "After demo": per-user authorization, the `TurnEngine` split, the duplicate media pipelines.
+- **Verified:** core-api 245, reasoning 894, voice-agent 310, scheduler 8 pytest; `ruff check .`; `npx tsc --noEmit`;
+  vitest 133 (19 new access tests); `python eval/run_eval.py` (42/42 intents, emergency recall 87/87, 0/12 false).
+  Also checked against a REAL Vite server on a spare port with curl, sending tunnel-style headers: no cookie 401,
+  wrong code 403 + Marathi page, right code 302 + HttpOnly cookie, elder cookie 403 on family routes and WS, family
+  cookie 403 on the livekit token, join route and join page open, `?key=` on the WebSocket 400.
+- **NOT verified:** a real Cloudflare tunnel with a real phone (the tunnel's headers were imitated, not seen); a browser
+  following the redirect and storing the cookie; the dashboard and elder page working end to end behind the lock (the
+  route lists come from reading the code, so a route the pages call that I missed would show as 403: check the browser
+  network tab on the phone). Roles are not per person (elder link for user 1 can read user 2).
+
 ## Built 2026-11-04: one LLM call understands the whole sentence, rules are only the fallback
 - Why: the rule parser answered normal Marathi with "मला समजलं नाही" / "आता कसं वाटतंय?" style lines, hijacked
   sentences that merely mentioned a keyword (a story with "औषध" became a medicine question) and ignored who she is.

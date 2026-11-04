@@ -70,10 +70,17 @@ scripts\dev-up.ps1 -Phone
   of starting a second one. If the stack is already running, the other services are left alone and only
   core-api is restarted. That restart clears core-api's in-memory room map, so open the elder URL once
   afterwards before testing a family-call link.
-- Prints the two URLs to open on the phone:
-  - Elder: `https://<random>.trycloudflare.com/?user=1`
-  - Family: `https://<random>.trycloudflare.com/?view=family&user=1`
-- The tunnel exposes the Vite dev proxy and its API key: use synthetic demo data only, and close the
+- **Needs `ARJUN_ACCESS_CODE`** (6+ letters/digits/`-`/`_`) in the root `.env`; without it the script stops
+  before starting the tunnel. It also restarts the web window so the lock is applied.
+- Prints the two URLs to open on the phone, WITH the code:
+  - Elder: `https://<random>.trycloudflare.com/?user=1&k=<code>`
+  - Family: `https://<random>.trycloudflare.com/?view=family&user=1&k=<code>`
+- The first open swaps the code for a 12 h HttpOnly cookie and removes `k` from the address bar. Without a valid
+  cookie the tunnel shows "हा दुवा चालत नाही. घरच्यांना नवीन दुवा मागा." and the Vite proxy adds NO API key.
+  An elder cookie reaches only the routes the elder page uses; a family cookie only the dashboard routes. The
+  Telegram join link (`/?view=join&t=...`) needs no code (its token is signed). This laptop is always trusted.
+  Code: `web/server/access.ts`, tests `web/server/access.test.ts`.
+- Use synthetic demo data only, and close the
   "arjun tunnel" window when finished. Node/npm is required; the first run may download `cloudflared`.
 - `-Only web -Phone` does not restart core-api (the warning says so); use `-Only core-api -Phone` or no
   `-Only` to apply the new `BASE_URL`.
@@ -129,7 +136,9 @@ the script reports that limitation while seeding the other requested data.
 - **Conversation summaries send the conversation to Sarvam** (only with the consent flag on and a key set). Rules
   summaries ("set a reminder, chatted") are used otherwise. Synthetic data only for the demo.
 - Openers and morning briefings are still only logged by the scheduler, not spoken.
-- One shared API key; no per-person login or elder/family roles yet (frozen until after Nov 10).
+- One shared API key; no per-person login yet (frozen until after Nov 10). The tunnel has a role-limited access cookie
+  (elder / family), but the roles are not per person: an elder link for user 1 can still read user 2.
+- The access code is dev-server only (Vite). Docker compose and a production proxy do not have it.
 - **Parser quality is unmeasured.** The 42 eval cases were written alongside the parser, so 100% there
   says nothing about real speech. Needs real transcripts of elderly Marathi speakers.
 - Task text is the leftover words after removing time/command words (e.g. "doctor jaycha"), not a clean noun phrase.
