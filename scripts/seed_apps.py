@@ -32,6 +32,11 @@ LINKS: list[tuple[str, str, str, list[str]]] = [
     ("rss", "एबीपी माझा", "https://marathi.abplive.com/home/feed", ["एबीपी माझा"]),
     ("rss", "बीबीसी मराठी", "https://feeds.bbci.co.uk/marathi/rss.xml", ["बीबीसी मराठी"]),
     ("whatsapp", "चंद्रकांत", "", ["चंद्रकांत"]),
+    # Phone apps (the elder page builds the link itself; one tap opens the app).
+    ("app", "स्पॉटिफाय", "spotify", ["स्पॉटिफाय", "spotify"]),
+    ("app", "जिओसावन", "jiosaavn", ["जिओसावन", "सावन"]),
+    ("app", "यूट्यूब म्युझिक", "youtube_music", ["यूट्यूब म्युझिक"]),
+    ("app", "गूगल मॅप्स", "google_maps", ["मॅप्स", "नकाशा"]),
 ]
 
 
@@ -55,6 +60,8 @@ def _fetch(url: str) -> tuple[int, str]:
 
 def verify(kind: str, value: str) -> tuple[bool, str]:
     """(True, proof) when the entry really exists; (False, reason) when it must be left out. Never guesses an id."""
+    if kind == "app":
+        return True, "phone app (no URL stored)"
     if kind == "whatsapp":
         return True, "no URL; the contact is checked against core-api"
     if kind == "youtube_playlist":

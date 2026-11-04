@@ -21,6 +21,7 @@ export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: bo
   const performed = useRef(0);
   const seq = useRef(0);
   const win = useRef<Window | null>(null);
+  const blockedWeb = useRef<string>("");
 
   const closeWindow = useCallback(() => {
     win.current?.close();
@@ -30,6 +31,16 @@ export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: bo
   }, []);
 
   const openWindow = useCallback((url: string, title: string) => {
+    if (url.startsWith("intent:")) {
+      // an Android app: leave Arjun's tab where it is; if the app did not start (not installed), open the web page
+      const web = blockedWeb.current;
+      setBlocked(null);
+      window.location.href = url;
+      window.setTimeout(() => {
+        if (!document.hidden && web) window.open(web, "arjun_link");
+      }, 1500);
+      return;
+    }
     const w = window.open(url, "arjun_link"); // the house's own handle: a later "बंद कर" closes exactly this window
     if (w) {
       win.current = w;
@@ -55,6 +66,14 @@ export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: bo
       }
       seq.current += 1;
       setControl({ kind: plan.command, seq: seq.current });
+      return;
+    }
+    if (plan.do === "app") {
+      // leaving the browser always needs her tap: show the big "उघडा" button straight away
+      setMedia(null);
+      closeWindow();
+      blockedWeb.current = plan.web;
+      setBlocked({ url: plan.url, title: plan.title });
       return;
     }
     if (plan.do === "window") {

@@ -27,6 +27,7 @@ from .appcmd import (
     CONTROLS,
     MEDIA_CONTROL,
     NEWS_READ,
+    OPEN_APP,
     OPEN_LINK,
     OPEN_MEDIA,
     OPEN_WHATSAPP,
@@ -37,7 +38,9 @@ from .appcmd import (
     media_specific,
     media_topic,
     name_matches,
+    parse_app_command,
 )
+from .apps import label as app_label
 from .checkins import answer_for, topic_of, volunteered_topic
 from .clock import local_now
 from .core_client import CoreClient, CoreError
@@ -348,6 +351,12 @@ class TurnEngine:
             text, profile, now, lang, answerable is not None, draft, answerable, conversing=conversing,
             llm=llm, llm_attempted=llm_attempted,
         )
+        if pending is None and draft is None and parsed.intent in (OPEN_MEDIA, OPEN_LINK, "CHAT", "UNKNOWN"):
+            # A named phone app with an open/play verb is exact words, not a guess: the rule wins over the model's
+            # generic "media"/"chat" ("स्पॉटिफायवर भजन लाव" must not become a YouTube search).
+            app_cmd = parse_app_command(text)
+            if app_cmd is not None and app_cmd.intent == OPEN_APP:
+                parsed = Parsed(OPEN_APP, 0.9, lang, parsed.draft, topic=app_cmd.topic, query=app_cmd.query)
         if pending is None and draft is None:
             parsed = self._use_media_answer(user_id, text, parsed)
         else:
@@ -657,6 +666,8 @@ class TurnEngine:
             links = self.core.app_links(uid)
             if p.intent == OPEN_WHATSAPP:
                 return self._open_whatsapp(uid, text, p, links, a, res)
+            if p.intent == OPEN_APP:
+                return self._open_app(p, links, a, res)
             if p.intent == OPEN_LINK:
                 found = self._named_links(links, text, p.query, kinds=("link",) + _YT_ALL)
                 if not found:
@@ -669,6 +680,20 @@ class TurnEngine:
         except (CoreError, httpx.HTTPError) as exc:
             log.warning("app command failed: %s", exc)
             return res(a["app_unavailable"])
+
+    @staticmethod
+    def _open_app(
+        p: Parsed, links: list[dict[str, Any]], a: dict[str, str], res: Callable[..., TurnResult]
+    ) -> TurnResult:
+        """A phone app (Spotify, JioSaavn, YouTube Music, Maps) the family approved. The page builds the link from
+        its own table and asks for one tap; Arjun never says it opened."""
+        app_id = p.topic or ""
+        row = next((link for link in links if link["kind"] == "app" and link["value"] == app_id), None)
+        name = (row or {}).get("label") or app_label(app_id)
+        if row is None:
+            return res(a["app_not_added"].format(app=name))
+        line = a["app_search"].format(app=name, query=p.query) if p.query else a["app_open"].format(app=name)
+        return res(line, {"type": "open", "kind": "app", "value": app_id, "title": name, "query": p.query})
 
     def _read_news(self, uid: int, a: dict[str, str], res: Callable[..., TurnResult]) -> TurnResult:
         try:

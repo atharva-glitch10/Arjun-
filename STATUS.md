@@ -451,3 +451,5 @@ Known gaps: no quiet hours, no "repeat last line", an emergency alert is dashboa
    production proxy + auth (T14), disclose the models truthfully in the posts.
 
 2026-11-02: Windows crash "Assertion failed LSX_FFT_BR == NULL" (livekit_ffi.dll / soxr) fixed by warming the resampler once per process (audiowarm.py, prewarm_fnc); tests pass; confirm with a live session.
+
+- 2026-11-04: phone apps by voice (Spotify, JioSaavn, YouTube Music, Google Maps): OPEN_APP rule wins over LLM media guess; family-approved app_links kind "app"; elder page builds intent:// link from its own table, one tap ("उघडा"); web fallback if app not installed. Tests: reasoning 900, core-api 245, vitest 137.

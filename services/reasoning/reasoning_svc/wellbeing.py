@@ -66,6 +66,7 @@ DID = {
     "NEWS_READ": "listened to the news headlines",
     "OPEN_WHATSAPP": "opened WhatsApp",
     "OPEN_LINK": "opened a family link",
+    "OPEN_APP": "opened a phone app",
 }
 
 

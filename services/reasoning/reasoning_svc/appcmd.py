@@ -9,14 +9,16 @@ turn.py; nothing here, and nothing the LLM says, can produce a URL.
 import re
 from dataclasses import dataclass
 
+from .apps import detect_app
 from .textutil import has_any, normalize, tokens
 
 OPEN_MEDIA = "OPEN_MEDIA"
 NEWS_READ = "NEWS_READ"
 OPEN_WHATSAPP = "OPEN_WHATSAPP"
 OPEN_LINK = "OPEN_LINK"
+OPEN_APP = "OPEN_APP"
 MEDIA_CONTROL = "MEDIA_CONTROL"
-APP_INTENTS = frozenset({OPEN_MEDIA, NEWS_READ, OPEN_WHATSAPP, OPEN_LINK, MEDIA_CONTROL})
+APP_INTENTS = frozenset({OPEN_MEDIA, NEWS_READ, OPEN_WHATSAPP, OPEN_LINK, OPEN_APP, MEDIA_CONTROL})
 CONTROLS = ("stop", "pause", "resume", "next", "volume_up", "volume_down")
 
 _YOUTUBE = re.compile(r"(?:यू|यु)\s?ट्य[ूु]ब|you\s?tube")
@@ -253,6 +255,16 @@ def parse_app_command(text: str, *, remind: bool = False, links: bool = False) -
         query = " ".join(t for t in toks if not _WHATSAPP.search(t) and t not in _FILLER
                          and t not in _PLAY_EXACT and t not in {"कॉल", "call", "फोन", "वर", "मेसेज", "message", "msg", "उघड", "उघडा"})
         return AppCmd(OPEN_WHATSAPP, query=query)
+
+    # A phone app she names ("स्पॉटिफायवर भजन लाव", "मॅप्स उघड"): checked before YouTube so "यूट्यूब म्युझिक" is the app.
+    # Like YouTube, naming the app is not enough ("नातू स्पॉटिफाय वापरतो"): she must ask to play / open / show.
+    named = detect_app(norm)
+    if named is not None and (_has(toks, _PLAY_EXACT, _PLAY_STEMS) or _has(toks, _LINK_VERB_EXACT, _LINK_VERB_STEMS)):
+        app_id, name = named
+        rest = norm.replace(name, " ")
+        words = [t for t in tokens(clean_query(rest)) if t not in ("वर", "मध्ये", "मधे", "पर", "on", "in")]
+        words = [t for t in words if not any(t.startswith(p) for p in ("मध्ये", "वर"))]
+        return AppCmd(OPEN_APP, topic=app_id, query=" ".join(words)[:100])
 
     news = _has(toks, frozenset(_NEWS_NOUNS))
     if news:
