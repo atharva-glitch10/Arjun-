@@ -89,7 +89,7 @@ def test_zala_na_in_conversation_is_chat(talking, core_http, uid):
     eng, _, _ = talking
     add_reminder(core_http, uid)
     res = eng.handle(uid, "झाला ना")
-    assert res.intent == "CHAT" and res.reply == REPLY
+    assert res.intent == "CHAT" and res.reply == "छान वाटलं."  # the question is dropped: the last reply was one
     assert reminder_status(core_http, uid) == ["pending"]
 
 

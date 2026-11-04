@@ -85,3 +85,4 @@ the LLM and core-api down. Everything is committed locally, nothing is pushed.
 
 ## Memory task progress
 - core-api user_facts store + family dashboard list + tunnel-lock routes: done (commit 1 of 3)
+- reasoning session memory + life facts + remember/forget + smarter prompt: done (commit 2 of 3)

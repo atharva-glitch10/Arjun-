@@ -123,3 +123,11 @@ TURN_RATE_BURST = int(os.environ.get("TURN_RATE_BURST", "6"))
 
 # A conversation ends after this much silence; its summary then goes to the family (wellbeing.py).
 CONVERSATION_IDLE_S = float(os.environ.get("CONVERSATION_IDLE_S", "180"))
+
+# Session memory (memory.py). One history per person: the last SESSION_EXCHANGES exchanges are kept word for word,
+# older turns (and a whole conversation after SESSION_IDLE_MIN minutes of silence) are compressed into a short running
+# summary instead of being deleted. This does NOT use LLM_HISTORY_EXCHANGES (an old per-provider knob, still read by
+# llm_settings for compatibility): a stale value of 8 in a developer's .env must not shrink the companion's memory.
+SESSION_EXCHANGES = int(os.environ.get("ARJUN_SESSION_EXCHANGES", "20"))
+SESSION_IDLE_MIN = float(os.environ.get("ARJUN_SESSION_IDLE_MIN", "30"))
+FACTS_IN_CONTEXT = int(os.environ.get("ARJUN_FACTS_IN_CONTEXT", "10"))

@@ -112,7 +112,7 @@ def test_a_reminder_that_mentions_media_is_still_a_reminder(core_http, uid):
 def test_a_media_turn_enters_the_conversation_history(core_http, uid):
     eng = engine(core_http)
     eng.handle(uid, "नाही मला तू यूट्यूब व्हिडिओची लिंक दे")
-    assert any("यूट्यूब" in text for _, role, text in eng._history[uid] if role == "user")
+    assert any("यूट्यूब" in text for role, text in eng.memory.view(uid, NOW).messages if role == "user")
 
 
 # ---- the companion may not refuse and change the subject ----------------------------------------------------------

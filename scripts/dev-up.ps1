@@ -184,7 +184,7 @@ $services = [ordered]@{
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
                        "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
-                       "LLM_TIMEOUT_S", "LLM_MAX_TOKENS", "LLM_HISTORY_EXCHANGES",
+                       "LLM_TIMEOUT_S", "LLM_MAX_TOKENS", "LLM_HISTORY_EXCHANGES", "ARJUN_SESSION_EXCHANGES", "ARJUN_SESSION_IDLE_MIN", "ARJUN_FACTS_IN_CONTEXT",
                        "SARVAM_API_KEY", "SARVAM_MODEL", "SARVAM_BASE_URL", "LLM_REASONING", "LLM_MAX_CONCURRENT", "LLM_PER_MINUTE",
                        "ARJUN_ASK_BEFORE_ACTING", "UNDO_WINDOW_S", "TURN_RATE_PER_S", "TURN_RATE_BURST", "CONVERSATION_IDLE_S" }
     "scheduler"   = @{ Dir = "services\scheduler"; Cmd = "& '$py' scheduler.py"

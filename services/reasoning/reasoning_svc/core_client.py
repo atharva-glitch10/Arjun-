@@ -174,3 +174,26 @@ class CoreClient:
     def wellbeing(self, uid: int, entry: dict[str, Any]) -> dict[str, Any]:
         """One conversation summary for the family: seriousness, mood, a short paraphrase. Never a transcript."""
         return self._req("POST", f"/users/{uid}/wellbeing", json=entry)  # type: ignore[no-any-return]
+
+    # ---- what she has told Arjun about her life (user_facts): core-api validates and stores, reasoning proposes
+    def facts(self, uid: int) -> list[dict[str, Any]]:
+        return self._req("GET", f"/users/{uid}/facts")  # type: ignore[no-any-return]
+
+    def save_fact(
+        self, uid: int, fact: str, kind: str = "note", confidence: float = 0.7, source: str = "auto",
+        source_date: str | None = None,
+    ) -> dict[str, Any]:
+        """422 = a never-store rule refused it (number, money, address, medicine, diagnosis, concern without consent)."""
+        body: dict[str, Any] = {"fact": fact, "kind": kind, "confidence": confidence, "source": source}
+        if source_date:
+            body["source_date"] = source_date
+        return self._req("POST", f"/users/{uid}/facts", json=body)  # type: ignore[no-any-return]
+
+    def forget_facts(self, uid: int, match: str) -> list[dict[str, Any]]:
+        return self._req("POST", f"/users/{uid}/facts/forget", json={"match": match})  # type: ignore[no-any-return]
+
+    def delete_fact(self, uid: int, fact_id: int) -> None:
+        self._req("DELETE", f"/users/{uid}/facts/{fact_id}")
+
+    def touch_fact(self, uid: int, fact_id: int) -> None:
+        self._req("POST", f"/users/{uid}/facts/{fact_id}/used")

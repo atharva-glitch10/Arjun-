@@ -56,9 +56,7 @@ def get_engine() -> TurnEngine:
             if s.configured
             else None
         )
-        _engine = TurnEngine(
-            CoreClient(), llm, llm_timeout_s=s.timeout_s, history_exchanges=s.history_exchanges
-        )
+        _engine = TurnEngine(CoreClient(), llm, llm_timeout_s=s.timeout_s)
     return _engine
 
 

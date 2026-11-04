@@ -172,3 +172,36 @@ class Tracker:
             self.core.wellbeing(uid, row)
         except (CoreError, httpx.HTTPError, KeyError) as exc:
             log.warning("could not send conversation summary for user %s: %s", uid, exc)
+            user = None
+        self.remember_life(uid, conv, user)
+
+    def remember_life(self, uid: int, conv: Conversation, user: dict[str, Any] | None) -> int:
+        """Long-term memory: ask the LLM for the durable facts of this conversation and PROPOSE them to core-api, which
+        validates (no numbers, money, addresses, medicines, diagnoses; a concern only with the consent flag) and dedupes.
+        Returns how many were stored. Never raises: it runs after the conversation, never in the voice path."""
+        if self.llm is None or not hasattr(self.llm, "extract_life_facts"):
+            return 0
+        if not any(who == "user" and len(said.split()) >= 3 for who, said in conv.turns):
+            return 0  # nothing she said that could hold a fact
+        try:
+            language = (user or {}).get("language", "mr")
+            known = [str(f.get("fact")) for f in self.core.facts(uid)]
+            proposed = self.llm.extract_life_facts(conv.turns, language, known)
+        except Exception as exc:  # noqa: BLE001 - memory is a bonus; the conversation already ended
+            log.warning("life facts: extraction failed (%s)", type(exc).__name__)
+            return 0
+        stored = 0
+        for item in proposed or []:
+            try:
+                saved = self.core.save_fact(
+                    uid, item["fact"], item["kind"], item.get("confidence", 0.7), "auto", conv.started.date().isoformat()
+                )
+                stored += 1 if saved.get("created") else 0
+            except CoreError as exc:
+                if exc.status != 422:  # 422 = a never-store rule said no: expected, not an error
+                    log.warning("life facts: could not store one: %s", exc)
+            except (httpx.HTTPError, KeyError) as exc:
+                log.warning("life facts: could not store one: %s", type(exc).__name__)
+        if stored:
+            log.info("life facts: stored %s new for user %s", stored, uid)
+        return stored

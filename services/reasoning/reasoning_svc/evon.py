@@ -79,7 +79,7 @@ _VIOLATIONS: dict[str, re.Pattern[str]] = {
         r"|पडून\s+रा[हह]\S*|झोपून\s+रा[हह]\S*|विश्रांती\s+(?:घ्या|घे)\S*|आराम\s+(?:करा|कर|घ्या|कीजिए|कीजिये|करें|करो)"
         r"|पाणी\s+(?:प्या|पी)\S*|पानी\s+(?:पी|पि)\S*"
         r"|(?:दवा|दवाई|गोली)\s+(?:ले|लें|लीजिए|खा)\S*"
-        r"|डॉक्टर(?:कडे|ांकडे|च्याकडे)\s+(?:\S+\s+)?जा(?:\S*)"
+        r"|डॉक्टर(?:कडे|ांकडे|च्याकडे)\s+(?:\S+\s+)?(?:जा|जाच|जावं|जावे|जाऊन)(?=[\s,.!?।]|$)"
         r"|डॉक्टर\s+(?:के\s+पास|को)\s+(?:\S+\s+)?(?:जा|दिखा|मिल)\S*"
         r"|\b(?:you\s+should|please|try\s+to|better)\s+(?:\w+\s+)?(?:rest|lie\s+down)\b|\blie\s+down\b|\btake\s+(?:a|some)\s+rest\b"
         r"|\bdrink\s+(?:some\s+|a\s+glass\s+of\s+|plenty\s+of\s+)?water\b|\bstay\s+hydrated\b"
@@ -170,6 +170,17 @@ def sanitize_companion(text: str | None, language: str) -> tuple[str | None, lis
     return cut, []
 
 
+def salvage_companion(text: str, language: str) -> str | None:
+    """A reply with ONE bad sentence ("... आराम करा.") should not be thrown away whole: keep the sentences that break no
+    boundary. None when nothing usable is left (the fixed line then answers)."""
+    parts = [p.strip() for p in re.findall(r"[^।.!?]+[।.!?]*", text) if p.strip()]
+    kept = [p for p in parts if not companion_violations(p, language)]
+    if not kept or len(kept) == len(parts):
+        return None
+    reply, _ = sanitize_companion(" ".join(kept), language)
+    return reply
+
+
 _LEADING_TAGS = re.compile(r"^((?:\s*<\s*[a-z][a-z ]{1,20}\s*>)*)\s*(.*)$", re.IGNORECASE | re.DOTALL)
 
 
@@ -248,10 +259,23 @@ def _conversation_rules(language: str) -> str:
         f"Her words come from speech-to-text and may be noisy, cut off or misspelled; infer the most likely "
         f"meaning from the whole sentence and the conversation, and answer the meaning, not the noise. "
         f"NEVER ACT DUMB. ALWAYS TRY TO GIVE A SOLUTION: if she asks how to do something, give the practical "
-        f"steps; if she asks about her day, medicines, reminders, family or an app, give the useful answer or the "
-        f"next step. Do not say 'I don't know' or 'I cannot' when a practical next step exists. "
-        f"Talk about HER life, memories, family and what she just said. Reply in 1-2 short sentences; a how-to "
-        f"may use up to 3 short sentences. Never write a list, a recipe from memory, or a long explanation. "
+        f"steps; if she asks about her day, reminders, family or an app, give the useful answer or the next step. "
+        f"If she asks a real question (a festival, a word's meaning, how a household or garden thing works, general "
+        f"knowledge) ANSWER IT properly in 1-3 simple sentences; never say 'I don't know', 'I cannot' or 'teach me' "
+        f"when you can answer. Only two things you never answer from memory: a RECIPE (ask her to tell you how she "
+        f"makes it) and anything about health, medicines or doses. "
+        f"USE WHAT YOU KNOW about her: call the people she told you about by name and relation (नातू आर्यन), recall "
+        f"what she said earlier today ('सकाळी तुम्ही सांगितलं होतं की…'), and follow up on an event she mentioned "
+        f"('कालचा डॉक्टरचा दिवस कसा गेला?') when the facts below say it happened; never invent a name, event or "
+        f"memory that is not in the conversation or the facts. Keep the conversation in mind: when she says 'तो', "
+        f"'त्याचं', 'ते', or 'मी काय म्हणाले', find what it refers to in what was said before. "
+        f"When she asks what you remember, what she likes or what she told you, answer ONLY from this conversation and "
+        f"the facts below; if it is not there, say plainly that you do not remember and invite her to tell you; "
+        f"never guess a preference, a name or an event. "
+        f"Write AT MOST ONE question in a reply, and many replies should have none: sometimes just respond warmly "
+        f"to what she said. Never repeat a question that was already asked today. "
+        f"Reply in 1-2 short sentences; a how-to or an explanation may use up to 3 short sentences. Never write a "
+        f"list or a long explanation. "
         f"Never give medical advice or a diagnosis, never suggest a dose, rest, water or a doctor visit; if she "
         f"mentions a health problem, acknowledge it and ask what she needs, or point her to her family. "
         f"Never claim to be human or to have a body, feelings, a family or experiences. If she asks whether you "
@@ -270,6 +294,7 @@ def _system_prompt(
     *,
     voice_tags: bool,
     json_contract: bool,
+    memory: str = "",
 ) -> str:
     system = _conversation_rules(language)
     if now is not None:
@@ -287,6 +312,8 @@ def _system_prompt(
             "USER CONTEXT (from the family dashboard and today's records; use it only when it helps the reply, "
             "never read it out as a list, never mention that you have a dashboard):\n" + context + "\n"
         )
+    if memory:
+        system += memory + "\n"
     if voice_tags:
         system += (
             "Your reply is spoken aloud. When it truly fits, you may put ONE voice tag right before the words "
@@ -354,6 +381,9 @@ def trim_to_sentence(text: str) -> str:
     if cut >= 0:
         return out[: cut + 1].strip()
     return out
+
+
+LIFE_FACT_KINDS = ("person", "like", "dislike", "routine", "place", "event", "concern")
 
 
 class LlmBusy(httpx.TransportError):
@@ -651,6 +681,7 @@ class EvonClient:
         context: str = "",
         interests: list[str] | None = None,
         timeout: float | None = None,
+        memory: str = "",
     ) -> dict[str, Any] | None:
         """ONE call for a non-safety turn: strict JSON {intent, slots, reply, confidence}.
 
@@ -661,7 +692,7 @@ class EvonClient:
         shape is accepted too, marked `legacy`, and the caller may fetch a companion reply once.
         """
         system = _system_prompt(
-            language, now, interests, context, voice_tags=self.voice_tags, json_contract=True
+            language, now, interests, context, voice_tags=self.voice_tags, json_contract=True, memory=memory
         )
         messages = [{"role": "system", "content": system}]
         messages += [{"role": role, "content": content} for role, content in (history or [])]
@@ -741,9 +772,14 @@ class EvonClient:
         interests: list[str] | None = None,
         timeout: float | None = None,
         correction: str = "",
+        context: str = "",
+        memory: str = "",
     ) -> str | None:
-        """`history` is this conversation's earlier (role, text) turns, oldest first; never older."""
-        system = _system_prompt(language, now, interests, "", voice_tags=self.voice_tags, json_contract=False)
+        """`history` is this conversation's earlier (role, text) turns, oldest first. `context` (who she is, what she
+        told Arjun) and `memory` (the session summary, the open question) go in exactly as for understand_turn."""
+        system = _system_prompt(
+            language, now, interests, context, voice_tags=self.voice_tags, json_contract=False, memory=memory
+        )
         if correction:
             system += (
                 "Your previous reply was rejected by the safety check (" + correction + "). Write a different "
@@ -802,6 +838,62 @@ class EvonClient:
                 summary = str(data.get("summary") or "").strip()[:400]
                 topics = [str(t)[:30] for t in (data.get("topics") or [])][:4]
                 return {"summary": summary, "mood": data["mood"], "severity": data["severity"], "topics": topics}
+            except (httpx.HTTPError, ValueError, KeyError, TypeError):
+                continue
+        return None
+
+
+    def extract_life_facts(
+        self, turns: list[tuple[str, str]], language: str, known: list[str] | None = None, timeout: float | None = 12.0
+    ) -> list[dict[str, Any]] | None:
+        """After a conversation: the durable facts about HER life, as strict JSON
+        {"facts": [{"kind", "fact", "confidence"}]}. None on any failure. Runs after the conversation, never in the
+        voice path. The caller (core-api) still validates every fact: this only PROPOSES (boundary 1).
+
+        Only what she said; nothing guessed; no numbers, addresses, money, medicines or diagnoses; a body complaint
+        only as a plainly worded concern. People are written "name — relation" so that the same person is one fact."""
+        if not turns:
+            return None
+        lines = "\n".join(f"{'Elder' if who == 'user' else 'Arjun'}: {said}" for who, said in turns[-40:])
+        system = (
+            "From this conversation between an elderly Marathi woman and Arjun (an AI companion), list the DURABLE "
+            "facts about HER life that Arjun should remember on later days. Output ONLY one JSON object: "
+            '{"facts": [{"kind": one of ["person","like","dislike","routine","place","event","concern"], '
+            '"fact": string, "confidence": number 0-1}]}. '
+            "Write each fact in short natural Marathi (Devanagari), at most 12 words, in her own words. "
+            "person = someone she names: write 'नाव — नातं' (for example 'आर्यन — नातू', 'सुमन — शेजारीण'). "
+            "like/dislike = something she enjoys or avoids; routine = something she does regularly; place = a place "
+            "that matters to her; event = something she says will happen or happened (a visit, a trip, a function), "
+            "worded with the day word she used (उद्या, काल, शुक्रवारी); concern = a worry or a body complaint worded "
+            "plainly as she said it ('गुडघा दुखतो असं सांगितलं'), never a diagnosis. "
+            "RULES: only what SHE said, never what Arjun said; nothing guessed; skip greetings and small talk; "
+            "NEVER include any number or digit, phone number, address, money, medicine, tablet, dose or disease name; "
+            "at most 6 facts; do not repeat a fact that is already known. Return {\"facts\": []} when there is nothing."
+        )
+        if known:
+            system += " ALREADY KNOWN: " + " | ".join(known[:30])
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": lines}]
+        for _ in range(2):
+            try:
+                raw = self._chat(messages, config.EXTRACTION_TEMPERATURE, purpose="facts", timeout=timeout,
+                                 max_tokens=500, response_format={"type": "json_object"})
+                data = _parse_json_object(raw)
+                items = data.get("facts") if data else None
+                if not isinstance(items, list):
+                    raise ValueError("no facts list")
+                out: list[dict[str, Any]] = []
+                for item in items[:6]:
+                    if not isinstance(item, dict):
+                        continue
+                    kind, fact = str(item.get("kind") or ""), str(item.get("fact") or "").strip()
+                    if kind not in LIFE_FACT_KINDS or not 2 <= len(fact) <= 140:
+                        continue
+                    try:
+                        conf = min(1.0, max(0.0, float(item.get("confidence", 0.7))))
+                    except (TypeError, ValueError):
+                        conf = 0.7
+                    out.append({"kind": kind, "fact": fact, "confidence": conf})
+                return out
             except (httpx.HTTPError, ValueError, KeyError, TypeError):
                 continue
         return None

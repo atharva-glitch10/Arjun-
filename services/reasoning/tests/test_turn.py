@@ -264,14 +264,17 @@ def test_companion_history_expires_after_idle(core_http, uid):
     assert [m["role"] for m in bodies[1]["messages"]] == ["system", "user"]
 
 
-def test_distress_clears_companion_history(core_http, uid):
+def test_distress_keeps_the_history_and_adds_a_safety_note(core_http, uid):
     from datetime import datetime
 
     eng, bodies = _companion_engine(core_http, lambda: datetime(2026, 10, 6, 9, 0))
     eng.handle(uid, "आज मी बागेत फिरायला गेलो होतो")
     assert eng.handle(uid, "mala jagaychach nahi").mode == "safety"
     eng.handle(uid, "मग तिथे माझे जुने मित्र भेटले")
-    assert [m["role"] for m in bodies[-1]["messages"]] == ["system", "user"]
+    msgs = bodies[-1]["messages"]
+    # the story and the safety moment are still there (history is no longer wiped), and the prompt says to be gentle
+    assert [m["role"] for m in msgs] == ["system", "user", "assistant", "user", "assistant", "user"]
+    assert "safety moment" in msgs[0]["content"] and "Be gentle" in msgs[0]["content"]
 
 
 def test_other_llm_options_key_header_and_no_vllm_only_field():

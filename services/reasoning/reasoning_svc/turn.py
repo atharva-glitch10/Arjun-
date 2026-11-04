@@ -11,9 +11,10 @@
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -53,11 +54,13 @@ from .distress import (
 )
 from .evon import (
     EvonClient,
+    salvage_companion,
     sanitize_companion,
     split_voice_tags,
     strip_filler,
     strip_filler_voiced,
 )
+from .memory import FactBook, SessionMemory, parse_forget, parse_remember, shape_questions
 from .parser import (
     MED_TAKEN_WORDS,
     NO,
@@ -160,7 +163,6 @@ NO_ACTION: dict[str, str] = {"type": "none", "kind": "", "value": "", "title": "
 # a pending reminder (see _answers_pending). Nothing else may touch, replace or sit on top of the question.
 _ANSWERS = frozenset({"CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY"})
 _SAFETY_HOLD_S = 120.0  # no reminder / medicine prompt is spoken this soon after a safety reply
-_HISTORY_IDLE = timedelta(minutes=30)  # a longer silence starts a fresh conversation
 _SAFETY_LLM_S = 2.0  # the second-layer safety check: past this the fail-safe words decide
 _CHAT_QUIET_S = 120.0  # a check-in question is not asked within this long of her last turn
 _CHECKIN_UNDERSTAND_S = 3.0  # the one LLM reading of an answer the word rules could not tell
@@ -223,7 +225,7 @@ class TurnEngine:
         evon: EvonClient | None = None,
         clock: Callable[[], datetime] = local_now,
         llm_timeout_s: float = config.LLM_TIMEOUT_S,
-        history_exchanges: int = config.LLM_HISTORY_EXCHANGES,
+        history_exchanges: int = config.SESSION_EXCHANGES,
         mono: Callable[[], float] = time.monotonic,
         ask_first: bool = config.ASK_BEFORE_ACTING,
     ) -> None:
@@ -235,7 +237,6 @@ class TurnEngine:
         self.evon = evon  # the hosted LLM (name kept from the Evon days); None = rules only
         self.clock = clock
         self._llm_timeout_s = llm_timeout_s
-        self._history_cap = history_exchanges * 2
         self._mono = mono
         self._llm_deadline = 0.0
         self._last_safety: dict[int, float] = {}  # user -> monotonic time of the last safety reply (T8)
@@ -246,8 +247,13 @@ class TurnEngine:
         self._convo_at: dict[int, float] = {}  # user -> monotonic time of the last companion turn
         self._last_turn: dict[int, float] = {}  # user -> monotonic time of her last turn (any kind)
         self._family_offer: dict[int, tuple[float, str, str]] = {}  # user -> (when, name, relation) of the offer
-        # This conversation only: in memory, capped, dropped after idle or distress. Never stored.
-        self._history: dict[int, list[tuple[datetime, str, str]]] = {}
+        # Session memory (memory.py): EVERY spoken line of this session, a running summary instead of deletion after a
+        # long silence, the question Arjun is waiting on. In memory only, never stored. Long-term facts: self.facts.
+        self.memory = SessionMemory(history_exchanges, config.SESSION_IDLE_MIN)
+        self.facts = FactBook(core, mono)
+        self._last_fact: dict[int, tuple[int, str, float]] = {}  # user -> (fact id, text, mono) she just saved
+        self._delivered: dict[int, tuple[int, str, str]] = {}  # delivery id -> (user, spoken text, kind)
+        self._local = threading.local()  # nested handle() calls (a check-in "yes" opens media) record only once
         # USER CONTEXT for the LLM: built from core-api, cached per user for five minutes, never persisted.
         self._context_cache: dict[int, tuple[float, str]] = {}
 
@@ -257,6 +263,22 @@ class TurnEngine:
         return max(0.0, self._llm_deadline - self._mono())
 
     def handle(self, user_id: int, text: str) -> TurnResult:
+        """One turn. Whatever path answers (safety, rules, a tool, the LLM), the exchange is recorded ONCE in the session
+        memory afterwards, so no spoken line is ever missing from the history the LLM sees."""
+        depth = getattr(self._local, "depth", 0)
+        self._local.depth = depth + 1
+        try:
+            res = self._handle(user_id, text)
+        finally:
+            self._local.depth = depth
+        if depth == 0:
+            try:
+                self._record_turn(user_id, text, res)
+            except Exception as exc:  # noqa: BLE001 - memory must never break the turn
+                log.warning("could not record the turn in session memory: %s", type(exc).__name__)
+        return res
+
+    def _handle(self, user_id: int, text: str) -> TurnResult:
         t0 = time.perf_counter()
         self._llm_deadline = self._mono() + self._llm_timeout_s
         self._last_turn[user_id] = self._mono()
@@ -295,6 +317,11 @@ class TurnEngine:
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
 
+        # 2a. "हे लक्षात ठेव" / "हे विसरून जा": her own words decide, rules only, no LLM call
+        remembered = self._memory_command(user_id, text, lang, now, trace, t0)
+        if remembered is not None:
+            return remembered
+
         # 3. ONE LLM call for every non-safety turn: the whole sentence, this conversation's history and the
         # family/dashboard context together. The rules are only the fallback (no LLM, timeout, bad JSON, or a
         # low-confidence action intent). Safety above this line never waits for the model.
@@ -326,8 +353,6 @@ class TurnEngine:
             if picked is not None:
                 if picked.intent == "CHAT" and picked.mode == "companion":
                     self._convo_at[user_id] = self._mono()
-                if picked.mode != "safety":
-                    self._remember(user_id, now, text, picked)
                 log.info(json.dumps({"user": user_id, "intent": picked.intent, **picked.trace}))
                 return picked
         # A meal / walk prompt that a session really spoke takes a clear done/skipped answer - but only when
@@ -391,7 +416,6 @@ class TurnEngine:
             guarded = self._guard_cardiac_reply(user_id, text, result, lang, trace, t0)
             if guarded is not None:
                 return guarded
-            self._remember(user_id, now, text, result)
         log.info(json.dumps({"user": user_id, "intent": parsed.intent, **result.trace}))
         return result
 
@@ -410,11 +434,11 @@ class TurnEngine:
             return None, "legacy_client", False  # a fake/old provider: the old path decides
         if self._llm_remaining() < _MIN_LLM_BUDGET_S:
             return None, "no_budget", True
-        history = [(role, said) for _, role, said in self._recent_history(uid, now)]
+        view = self.memory.view(uid, now)
         try:
             data = self.evon.understand_turn(  # type: ignore[attr-defined]
-                text, lang, now, history=history, context=self._user_context(uid, now, user),
-                interests=user.get("interests") or [], timeout=self._llm_remaining(),
+                text, lang, now, history=view.messages, context=self._user_context(uid, now, user, text),
+                interests=user.get("interests") or [], timeout=self._llm_remaining(), memory=view.block,
             )
         except httpx.TimeoutException:
             log.info("llm understanding timed out")
@@ -441,7 +465,13 @@ class TurnEngine:
             return None, "low_confidence", True
         return data, "ok", True
 
-    def _user_context(self, uid: int, now: datetime, user: dict[str, Any]) -> str:
+    def _user_context(self, uid: int, now: datetime, user: dict[str, Any], text: str = "") -> str:
+        """The cached family/dashboard context plus the facts she told Arjun that fit THIS sentence (never cached)."""
+        base = self._base_context(uid, now, user)
+        facts = self.facts.block(uid, text, now, config.FACTS_IN_CONTEXT)
+        return f"{base}\n{facts}" if facts else base
+
+    def _base_context(self, uid: int, now: datetime, user: dict[str, Any]) -> str:
         """A short, private context block for the companion LLM (<=700 chars), cached for five minutes.
 
         Only what helps a reply: how to address her, family names/relations (never numbers), the date/day,
@@ -509,6 +539,54 @@ class TurnEngine:
             context = context[: config.USER_CONTEXT_MAX_CHARS].rsplit(" ", 1)[0]
         self._context_cache[uid] = (self._mono(), context)
         return context
+
+    # ------------------------------------------------------------------ "हे लक्षात ठेव" / "हे विसरून जा"
+    def _memory_command(
+        self, uid: int, text: str, lang: str, now: datetime, trace: dict[str, Any], t0: float
+    ) -> TurnResult | None:
+        """Save a fact on her explicit word, or forget one. One read-back line, no question, rules only. core-api
+        refuses numbers, addresses, money, medicines and diagnoses (and a body complaint without the consent flag)."""
+        r = rp.R[rp.lang_or_default(lang)]
+
+        def out(reply: str, intent: str) -> TurnResult:
+            return TurnResult(reply, intent, "care", lang, trace=self._t(trace, t0))
+
+        content = parse_remember(text)
+        if content is not None:
+            content = (content or self.memory.last_user_text(uid)).strip()[:140]
+            if not content:
+                return out(r["memory_what"], "MEMORY_ASK")
+            kind = "concern" if symptom_category(content) else "note"
+            try:
+                saved = self.core.save_fact(uid, content, kind, 1.0, "explicit", now.date().isoformat())
+            except CoreError as exc:
+                if exc.status == 422:
+                    return out(r["memory_refused"], "MEMORY_REFUSED")
+                raise
+            self.facts.invalidate(uid)
+            self._last_fact[uid] = (int(saved["id"]), str(saved["fact"]), self._mono())
+            return out(r["memory_saved"].format(fact=saved["fact"]), "MEMORY_SAVED")
+
+        content = parse_forget(text)
+        if content is None:
+            return None
+        gone: list[dict[str, Any]] = []
+        last = self._last_fact.get(uid)
+        if content:
+            gone = self.core.forget_facts(uid, content)
+        elif last is not None and self._mono() - last[2] < _OFFER_WINDOW_S * 5:
+            try:
+                self.core.delete_fact(uid, last[0])
+                gone = [{"fact": last[1]}]
+            except CoreError as exc:
+                if exc.status != 404:
+                    raise
+        if not gone:
+            return None  # not about a fact: "हे विसरून जा" keeps deleting the last story, as before
+        self._last_fact.pop(uid, None)
+        self.facts.invalidate(uid)
+        self.memory.scrub(uid, str(gone[0]["fact"]))
+        return out(r["memory_forgot"].format(fact=gone[0]["fact"]), "MEMORY_FORGOT")
 
     # ------------------------------------------------------------------ second layer and reply guard
     def _second_look(self, text: str) -> str | None:
@@ -1036,22 +1114,41 @@ class TurnEngine:
         except (CoreError, httpx.HTTPError):
             return False
 
-    def _remember(self, uid: int, now: datetime, text: str, res: TurnResult) -> None:
-        """The LLM's memory of THIS conversation: companion turns in full, care turns as short text. In memory
-        only, never stored. Medicine turns are left out (their wording comes only from SQL templates)."""
-        if res.intent in (
-            "MED_TAKEN", "MED_SNOOZE", "MEDICAL_QUESTION", "PENDING_REPEAT", "EMERGENCY", "DISTRESS",
-            "BP_READING",
-        ):
+    # intents whose wording must never reach the LLM as text (boundary 6: medicine words come only from SQL templates;
+    # readings are numbers): the session keeps a neutral note that it happened, nothing she or Arjun said.
+    _NOTE_ONLY = {
+        "MED_TAKEN": "she said she took her medicine",
+        "MED_SNOOZE": "she asked to be reminded about a medicine later",
+        "MEDICAL_QUESTION": "she asked about a medicine; Arjun sent her to the family and doctor",
+        "BP_READING": "she gave a health reading; it was noted for the family",
+        "MEMORY_FORGOT": "she asked Arjun to forget something; it was forgotten",
+    }
+
+    def _record_turn(self, uid: int, said: str, res: TurnResult) -> None:
+        """The ONE writer of session memory for a turn (rules, tools, safety, LLM, memory commands alike)."""
+        now = self.clock()
+        if res.intent in self._NOTE_ONLY:
+            self.memory.event(uid, now, self._NOTE_ONLY[res.intent])
             return
-        if res.intent == "CHAT" and res.mode == "companion":
-            return  # _chat_reply already stored the exchange
-        turns = self._recent_history(uid, now)
-        turns += [
-            (now, "user", text.strip()[:_HISTORY_CARE_CHARS]),
-            (now, "assistant", res.reply.strip()[:_HISTORY_CARE_CHARS]),
-        ]
-        self._history[uid] = turns[-self._history_cap:]
+        if res.intent in ("PENDING_REPEAT", "MEMORY_ASK"):
+            self.memory.event(uid, now, "Arjun repeated a question that was still waiting")
+            return
+        if res.mode == "safety":
+            kind = "emergency" if res.intent == "EMERGENCY" else "distress"
+            self.memory.exchange(uid, now, said, res.reply, kind="safety", limit=_HISTORY_CARE_CHARS)
+            self.memory.safety(uid, now, kind)
+            return
+        companion = res.mode == "companion"
+        self.memory.exchange(
+            uid, now, said, res.reply, kind="chat" if companion else "care", limit=0 if companion else _HISTORY_CARE_CHARS,
+        )
+        title = str(res.action.get("title") or "")
+        if res.intent in ("OPEN_MEDIA", "NEWS_READ") and title:
+            self.memory.event(uid, now, f"opened for her: {title[:80]}")
+        elif res.action.get("type") == "control":
+            self.memory.event(uid, now, f"media control: {res.action.get('value')}")
+        elif res.intent in ("CREATE_REMINDER", "COMPLETE_REMINDER", "REQUEST_CAREGIVER", "CHECKIN_DONE", "CHECKIN_SKIPPED"):
+            self.memory.event(uid, now, f"{res.intent.lower().replace('_', ' ')} done")
 
     @staticmethod
     def _answers_pending(intent: str, pending: dict[str, Any]) -> bool:
@@ -1409,6 +1506,7 @@ class TurnEngine:
             log.warning("could not render delivery %s: %s", d["id"], exc)
             self.core.delivery_release(uid, d["id"], session, "interrupted")
             return None
+        self._delivered[d["id"]] = (uid, text, d["kind"])  # recorded in the session once it was really SPOKEN
         return {
             "delivery_id": d["id"], "kind": d["kind"], "text": text, "screen": screen, "item": item,
             "awaiting_confirmation": ask, "language": lang,
@@ -1416,8 +1514,18 @@ class TurnEngine:
 
     def deliver_spoken(self, uid: int, delivery_id: int, session: str) -> None:
         self.core.delivery_spoken(uid, delivery_id, session)
+        said = self._delivered.pop(delivery_id, None)
+        if said is None:
+            return
+        _, text, kind = said
+        now = self.clock()
+        if kind == "medicine":  # name and dose come only from SQL: the session keeps a neutral note, not the words
+            self.memory.event(uid, now, "Arjun reminded her about a medicine (wording not kept)")
+        else:  # a check-in question or a reminder Arjun said on his own: the open question waits for her answer
+            self.memory.arjun_said(uid, now, text, "checkin" if kind == "checkin" else "reminder")
 
     def deliver_release(self, uid: int, delivery_id: int, session: str, reason: str) -> None:
+        self._delivered.pop(delivery_id, None)
         self.core.delivery_release(uid, delivery_id, session, reason)
 
     def opener(self, user_id: int) -> str | None:
@@ -1675,6 +1783,15 @@ class TurnEngine:
 
         # Answered in place: an open reminder draft or pending yes/no is left exactly as it was.
         if intent == "GREETING":
+            # She has told Arjun things before (facts, or earlier talk today): greet like someone who remembers, and follow
+            # up on an event she mentioned. With nothing to remember, or no LLM, the fixed greeting stays.
+            if self.evon is not None and (self.facts.all(uid) or self.memory.view(uid, now).messages):
+                reply, speech, from_llm = self._chat_reply(uid, text, lang, now)
+                if from_llm:
+                    res = out(reply, "companion")
+                    res.speech = speech
+                    res.source = "llm"
+                    return res
             return out(r["greet"])
         if intent == "HEARING_CHECK":
             return out(r["hearing_ok"])
@@ -2052,10 +2169,13 @@ class TurnEngine:
         speech = ""
         raw = llm_reply or None
         challenged = False
+        view = self.memory.view(uid, now)
+        user = self.core.user(uid)
+        context = self._user_context(uid, now, user, text)
         if raw is None and self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
             raw = self.evon.companion_reply(
-                text, lang, now, history=self._chat_history(uid, now),
-                interests=self.core.user(uid).get("interests") or [], timeout=self._llm_remaining(),
+                text, lang, now, history=view.messages, interests=user.get("interests") or [],
+                timeout=self._llm_remaining(), context=context, memory=view.block,
             )
         while raw is not None:
             # voice tags out first, so the boundary checks see only words
@@ -2068,13 +2188,17 @@ class TurnEngine:
                     speech = voiced  # untrimmed: the tags still sit on the right words
                 break
             log.warning("companion reply rejected (%s)", ",".join(reasons))
+            if clean is not None:
+                salvaged = salvage_companion(clean, lang)  # drop the one bad sentence, keep the rest
+                if salvaged is not None:
+                    reply, raw = salvaged, None
+                    break
             if challenged or self.evon is None or self._llm_remaining() < _MIN_LLM_BUDGET_S:
                 break
             challenged = True  # one corrective retry, then the fixed line
             raw = self.evon.companion_reply(
-                text, lang, now, history=self._chat_history(uid, now),
-                interests=self.core.user(uid).get("interests") or [], timeout=self._llm_remaining(),
-                correction=",".join(reasons),
+                text, lang, now, history=view.messages, interests=user.get("interests") or [],
+                timeout=self._llm_remaining(), correction=",".join(reasons), context=context, memory=view.block,
             )
         from_llm = reply is not None
         if reply is None:
@@ -2082,19 +2206,11 @@ class TurnEngine:
             self._chat_counter[uid] = n + 1
             options = rp.CHAT[rp.lang_or_default(lang)]
             reply = options[n % len(options)]
-        turns = self._recent_history(uid, now)
-        turns += [(now, "user", text), (now, "assistant", reply)]
-        self._history[uid] = turns[-self._history_cap:]
+        if from_llm:  # at most one question, not in every reply, never the same one twice in a day
+            shaped = shape_questions(reply, self.memory.asked_today(uid, now), self.memory.previous_reply_was_question(uid, now))
+            if shaped != reply:
+                reply, speech = shaped, ""  # the voice tags sat on the old words: say the shaped reply plainly
         return reply, speech, from_llm
-
-    def _chat_history(self, uid: int, now: datetime) -> list[tuple[str, str]]:
-        return [(role, said) for _, role, said in self._recent_history(uid, now)]
-
-    def _recent_history(self, uid: int, now: datetime) -> list[tuple[datetime, str, str]]:
-        turns = self._history.get(uid, [])
-        if turns and now - turns[-1][0] > _HISTORY_IDLE:
-            turns = []
-        return list(turns)
 
     def _symptom(
         self, uid: int, text: str, category: str, lang: str, trace: dict[str, Any], t0: float, now: datetime
@@ -2112,7 +2228,6 @@ class TurnEngine:
             trace=self._t({**trace, "symptom": category}, t0), screen="story",
         )
         self._convo_at[uid] = self._mono()  # the conversation goes on
-        self._remember(uid, now, text, res)
         return res
 
     def _lonely(
@@ -2130,10 +2245,9 @@ class TurnEngine:
             self.core.lonely(uid)
         except (CoreError, httpx.HTTPError) as exc:
             log.warning("lonely: could not tell the family: %s", exc)
-        text = r["lonely"].format(names=", ".join(names[:3])) if names else r["lonely_no_contacts"]
-        res = TurnResult(text, "LONELY", "companion", lang, trace=self._t(trace, t0), screen="story")
+        reply = r["lonely"].format(names=", ".join(names[:3])) if names else r["lonely_no_contacts"]
+        res = TurnResult(reply, "LONELY", "companion", lang, trace=self._t(trace, t0), screen="story")
         self._convo_at[uid] = self._mono()
-        self._remember(uid, now, text, res)
         return res
 
     def _distress(self, uid: int, lang: str, trace: dict[str, Any], t0: float) -> TurnResult:
@@ -2147,8 +2261,7 @@ class TurnEngine:
         decision by the team), and speak the fixed template."""
         self._last_safety[uid] = self._mono()  # no reminder is spoken over / right after this
         self._drafts.pop(uid, None)
-        self._history.pop(uid, None)  # the story stops; nothing resumes after a crisis
-        self._convo_at.pop(uid, None)
+        self._convo_at.pop(uid, None)  # small talk pauses; the session memory stays (with a safety note, _record_turn)
         # Every core call is best-effort: the spoken safety reply below is returned regardless.
         try:
             pending = self.core.pending(uid)

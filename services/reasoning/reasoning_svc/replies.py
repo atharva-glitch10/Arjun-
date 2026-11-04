@@ -722,3 +722,28 @@ _READING: dict[str, dict[str, str]] = {
 }
 for _lang, _texts in _READING.items():
     R[_lang].update(_texts)
+
+
+# ---- memory commands ("हे लक्षात ठेव" / "हे विसरून जा"): one fixed line each, no question ------------------------------
+MEMORY: dict[str, dict[str, str]] = {
+    "mr": {
+        "memory_saved": "ठेवलं: {fact}. विसरायचं असेल तर 'हे विसरून जा' म्हणा.",
+        "memory_what": "काय लक्षात ठेवू? सांगा.",
+        "memory_refused": "हे मला लक्षात ठेवता येणार नाही. आकडे, पत्ते, पैसे, औषधं आणि आजार मी ठेवत नाही.",
+        "memory_forgot": "विसरलो: {fact}.",
+    },
+    "hi": {
+        "memory_saved": "रख लिया: {fact}। भुलाना हो तो 'यह भूल जाओ' कहिए।",
+        "memory_what": "क्या याद रखूँ? बताइए।",
+        "memory_refused": "यह मैं याद नहीं रख सकता। नंबर, पते, पैसे, दवाइयाँ और बीमारियाँ मैं नहीं रखता।",
+        "memory_forgot": "भूल गया: {fact}।",
+    },
+    "en": {
+        "memory_saved": "Kept: {fact}. To forget it, say 'forget this'.",
+        "memory_what": "What should I remember? Tell me.",
+        "memory_refused": "I cannot keep that. I do not keep numbers, addresses, money, medicines or illnesses.",
+        "memory_forgot": "Forgotten: {fact}.",
+    },
+}
+for _lang, _lines in MEMORY.items():
+    R[_lang].update(_lines)

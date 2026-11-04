@@ -88,9 +88,10 @@ def test_a_thirty_minute_silence_starts_a_new_conversation(core_http, uid):
     assert sent(llm) == []
 
 
-def test_distress_drops_the_history(core_http, uid):
+def test_distress_keeps_the_history_after_a_note(core_http, uid):
     eng, llm = make(core_http)
     eng.handle(uid, OPENING)
     assert eng.handle(uid, "मला मरावंसं वाटतं").intent == "DISTRESS"
     eng.handle(uid, "आता मी स्वयंपाक करते आहे आणि गाणं ऐकते")
-    assert sent(llm) == []
+    turns = sent(llm)
+    assert ("user", OPENING) in turns and len(turns) == 4  # the story, the safety exchange: nothing was wiped
