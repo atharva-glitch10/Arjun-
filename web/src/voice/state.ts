@@ -65,6 +65,8 @@ export interface ActionAttribute {
   title?: string;
   command?: string;
   contact_id?: number;
+  /** kind "app": her search words (never a URL). */
+  query?: string;
 }
 
 const text = (v: unknown, max: number): string | undefined => (typeof v === "string" ? v.slice(0, max) : undefined);
@@ -94,6 +96,8 @@ export function parseActionAttribute(raw: string | undefined): ActionAttribute |
   if (value) action.value = value;
   if (title) action.title = title;
   if (command) action.command = command;
+  const query = text(a.query, 100);
+  if (query && !/https?:/i.test(query)) action.query = query;
   const id = typeof a.contact_id === "number" ? a.contact_id : Number.parseInt(String(a.contact_id ?? ""), 10);
   if (Number.isInteger(id) && id > 0) action.contact_id = id;
   return action;

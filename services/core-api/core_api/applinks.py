@@ -20,8 +20,10 @@ from .deps import require_key
 
 Kind = Literal[
     "youtube_query", "youtube_video", "youtube_playlist", "youtube_channel_live", "youtube_live",
-    "rss", "whatsapp", "link"
+    "rss", "whatsapp", "link", "app"
 ]
+# Phone apps the elder page knows how to open (its own fixed link table; no URL is ever stored for them).
+APP_IDS = ("spotify", "jiosaavn", "youtube_music", "google_maps")
 # "youtube_live" is the short name a caller may send; the stored/played kind is the channel-live one the screen knows.
 _CANONICAL = {"youtube_live": "youtube_channel_live"}
 
@@ -69,6 +71,10 @@ def _query_param(url: str, name: str) -> str | None:
 def normalise_value(kind: str, value: str, allow_other_host: bool) -> tuple[str, bool]:
     """(clean value, True when the host is NOT on the allowlist but the family approved it). Raises ValueError."""
     value = value.strip()
+    if kind == "app":
+        if value.lower() not in APP_IDS:
+            raise ValueError("an app entry is one of: " + ", ".join(APP_IDS))
+        return value.lower(), False
     if kind == "youtube_query":
         if not 1 <= len(value) <= 100 or value.lower().startswith(("http:", "https:")):
             raise ValueError("a YouTube search is a few words, not a link")

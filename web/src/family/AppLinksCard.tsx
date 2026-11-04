@@ -13,6 +13,7 @@ const HINT: Record<AppLink["kind"], string> = {
   rss: "https:// feed address",
   whatsapp: "",
   link: "https:// address",
+  app: "spotify | jiosaavn | youtube_music | google_maps",
 };
 
 /** "Apps and links": what Arjun may open when she asks by voice. Only the family can add, edit or remove entries. */

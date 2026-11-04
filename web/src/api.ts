@@ -58,7 +58,8 @@ export interface AppLink {
     | "youtube_live"
     | "rss"
     | "whatsapp"
-    | "link";
+    | "link"
+    | "app";
   label: string;
   /** whatsapp: the contact id (numbers stay in contacts). */
   value: string;

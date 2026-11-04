@@ -8,10 +8,12 @@
 import type { Contact } from "../api";
 import type { ControlKind, VideoKind } from "../voice/action";
 import type { ActionAttribute } from "../voice/state";
+import { APPS, appLinks, isAndroid, isAppId } from "./apps";
 
 export type MediaPlan =
   | { do: "embed"; kind: VideoKind; value: string; title: string; canNext: boolean; src: string }
   | { do: "window"; url: string; title: string }
+  | { do: "app"; url: string; web: string; title: string }
   | { do: "control"; command: ControlKind }
   | { do: "none" };
 
@@ -147,6 +149,13 @@ export function planAction(action: ActionAttribute, contacts: Contact[], origin:
   if (action.kind === "whatsapp") {
     const url = whatsappUrl(action, contacts);
     return url ? { do: "window", url, title } : { do: "none" };
+  }
+  if (action.kind === "app") {
+    const id = action.value ?? "";
+    if (!isAppId(id)) return { do: "none" };
+    const links = appLinks(id, action.query ?? "");
+    const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+    return { do: "app", url: isAndroid(ua) ? links.intent : links.web, web: links.web, title: action.title?.trim() || APPS[id].label };
   }
   if (action.kind === "url" || action.kind === "link") {
     const url = safeUrl(action.value ?? "");
