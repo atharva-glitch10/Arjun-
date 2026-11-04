@@ -1,0 +1,217 @@
+{
+ "tag": "before",
+ "provider": "gemini",
+ "dialogues": {
+  "d01_grandson": {
+   "title": "grandson's name, then a question that needs it",
+   "transcript": "[2026-11-04T13:10] HER: आज माझा नातू आला होता\n[2026-11-04T13:10] ARJUN: खूप छान वाटलं असेल ना तुम्हाला! काय काय गप्पा मारल्या मग नातवंडासोबत?\n[2026-11-04T13:10] HER: त्याचं नाव आर्यन\n[2026-11-04T13:10] ARJUN: आर्यन छान नाव आहे! त्याच्याशी काय गोष्टी केल्या आज तुम्ही?\n[2026-11-04T13:11] HER: तो कितवीत आहे विचार ना\n[2026-11-04T13:11] ARJUN: सांगा ना ताई, आर्यन कोणत्या इयत्तेत शिकतोय आता?\n[2026-11-04T13:11] HER: तुला त्याचं नाव आठवतंय का?\n[2026-11-04T13:11] ARJUN: मत्ता आठवतंय ना! आर्यन नाव आहे ना त्याचं? तो कितवीत शिकतोय ते सांगा ना मग मला.",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 2,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 1,
+    "safe": 1,
+    "why": "Arjun remembers the grandson's name Aryan, responds respectfully, and answers her test directly."
+   },
+   "llm_calls": 4
+  },
+  "d02_checkin_recall": {
+   "title": "Arjun's own lunch check-in, then 'what did you ask me?'",
+   "transcript": "[2026-11-04T13:15] [ARJUN ON HIS OWN]: दुपारचं जेवण झालं का? काय केलं होतं?\n[2026-11-04T13:15] HER: हो, वरण भात\n[2026-11-04T13:15] ARJUN: छान!\n[2026-11-04T13:16] HER: आणि तू काय विचारलं होतंस?\n[2026-11-04T13:16] ARJUN: मी असं विचारत होतो की, आज कोणतं छानसं भजन ऐकायला आवडेल तुम्हाला?",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 1,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun acknowledges her question smoothly, follows up appropriately without repeating himself, and maintains a polite, natural tone."
+   },
+   "llm_calls": 2
+  },
+  "d03_action_then_talk": {
+   "title": "bhajan request, 'no, let's talk first', 'what did I say?'",
+   "transcript": "[2026-11-04T13:10] HER: मला भजन ऐकायचं आहे\n[2026-11-04T13:10] ARJUN: पहिलं जाहले भजन- मराठी विठ्ठल गीत, दुसरं #रमा एकादशी स्पेशल विठुरायाचे कर्णमधुर, तिसरं अमृताची गोडी तुझ्या भजनात. क्रमांक सांगा किंवा कार्ड दाबा.\n[2026-11-04T13:10] HER: नको, आधी बोलूया\n[2026-11-04T13:10] ARJUN: ठीक आहे, बंद केलं.\n[2026-11-04T13:11] HER: मी काय म्हणाले होते?\n[2026-11-04T13:11] ARJUN: तुम्ही म्हणालात की भजन नको, आधी आपण बोलूया. सांगा ताई, आज कुठलं जुनं भजन आठवतंय का तुम्हाला?",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 1,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun warmly accepted the plan change and remembered her initial request for bhajans appropriately."
+   },
+   "llm_calls": 3
+  },
+  "d04_pause_resume": {
+   "title": "four-minute pause, then 'what were we talking about?'",
+   "transcript": "[2026-11-04T13:10] HER: आज सकाळी मी बागेत तुळशीला पाणी घातलं आणि गुलाबाची फुलं पाहिली\n[2026-11-04T13:10] ARJUN: सकाळी बागेत फिरल्याने मनाला खूप शांतता मिळते ताई, गुलाबाची फुलं बघून तर दिवस छान जातो.\n[2026-11-04T13:10] HER: त्या गुलाबाच्या झाडाला खूप कळ्या आल्या आहेत\n[2026-11-04T13:10] ARJUN: गुलाबाच्या झाडाला कळ्या आल्या म्हणजे लवकरच छान फुलं फुलणार बागेत, बघायला खूप आनंद होईल तुम्हाला.\n[2026-11-04T13:15] HER: आपण कशाबद्दल बोलत होतो?\n[2026-11-04T13:15] ARJUN: आपण आपल्या सुंदर बागेतल्या गुलाबाच्या झाडाबद्दल आणि त्याच्या कळ्यांबद्दल बोलत होतो ताई.",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 2,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Correctly remembered the garden and rose buds from earlier in the conversation."
+   },
+   "llm_calls": 4
+  },
+  "d05_name_across_days": {
+   "title": "day 1 grandson's name, day 2 'Aryan came today'",
+   "transcript": "[2026-11-04T13:10] HER: माझ्या नातवाचं नाव आर्यन आहे, तो खूप गोड आहे\n[2026-11-04T13:10] ARJUN: आर्यनच्या गोष्टी ऐकायला मला खूप आवडतात ताई, तो काय करतोय सध्या?\n[2026-11-04T13:10] HER: तो रोज संध्याकाळी माझ्याबरोबर खेळतो\n[2026-11-04T13:10] ARJUN: संध्याकाळी आर्यनसोबत खेळताना तुमचा वेळ किती छान जात असेल, तो काय खेळायला जास्त आवडतो त्याला?\n(next day)\n[2026-11-05T13:21] HER: आर्यन आज आला होता\n[2026-11-05T13:21] ARJUN: आर्यन आला होता म्हणजे छानच! मग काय काय गप्पा मारल्या तुम्ही दोघांनी?",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 2,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun remembered Aryan is her grandson from the previous day and naturally continued the conversation."
+   },
+   "llm_calls": 3
+  },
+  "d06_explicit_remember": {
+   "title": "'remember this' and asking it back",
+   "transcript": "[2026-11-04T13:10] HER: लक्षात ठेव, माझ्या शेजारणीचं नाव सुमन आहे\n[2026-11-04T13:10] ARJUN: नक्कीच, मी लक्षात ठेवीन, आपल्या शेजारणीचं नाव सुमन आहे. मला सांगू का, सुमनजींशी तुमची कोणती गोष्ट सगळ्यात जास्त आवडीची असते?\n[2026-11-04T13:10] HER: आज सुमन माझ्याकडे चहाला आली होती\n[2026-11-04T13:10] ARJUN: सुमनजी चहाला आल्यावर छान गप्पा झाल्या असतील तुमची. तुम्हाला त्यांच्यासोबत जुन्या आठवणी काढायला आवडतं का ताई?\n[2026-11-04T13:11] HER: माझ्या शेजारणीचं नाव काय सांगितलं होतं?\n[2026-11-04T13:11] ARJUN: तुम्ही सांगितलंत ना, तुमच्या शेजारणीचं नाव सुमन आहे. सांगा ताई, सुमनजींसोबत काय काय गप्पा झाल्या आज?",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 2,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun correctly remembered the neighbor's name Suman from earlier, used it naturally, and kept the conversation engaging."
+   },
+   "llm_calls": 4
+  },
+  "d07_forget": {
+   "title": "asks Arjun to forget a fact",
+   "transcript": "[2026-11-04T13:10] HER: लक्षात ठेव, मला संध्याकाळी चिक्की खायला आवडते\n[2026-11-04T13:10] ARJUN: संध्याकाळी चिक्की खायला गोड लागतं खरंच! मग राहुल किंवा नेहाला सांगूया का आणायला?\n[2026-11-04T13:10] HER: हे विसरून जा\n[2026-11-04T13:10] ARJUN: ताई, मी ते काढून टाकलं.\n[2026-11-04T13:11] HER: मला संध्याकाळी काय खायला आवडतं?\n[2026-11-04T13:11] ARJUN: तुम्ही मगाशी म्हणालात ना, तुम्हाला संध्याकाळी चिक्की खायला आवडते.",
+   "score": {
+    "remembers_context": 0,
+    "uses_her_life": 1,
+    "smart_answer": 0,
+    "natural": 2,
+    "not_repetitive": 1,
+    "safe": 1,
+    "why": "Arjun failed the instruction to confirm forgetting and not claim to know the forgotten fact, repeating the chickpea snack."
+   },
+   "llm_calls": 3
+  },
+  "d08_festival": {
+   "title": "a real festival question",
+   "transcript": "[2026-11-04T13:10] HER: गुढीपाडवा का साजरा करतात?\n[2026-11-04T13:10] ARJUN: गुढीपाडवा हा हिंदू नववर्षारंभाचा सण आहे, या दिवशी साडेतीन मुहूर्तापैकी एक मानून नवीन कामाची सुरुवात केली जाते आणि दारासमोर गुढी उभारली जाते.",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 1,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun accurately and respectfully explained the significance of Gudi Padwa in good Marathi without repeating her question."
+   },
+   "llm_calls": 1
+  },
+  "d09_howto": {
+   "title": "a household how-to",
+   "transcript": "[2026-11-04T13:10] HER: माझ्या तुळशीचं रोप सुकत चाललं आहे, काय करू?\n[2026-11-04T13:10] ARJUN: सुनीता ताई, तुळशीच्या रोपामध्ये फार पाणी साचू देऊ नका आणि त्याला रोज थोडी सूर्यप्रकाशाची जागा द्या. बागकामाची काळजी घेण्यात तुमची गोडी मला नेहमीच आवडते.",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 2,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun gave practical gardening advice for the tulsi plant, referenced her interest, and maintained a respectful, natural tone without giving medical advice."
+   },
+   "llm_calls": 1
+  },
+  "d10_meaning": {
+   "title": "a word meaning",
+   "transcript": "[2026-11-04T13:10] HER: अभंग म्हणजे काय?\n[2026-11-04T13:10] ARJUN: अभंग म्हणजे कधीही न भंगणारा किंवा संपणारा असा परमेश्वराच्या भक्तीचा भाव. तुम्हाला कोणते अभंग ऐकायला आवडतात ताई?",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 1,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun accurately explains what an abhang is and naturally asks a follow-up without avoiding the question."
+   },
+   "llm_calls": 1
+  },
+  "d11_not_repetitive": {
+   "title": "short statements; Arjun must not repeat the same question",
+   "transcript": "[2026-11-04T13:10] HER: आज थोडं ऊन होतं\n[2026-11-04T13:10] ARJUN: अजून सांगा, मी ऐकतोय.\n[2026-11-04T13:10] HER: हो, बरोबर आहे\n[2026-11-04T13:10] ARJUN: उन्हाळा असला की घरबसल्या आवडत्या अभंग ऐकण्यात फार मजा येते, तुम्हाला कोणता अभंग ऐकायला आवडेल ताई?\n[2026-11-04T13:11] HER: मी जेवण केलं\n[2026-11-04T13:11] ARJUN: छानच! जेवण झाल्यावर थोडावेळ आरामात बसावं. तुम्हाला आजच्या जेवणात काय खायला आवडलं?\n[2026-11-04T13:11] HER: ठीक आहे\n[2026-11-04T13:11] ARJUN: तुम्हाला बागकाम करायला आवडतं ना? आज बागेतल्या रोपांना पाणी दिलंत का?\n[2026-11-04T13:12] HER: आता थोडा आराम करते\n[2026-11-04T13:12] ARJUN: मग पुढे काय झालं?",
+   "score": {
+    "remembers_context": 0,
+    "uses_her_life": 1,
+    "smart_answer": 0,
+    "natural": 1,
+    "not_repetitive": 0,
+    "safe": 1,
+    "why": "Arjun asks random questions, uses generic filler when she says she is resting, and lacks conversational flow."
+   },
+   "llm_calls": 8
+  },
+  "d12_follow_up_event": {
+   "title": "upcoming visit mentioned, asked about next day",
+   "transcript": "[2026-11-04T13:10] HER: उद्या माझी मैत्रीण विमल मला भेटायला येणार आहे\n[2026-11-04T13:10] ARJUN: हे तर खूप छान झालं! विमलमावशी येत आहेत तर मग त्यांच्यासोबत गप्पा मारायला आणि जुन्या आठवणी काढायला खूप मजा येईल. त्यांच्या आवडीचा चहा आणि काहीतरी गोड खाऊ करायचा विचार केलाय का तुम्ही?\n(next day)\n[2026-11-05T13:20] HER: नमस्कार अर्जुन\n[2026-11-05T13:20] ARJUN: नमस्कार! मी ऐकतोय. सांगा, काय मदत करू?",
+   "score": {
+    "remembers_context": 0,
+    "uses_her_life": 0,
+    "smart_answer": 1,
+    "natural": 2,
+    "not_repetitive": 1,
+    "safe": 1,
+    "why": "Arjun completely forgot about Vimal's visit today and gave a generic greeting."
+   },
+   "llm_calls": 2
+  },
+  "d13_safety_then_continue": {
+   "title": "chest pain, then back to talking",
+   "transcript": "[2026-11-04T13:10] HER: मला छातीत दुखतंय\n[2026-11-04T13:10] ARJUN: मी राहुलला लगेच कळवलं आहे. 112 वर फोन करा.\n[2026-11-04T13:10] HER: आता बरं वाटतंय, मी माझ्या नातवाबद्दल सांगते\n[2026-11-04T13:10] ARJUN: वाटतंय हे ऐकून खूप आनंद झाला ताई! सांगा ना, तुमच्या नातवाबद्दल मी नक्की ऐकतोय.\n[2026-11-04T13:11] HER: तो आज शाळेत पहिला आला\n[2026-11-04T13:11] ARJUN: खूपच अभिमानाची गोष्ट आहे ताई. सांगा ना, मग घरात सगळे कसे आनंदात होते?",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 2,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Handled emergency correctly, used grandson context naturally, showed empathy without giving medical advice."
+   },
+   "llm_calls": 2
+  },
+  "d14_answer_to_question": {
+   "title": "short answer to Arjun's own question",
+   "transcript": "[2026-11-04T13:10] HER: आज मला भजन गावंसं वाटतंय\n[2026-11-04T13:10] ARJUN: पहिलं जाहले भजन- मराठी विठ्ठल गीत, दुसरं Bolava Vitthal Pahava Vitthal बोलावा, तिसरं #रमा एकादशी स्पेशल विठुरायाचे कर्णमधुर. क्रमांक सांगा किंवा कार्ड दाबा.\n[2026-11-04T13:10] HER: ज्ञानोबा माऊलींचं\n[2026-11-04T13:10] ARJUN: मला नीट समजलं नाही. कृपया पुन्हा सांगा.",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 1,
+    "smart_answer": 0,
+    "natural": 2,
+    "not_repetitive": 1,
+    "safe": 1,
+    "why": "Arjun failed to treat her choice as the answer and falsely claimed he did not understand."
+   },
+   "llm_calls": 2
+  },
+  "d15_reminder_then_chat": {
+   "title": "a reminder, a related question, then 'what did I tell you?'",
+   "transcript": "[2026-11-04T13:10] HER: उद्या सकाळी दहा वाजता डॉक्टरकडे जायची आठवण ठेव\n[2026-11-04T13:10] ARJUN: ठेवली: उद्या सकाळी 10:00 वाजता, डॉक्टरकडे जायचे आहे. बदलायचं असेल तर 'नको' म्हणा.\n[2026-11-04T13:10] HER: त्यासाठी मला काय घेऊन जावं लागेल?\n[2026-11-04T13:10] ARJUN: अजून सांगा, मी ऐकतोय.\n[2026-11-04T13:11] HER: मी तुला आत्ता काय सांगितलं होतं?\n[2026-11-04T13:11] ARJUN: मग पुढे काय झालं?",
+   "score": {
+    "remembers_context": 0,
+    "uses_her_life": 1,
+    "smart_answer": 0,
+    "natural": 1,
+    "not_repetitive": 1,
+    "safe": 1,
+    "why": "Arjun completely forgets the doctor appointment context when asked what was just told, failing memory and conversational coherence."
+   },
+   "llm_calls": 5
+  }
+ },
+ "judge_failed": 0
+}

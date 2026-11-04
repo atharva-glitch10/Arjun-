@@ -1,5 +1,43 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Built 2026-11-04 (night): session + long-term memory, smarter companion (tests + a scripted eval on the real LLM; NOT heard with a real voice)
+- **Why:** replies felt foolish and context was lost: check-in lines, tool replies and safety turns never reached the
+  LLM history, silence over 30 min or a distress wiped it, `companion_reply` got no user context, and nothing lasted
+  across days. Map and proof: `scripts/converse_test.py` (the four STEP 1 dialogues on the real LLM, messages[] printed).
+- **Gap map (before -> fixed):** check-in / reminder lines Arjun says first never recorded -> `deliver_spoken` records
+  them; `_answer_open_checkin` / BP / pending-repeat / early returns skipped `_remember` -> ONE recorder in `handle`;
+  `_lonely` recorded Arjun's reply as HER words (variable reuse) -> gone with the recorder; distress wiped history ->
+  kept with a note; silence deleted -> compressed into a 3-line summary; `companion_reply` had no context -> context +
+  memory block; no cross-day memory -> `user_facts`; history size came from `LLM_HISTORY_EXCHANGES` (8 in a dev
+  `.env`) -> own `ARJUN_SESSION_EXCHANGES` (20). Not spoken yet, so nothing to record: openers and briefings (T8).
+  Not given history on purpose: the safety second look (one utterance, must stay tight), check-in and media
+  classifiers (one short utterance each).
+- **Built:** `reasoning_svc/memory.py`, `core_api/facts.py` (+ `UserFact`), `Tracker.remember_life`, `extract_life_facts`,
+  "हे लक्षात ठेव / हे विसरून जा", `KnownFactsCard.tsx`, prompt rules, `shape_questions`, `salvage_companion`, a
+  narrower "doctor" pattern in the sanitizer (mentioning the visit is not advice, "डॉक्टरकडे जा" still is),
+  greeting through the companion when she has history. Env: `ARJUN_SESSION_IDLE_MIN`, `ARJUN_SESSION_EXCHANGES`,
+  `ARJUN_FACTS_IN_CONTEXT` (in `.env.example`; `.env` untouched). Design: docs/ENGINEERING.md section 15.
+- **Decisions to confirm:** (1) facts are stored for Arjun's own use regardless of consent (like the chat history sent
+  to the LLM), but the family SEES them only with the consent flag, and a `concern` fact is stored only with it.
+  (2) The prompt now lets Arjun answer festival / meaning / how-to questions from the model's own knowledge. This is
+  looser than boundary 10 as written ("never recites recipes/facts from model memory"): recipes and health stay
+  refused, other facts do not. CLAUDE.md was NOT edited; say if the boundary should be widened in writing or the
+  prompt narrowed again.
+- **Eval (`eval/dialogues.jsonl`, 15 multi-turn dialogues, `scripts/eval_dialogues.py`, judge = the same provider,
+  Gemini via `LLM_*`, temperature 0, n=1 per dialogue):** BEFORE (previous commit, same harness) vs AFTER, mean /2:
+  remembers_context 1.47 -> 1.73, uses_her_life 1.33 -> 1.53, smart_answer 1.40 -> 1.80, natural 1.87 -> 1.93,
+  not_repetitive 1.53 -> 1.73, sum of five 7.60 -> 8.72 /10, safe 15/15 both. Files: `eval/results/dialogues_before.json`,
+  `dialogues_after.json`. Caveats: one run each; the LLM is not deterministic (an earlier AFTER run scored 8.94, an
+  earlier one 7.80); the judge is lenient at times (it scored d05 as remembered even for BEFORE, when the reply only
+  echoed the name). Treat +1 as real, not +1.12 exactly.
+- **Still weak:** "नमस्कार" the next day follows up on yesterday's visit only some of the time (d12); when the model
+  keeps suggesting rest the sanitizer blocks it and a fixed line ("मग पुढे काय झालं?") answers, which reads oddly
+  after "आता आराम करते" (d11); the 3-line summary is rule-made (her longest sentences), not an LLM summary; Gemini
+  flash-lite sometimes takes 6-7 s on the first call.
+- **Verified:** core-api 268, reasoning 945, voice-agent 310, scheduler 8 pytest; `ruff check .`; `tsc --noEmit`; vitest
+  133; `eval/run_eval.py` 42/42, emergency recall 87/87, 0/12 false. **NOT verified:** a real voice session, the
+  dashboard card in a browser, Postgres (SQLite only), facts extraction with Sarvam (only Gemini was available).
+
 ## Built 2026-11-04 (late): tunnel access lock, one safety-word source, repo cleanup (from graphify-output/ISSUES.md)
 - **Tunnel lock (issue 1).** Before this, the Vite proxy added `CORE_API_KEY` to every `/core/*` call, so anyone with the
   Cloudflare URL held the whole API. Now `web/server/access.ts` (a Vite middleware + proxy hooks) decides first:

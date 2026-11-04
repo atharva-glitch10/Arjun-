@@ -213,3 +213,57 @@ run the previous commit from a worktree to get the real "before". Treat the aver
 benchmark: the judge is an LLM, the set is synthetic, and no native speaker has reviewed it. The averages are also
 noisy at temperature 0.5 - the stable signals are turns that complete, action-intent accuracy, the LLM/rule route
 count and banned-line count, so report those.
+
+## 15. Memory: session + long-term (2026-11-04)
+
+Two layers, both private, both small. The LLM never writes either: reasoning records what was really said, core-api
+validates and stores facts (boundary 1).
+
+```mermaid
+flowchart TD
+  V[voice-agent: STT text] --> T["TurnEngine.handle (one recorder for ALL answers)"]
+  T --> S{"safety rules first"}
+  S -->|emergency / distress| SF[fixed template]
+  S -->|other| M{"memory command?\nहे लक्षात ठेव / हे विसरून जा"}
+  M -->|yes| CF[core-api user_facts: save / forget]
+  M -->|no| L["ONE LLM understanding call"]
+  FB[("FactBook\ncached user_facts")] -->|"top 10 for this sentence"| L
+  SM[("SessionMemory\nlast 20 exchanges + 3-line summary\n+ open question + questions asked today")] -->|"history + THIS SESSION block"| L
+  L --> R[rules / tools / companion reply]
+  R --> REC["_record_turn → SessionMemory.exchange / event / safety"]
+  SF --> REC
+  D["deliver_spoken: check-in, reminder, medicine"] -->|"arjun_said / neutral note"| SM
+  REC --> SM
+  SM -->|"idle > ARJUN_SESSION_IDLE_MIN: compress, never delete"| SM
+  TR["Tracker: conversation ended (scheduler tick)"] -->|"extract_life_facts (LLM proposes)"| CF
+  CF --> UF[("user_facts table")]
+  UF --> FB
+  UF --> DASH["family dashboard: delete buttons (consent flag)"]
+```
+
+**Session memory** (`reasoning_svc/memory.py`, in process memory only). Every spoken line goes through ONE recorder
+(`TurnEngine.handle` wraps `_handle`; nested calls record once): rule replies, tool/action replies (plus a note
+such as `opened for her: <title>`), safety replies, memory commands, companion replies. Lines Arjun says first
+(check-ins, reminders) are recorded when they are really SPOKEN (`deliver_spoken`); a released delivery is not.
+Medicine and reading turns leave only a neutral note (boundary 6). The last `ARJUN_SESSION_EXCHANGES` (20) exchanges
+are kept word for word; older turns, and a whole conversation after `ARJUN_SESSION_IDLE_MIN` (30) minutes of silence,
+are compressed (rules, no LLM) into at most three summary lines. After 24 h only the long-term facts remain. A safety
+event keeps the history and adds a note ("be gentle, no small talk"). The question Arjun is waiting for (10 min) and
+the questions already asked today go into the system prompt, so "वरण भात" is read as the answer to the lunch check-in.
+A history that would start with an Arjun line moves that line into the prompt (providers need the chat to start with
+her).
+
+**Long-term memory** (`core_api/facts.py`, table `user_facts`: fact, kind, source_date, last_used, confidence,
+source). After a conversation ends, `Tracker.remember_life` asks the LLM for durable facts as strict JSON and PROPOSES
+them; core-api refuses numbers, money, addresses, medicines and diagnoses, accepts a `concern` only with the consent
+flag, and dedupes (people are `नाव — नातं`, so the same person is one row). Each LLM call gets up to 10 facts ranked by
+shared words with the sentence, people, and recency (an event told yesterday is flagged so Arjun can follow up).
+"हे लक्षात ठेव" saves one fact on her word with a one-line read-back; "हे विसरून जा" deletes the best match and scrubs
+the same words from the session. The family list ("अर्जुनला माहीत असलेल्या गोष्टी") shows facts only, behind the same
+consent flag as the conversation summaries; deleting needs none.
+
+**Companion behaviour.** The prompt asks Arjun to use names and earlier talk, answer real questions in 1-3 sentences
+(a recipe and anything about health or medicines are still never answered from memory: boundaries 5, 6, 10), never
+guess a memory, and write at most one question per reply. In code: only the first question survives, a question is
+dropped when the last reply was one or it repeats a question asked today, and a reply with one blocked sentence
+("... आराम करा") is salvaged instead of replaced by a fixed line.

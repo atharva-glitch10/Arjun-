@@ -136,6 +136,9 @@ the script reports that limitation while seeding the other requested data.
 - **Conversation summaries send the conversation to Sarvam** (only with the consent flag on and a key set). Rules
   summaries ("set a reminder, chatted") are used otherwise. Synthetic data only for the demo.
 - Openers and morning briefings are still only logged by the scheduler, not spoken.
+- **Memory is partly in process memory.** The session history and its summary live in reasoning's memory and
+  are lost on a restart; only the `user_facts` (core-api) last. Facts are extracted after a conversation ends
+  (scheduler tick) with the hosted LLM; they were checked only against Gemini and SQLite so far.
 - One shared API key; no per-person login yet (frozen until after Nov 10). The tunnel has a role-limited access cookie
   (elder / family), but the roles are not per person: an elder link for user 1 can still read user 2.
 - The access code is dev-server only (Vite). Docker compose and a production proxy do not have it.

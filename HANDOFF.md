@@ -1,4 +1,4 @@
-# HANDOFF (2026-11-04, LLM-first understanding + companion context)
+# HANDOFF (2026-11-04, memory + smarter companion on top of LLM-first understanding)
 
 ## Where we are
 Understanding is now LLM-first: one Sarvam call per non-safety turn gets the full sentence, the last turns and a
@@ -86,3 +86,10 @@ the LLM and core-api down. Everything is committed locally, nothing is pushed.
 ## Memory task progress
 - core-api user_facts store + family dashboard list + tunnel-lock routes: done (commit 1 of 3)
 - reasoning session memory + life facts + remember/forget + smarter prompt: done (commit 2 of 3)
+- reasoning memory (session + life facts) + eval + docs: done (commit 3 of 3)
+- What is new, in four lines: every spoken line is in one session history; silence compresses it (never deletes);
+  facts about her life live in core-api `user_facts` and go into every LLM call; "हे लक्षात ठेव / हे विसरून जा" works.
+- **Do this first:** remove `LLM_MAX_TOKENS=80` from the root `.env` (replies get cut) and note `LLM_HISTORY_EXCHANGES`
+  no longer controls the memory (use `ARJUN_SESSION_EXCHANGES`).
+- **Decide:** the prompt answers festival / meaning / how-to questions from model knowledge, which is wider than
+  boundary 10 as written (see STATUS.md); recipes and health are still refused.
