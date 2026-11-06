@@ -49,3 +49,4 @@ ad_video/
 
 # Scratch pytest output dumps in the repo root (e.g. `pytest > final.txt`). Root-level only; docs live in .md files.
 /*.txt
+tools/arjun_mcp/state.json
