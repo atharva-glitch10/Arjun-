@@ -39,6 +39,7 @@ logs/
 
 # Third-party tools kept OUTSIDE this repo (e.g. LiveKit agents-playground clone)
 agents-playground/
+graphify-out/
 
 # Local scratch output from scripts/check_gnani.py
 omkar_test.wav

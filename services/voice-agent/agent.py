@@ -91,14 +91,14 @@ applog.setup_file_log()  # logs/voice-agent.app.log, written from inside this pr
 USER_ID = int(os.environ.get("ARJUN_USER_ID", "1"))  # demo: one synthetic user per deployment
 # "mr-IN", or "en-IN,hi-IN" for the plugin's code-mixed mode. Marathi *streaming* support is still
 # unconfirmed (CLAUDE.md open question 1); set GNANI_USE_STREAMING=0 to fall back to non-streaming.
-STT_LANGUAGE = os.environ.get("GNANI_STT_LANGUAGE", "mr-IN")
+STT_LANGUAGE = os.environ.get("GNANI_STT_LANGUAGE", "mr-IN").strip()
 USE_STREAMING = os.environ.get("GNANI_USE_STREAMING", "1") == "1"
 # Gnani TTS accepts timbre-v2.5 / timbre-v3.0 and requires a voice (checked 2026-10-21 against the REST API).
 # Default now: timbre-v3.0 (voice tags) over SSE. v3.0 + "Avinash" is UNVERIFIED on our key: the first synthesis
 # of each worker process is a probe, and on failure the session uses the verified v2.5 + "Omkar" instead.
 TTS = tts_choice()
 TTS_MODEL, TTS_VOICE, TTS_LANGUAGE = TTS["model"], TTS["voice"], TTS["language"]
-STT_OPTIONS = stt_options()  # format="transcribe" (ITN) + itn_native_numerals, per the project brief
+STT_OPTIONS = stt_options()  # only constructor options exposed by the pinned 1.8.6 plugin
 # Explicit dispatch name. An unnamed worker was never sent into Console/Playground rooms (2026-10-21).
 AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
 # Seconds of silence before end of turn: mode-aware since task D (2026-10-31), see endpointing.py. Care 0.8 / 2.5 s,
@@ -219,7 +219,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         logger.info(voiceprovider.start_line())  # no Timbre probe
     else:
         tts_plugin, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
-        stt_plugin = gnani.STT(language=STT_LANGUAGE, use_streaming=USE_STREAMING, **STT_OPTIONS)  # Prisma
+        # The pinned plugin does not expose model selection; it chooses its own endpoint/model.
+        stt_plugin = gnani.STT(use_streaming=USE_STREAMING, **STT_OPTIONS)
         logger.info("voice provider: gnani (stt prisma, tts %s)", active_model)
         logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
     endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's

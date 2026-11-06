@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -319,6 +319,8 @@ class TurnEngine:
         lang = detect_language(text, user["language"])
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
+        if self._is_greeting(text):
+            self.facts.invalidate(user_id)  # the idle flush may just have saved yesterday's fact
 
         # 2a. "हे लक्षात ठेव" / "हे विसरून जा": her own words decide, rules only, no LLM call
         remembered = self._memory_command(user_id, text, lang, now, trace, t0)
@@ -478,7 +480,41 @@ class TurnEngine:
         """The cached family/dashboard context plus the facts she told Arjun that fit THIS sentence (never cached)."""
         base = self._base_context(uid, now, user)
         facts = self.facts.block(uid, text, now, config.FACTS_IN_CONTEXT)
-        return f"{base}\n{facts}" if facts else base
+        context = f"{base}\n{facts}" if facts else base
+        if text and self._is_greeting(text):
+            followup = self._yesterday_followup(uid, now)
+            if followup:
+                context += (
+                    "\nFIRST GREETING FOLLOW-UP: Refer naturally to this one most recent unresolved item from yesterday, "
+                    "and ask how it went. Do not introduce another event: " + followup
+                )
+        return context
+
+    @staticmethod
+    def _is_greeting(text: str) -> bool:
+        norm = normalize(text)
+        return has_any(norm, ("नमस्कार", "नमस्ते", "हॅलो", "हेलो", "hello", "namaste", "namaskar"))
+
+    def _yesterday_followup(self, uid: int, now: datetime, *, refresh: bool = False) -> str:
+        """Deterministically choose yesterday's latest event fact, then a yesterday summary topic as fallback."""
+        if refresh:
+            self.facts.invalidate(uid)
+        yesterday = (now.date() - timedelta(days=1)).isoformat()
+        events = [f for f in self.facts.all(uid) if f.get("kind") == "event" and str(f.get("source_date"))[:10] == yesterday]
+        if events:
+            selected = max(events, key=lambda f: (str(f.get("source_date")), int(f.get("id") or 0)))
+            return str(selected.get("fact") or "")[:160]
+        try:
+            rows = self.core.wellbeing_recent(uid, days=2)
+            for row in rows:
+                if str(row.get("kind")) != "conversation" or str(row.get("created_at") or "")[:10] != yesterday:
+                    continue
+                topic = str(row.get("summary") or "").strip()
+                if topic and topic != "Talked with Arjun.":
+                    return topic[:160]
+        except (CoreError, httpx.HTTPError, AttributeError):
+            pass
+        return ""
 
     def _base_context(self, uid: int, now: datetime, user: dict[str, Any]) -> str:
         """A short, private context block for the companion LLM (<=700 chars), cached for five minutes.
@@ -492,9 +528,12 @@ class TurnEngine:
             return hit[1]
         parts: list[str] = []
         name = re.sub(r"\s*\([^)]*\)", "", str(user.get("name") or "")).strip()
-        honorific = str(user.get("honorific") or "").strip()
+        address_as = str(user.get("address_as") or "").strip()
+        if not address_as:
+            first = name.split()[0] if name else ""
+            address_as = "आजी" if user.get("age") is not None and int(user["age"]) >= 60 else f"{first}बाई"
         if name:
-            parts.append(f"Name: {name}" + (f"; address her as {honorific}" if honorific else ""))
+            parts.append(f"Name: {name}; address her as {address_as}")
         try:
             contacts = self.core.contacts(uid) or []
             family = [
@@ -1559,6 +1598,22 @@ class TurnEngine:
         if not self.core.opener_allowed(user_id) or not user["interests"]:
             return None
         lang = rp.lang_or_default(user["language"])
+        now = self.clock()
+        followup = self._yesterday_followup(user_id, now, refresh=True)
+        if followup and self.evon is not None and hasattr(self.evon, "companion_reply"):
+            try:
+                raw = self.evon.companion_reply(
+                    "नमस्कार", lang, now, interests=user.get("interests") or [],
+                    context=self._base_context(user_id, now, user) +
+                    "\nFIRST GREETING FOLLOW-UP: warmly ask how this one item from yesterday went; do not invent details: " + followup,
+                    timeout=config.LLM_TIMEOUT_S,
+                )
+                clean, _ = split_voice_tags(raw)
+                safe, _ = sanitize_companion(clean, lang)
+                if safe:
+                    return safe
+            except Exception as exc:  # noqa: BLE001 - the rules opener remains the timeout/error fallback
+                log.info("opener follow-up failed: %s", type(exc).__name__)
         interest = user["interests"][0]
         return rp.R[lang]["opener"].format(name=user["name"], interest=interest)
 
@@ -1810,8 +1865,11 @@ class TurnEngine:
         if intent == "GREETING":
             # She has told Arjun things before (facts, or earlier talk today): greet like someone who remembers, and follow
             # up on an event she mentioned. With nothing to remember, or no LLM, the fixed greeting stays.
-            if self.evon is not None and (self.facts.all(uid) or self.memory.view(uid, now).messages):
-                reply, speech, from_llm = self._chat_reply(uid, text, lang, now)
+            followup = self._yesterday_followup(uid, now)
+            if self.evon is not None and (followup or self.facts.all(uid) or self.memory.view(uid, now).messages):
+                reply, speech, from_llm = self._chat_reply(
+                    uid, text, lang, now, llm_reply=str((llm or {}).get("reply") or ""), opener_followup=followup
+                )
                 if from_llm:
                     res = out(reply, "companion")
                     res.speech = speech
@@ -2185,7 +2243,8 @@ class TurnEngine:
         return out(r["auto_snooze"])
 
     def _chat_reply(
-        self, uid: int, text: str, lang: str, now: datetime | None = None, llm_reply: str = ""
+        self, uid: int, text: str, lang: str, now: datetime | None = None, llm_reply: str = "",
+        opener_followup: str = "",
     ) -> tuple[str, str, bool]:
         """(text for the screen, text for the voice, written by the LLM?). The voice text may carry Timbre voice
         tags the LLM chose. `llm_reply` is the reply from the unified call; only chat/unclear turns pass it."""
@@ -2197,6 +2256,11 @@ class TurnEngine:
         view = self.memory.view(uid, now)
         user = self.core.user(uid)
         context = self._user_context(uid, now, user, text)
+        if opener_followup:
+            context += (
+                "\nFIRST GREETING FOLLOW-UP: Refer naturally to this one most recent unresolved item from yesterday, "
+                "and ask how it went. Do not introduce another event: " + opener_followup
+            )
         if raw is None and self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
             raw = self.evon.companion_reply(
                 text, lang, now, history=view.messages, interests=user.get("interests") or [],
@@ -2206,15 +2270,15 @@ class TurnEngine:
             # voice tags out first, so the boundary checks see only words
             clean, voiced = split_voice_tags(raw)
             if clean is not None:  # same words on the screen and in the voice (the leading tag stays on the voice)
-                clean, voiced = strip_filler(clean), strip_filler_voiced(voiced)
-            reply, reasons = sanitize_companion(clean, lang)
+                clean, voiced = strip_filler(clean, user_text=text), strip_filler_voiced(voiced, user_text=text)
+            reply, reasons = sanitize_companion(clean, lang, user_text=text)
             if reply is not None:
                 if clean is not None and reply == clean.strip() and voiced != reply:
                     speech = voiced  # untrimmed: the tags still sit on the right words
                 break
             log.warning("companion reply rejected (%s)", ",".join(reasons))
             if clean is not None:
-                salvaged = salvage_companion(clean, lang)  # drop the one bad sentence, keep the rest
+                salvaged = salvage_companion(clean, lang, user_text=text)  # drop the one bad sentence, keep the rest
                 if salvaged is not None:
                     reply, raw = salvaged, None
                     break

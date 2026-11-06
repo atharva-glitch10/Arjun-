@@ -1,7 +1,7 @@
 """LLM-first understanding: one call per non-safety turn, the rule fallback, and what the companion may say.
 
 Boundaries: 1 (the LLM never touches the DB), 4-6 (AI, no medical advice, medicines), 8 (safety first),
-9 (no engagement tricks), 10 (no recipes or facts from memory). Evon is not involved.
+9 (no engagement tricks), 10 (recipe basics allowed, health and news facts forbidden). Evon is not involved.
 """
 
 import json
@@ -294,6 +294,39 @@ def test_missed_you_and_a_recipe_fact_are_the_prompts_job_not_the_sanitizer():
     # The sanitizer was narrowed on 2026-11-04: it must not throw away a useful answer for these.
     assert sanitize_companion("मला तुमची खूप आठवण आली.", "mr")[0] is not None
     assert sanitize_companion("भारताची राजधानी दिल्ली आहे.", "mr")[0] is not None
+
+
+def test_recipe_question_gets_a_useful_answer_but_health_advice_stays_blocked(core_http, uid):
+    llm = Llm(payload=_payload(reply="पुरणपोळीला कणीक भिजवून सारण भरा. पोळ्या तव्यावर भाजा. व्हिडिओ लावू?"))
+    reply = make_engine(core_http, llm).handle(uid, "पुरणपोळी कशी करतात?").reply
+    assert "सारण" in reply and "व्हिडिओ लावू?" in reply
+    assert sanitize_companion("रोज औषध घ्या.", "mr")[0] is None
+    prompt = llm.calls[0]["messages"][0]["content"]
+    assert "2-3 simple steps" in prompt and "news facts" in prompt
+
+
+def test_agreeing_with_her_rest_plan_is_allowed_and_leading_fillers_are_stripped():
+    assert sanitize_companion("हो, आराम करा, नंतर बोलूया.", "mr", "आता आराम करते") == (
+        "हो, आराम करा, नंतर बोलूया.", []
+    )
+    assert sanitize_companion("का, अहो, छान वाटलं.", "mr")[0] == "छान वाटलं."
+    assert sanitize_companion("हो, आराम करा आणि पाणी प्या.", "mr", "आता थोडा आराम करते") == (
+        "हो, आराम करा, नंतर बोलूया.", []
+    )
+
+
+def test_d11_rest_plan_is_not_replaced_by_the_fixed_fallback(core_http, uid):
+    llm = Llm(payload=_payload(reply="हो, आराम करा, नंतर बोलूया."))
+    result = make_engine(core_http, llm).handle(uid, "आता थोडा आराम करते")
+    assert result.reply == "हो, आराम करा, नंतर बोलूया."
+
+
+def test_llm_user_context_contains_address_as_and_forbids_invented_tai(core_http, uid):
+    core_http.patch(f"/users/{uid}", json={"address_as": "आजी"})
+    llm = Llm()
+    make_engine(core_http, llm).handle(uid, STORY)
+    prompt = llm.calls[0]["messages"][0]["content"]
+    assert "address her as आजी" in prompt and "never call her ताई" in prompt
 
 
 def test_a_rejected_llm_reply_is_retried_once_then_replaced(core_http, uid):

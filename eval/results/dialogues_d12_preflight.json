@@ -1,0 +1,13 @@
+{
+ "tag": "d12_preflight",
+ "provider": "gemini",
+ "dialogues": {
+  "d12_follow_up_event": {
+   "title": "upcoming visit mentioned, asked about next day",
+   "transcript": "[2026-11-04T13:10] HER: उद्या माझी मैत्रीण विमल मला भेटायला येणार आहे\n[2026-11-04T13:10] ARJUN: अजून सांगा, मी ऐकतोय.\n(next day)\n[2026-11-05T13:20] HER: नमस्कार अर्जुन\n[2026-11-05T13:20] ARJUN: नमस्कार! मी ऐकतोय. सांगा, काय मदत करू?",
+   "score": null,
+   "llm_calls": 4
+  }
+ },
+ "judge_failed": 1
+}

@@ -35,6 +35,15 @@ def test_user_age_and_conditions_are_stored_and_editable(client):
     assert r.status_code == 200 and r.json()["age"] == 64 and r.json()["conditions"] == ["Type 2 diabetes"]
 
 
+def test_address_as_uses_age_default_and_accepts_family_override(client):
+    older = client.post("/users", json={"name": "Heerabai (synthetic)", "age": 60}).json()
+    younger = client.post("/users", json={"name": "Kamala (synthetic)", "age": 59}).json()
+    assert older["address_as"] == "आजी"
+    assert younger["address_as"] == "Kamalaबाई"
+    changed = client.patch(f"/users/{younger['id']}", json={"address_as": "ताई"}).json()
+    assert changed["address_as"] == "ताई"
+
+
 def test_user_has_the_new_day_times_and_defaults(client):
     uid = client.post("/users", json={"name": "Aaji (synthetic)"}).json()["id"]
     u = client.get(f"/users/{uid}").json()
@@ -122,7 +131,7 @@ def test_ensure_columns_adds_the_new_columns_to_an_old_database_and_is_idempoten
     ensure_columns(engine)  # a second start changes nothing
     cols = {c["name"] for c in inspect(engine).get_columns("users")}
     assert {"breakfast_time", "snack_time", "walk_time", "bp_check_time", "daily_checkins", "honorific",
-            "age", "conditions"} <= cols
+            "address_as", "age", "conditions"} <= cols
     acols = {c["name"] for c in inspect(engine).get_columns("appointments")}
     assert {"weekdays", "start_time", "end_time"} <= acols
     with Session(engine) as s:  # the old row is intact and reads with the defaults
@@ -130,6 +139,7 @@ def test_ensure_columns_adds_the_new_columns_to_an_old_database_and_is_idempoten
         assert u.name == "Aaji (synthetic)" and u.breakfast_time == "08:00" and u.snack_time == "17:00"
         assert u.walk_time is None and u.daily_checkins is False
         assert u.age is None and u.conditions == []
+        assert u.address_as == "Aajiबाई"
 
 
 def test_ensure_columns_skips_tables_that_do_not_exist_yet(tmp_path):

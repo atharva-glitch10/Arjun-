@@ -26,6 +26,14 @@ def utcnow() -> datetime:
     return local_now()
 
 
+def _address_as_default(context) -> str:  # type: ignore[no-untyped-def]
+    values = context.get_current_parameters()
+    if values.get("age") is not None and values["age"] >= 60:
+        return "आजी"
+    first = str(values.get("name") or "").split()[0].split("(", 1)[0].strip()
+    return f"{first}बाई" if first else "आजी"
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -42,6 +50,7 @@ class User(Base):
     # Meal / walk / BP check-ins are spoken only when the family switched them on.
     daily_checkins: Mapped[bool] = mapped_column(Boolean, default=False)
     honorific: Mapped[str] = mapped_column(String(60), default="")  # how Arjun addresses her ("" = the name)
+    address_as: Mapped[str] = mapped_column(String(60), default=_address_as_default, server_default="")  # family editable
     # Read-only context shown to the family (and used by the seed). Never used to give advice or a diagnosis.
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     conditions: Mapped[list[str]] = mapped_column(JSON, default=list)

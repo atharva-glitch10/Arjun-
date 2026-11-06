@@ -1,11 +1,44 @@
 # HANDOFF (2026-11-04, memory + smarter companion on top of LLM-first understanding)
 
+## Gnani speech status update (2026-11-07)
+The pinned `livekit-plugins-gnani==1.8.6` API does not expose an explicit Prisma model selector or the v3
+Auto-LID, keyterms, speaker names, previous-context, `codemix`, and `transliterate` controls. The configured
+STT therefore must not be called an explicitly selected Prisma v3.0 integration. It currently uses the
+plugin-selected model with `mr-IN`, 16 kHz streaming, `transcribe`, and native numerals. Use
+`python scripts/check_gnani.py` for a no-network key presence/whitespace and configuration check; it cannot
+verify authentication. Do not print the previous `check_gnani.py` live response body. To proceed with v3,
+obtain official protocol/API documentation or a Gnani-supported SDK that exposes the model and fields, then
+implement and mock-test its documented wire contract before a live key check. Do not change LiveKit versions
+without compatibility testing. Timbre remains configured to v3.0/Avinash with a v2.5/Omkar fallback; only
+the v2.5 response has historical live evidence, and the complete voice turn remains unverified.
+
 ## Where we are
 Understanding is now LLM-first: one Sarvam call per non-safety turn gets the full sentence, the last turns and a
 USER CONTEXT block, and returns strict JSON `{intent, slots, reply, confidence}`. The rule parser is a fallback
 (timeout, provider error, invalid JSON, unknown intent, or confidence < 0.4 for an action) and every fallback is
 logged with its reason. The safety floor (emergency/distress rules + the second look) still runs first and works with
 the LLM and core-api down. Everything is committed locally, nothing is pushed.
+
+## Latest owner decisions and implementation (2026-11-04)
+- Boundary 10 is widened: general knowledge, festivals, meanings, everyday how-to and recipe basics may come from
+  model knowledge. Recipe replies use 2-3 short steps and end with "व्हिडिओ लावू?". Health/medicine advice, doses,
+  diagnoses and model-sourced news facts remain forbidden; news facts require an approved source.
+- Facts are stored for Arjun's own use regardless of consent. Family fact lists require "share how she is doing";
+  body-complaint facts require consent; deletion does not. See `CLAUDE.md` boundary 11.
+- Profiles now carry editable `address_as`. Defaults are first name + "बाई", or "आजी" at known age 60+; the
+  companion context tells the model to use this exact form and never invent "ताई". Existing SQLite rows are
+  backfilled safely by `ensure_columns`.
+- The sanitizer allows agreement with her own stated plan to rest; unprompted rest advice remains blocked. Initial
+  "का" and "अहो" fillers are stripped.
+- The first greeting after a day change gets the deterministic latest yesterday event fact, or yesterday's summary
+  topic if no event exists. The LLM phrases that selected item. Idle family summaries use the configured LLM's strict 2-3-line,
+  no-quotes/no-transcripts output; the rules summary remains the failure fallback.
+- `graphify-out/` is ignored. `graphify-output/*.md` was scanned for keys, bot tokens and +91 phone numbers (zero
+  matches) and is committed separately as architecture analysis.
+- Verification: core-api 269, reasoning 950, voice-agent 310, scheduler 8; web 133, TypeScript, build, Ruff and
+  intent/slot/distress/emergency evals pass. Dialogue run `final1` completed with d12=12/12, but sustained Gemini
+  throttling prevented final2/final3 from completing (some cases were unjudged); rerun the three dialogue sweeps
+  after provider recovery. No local commits were made because this requested evaluation remains incomplete.
 
 ## What changed (details in STATUS.md, design in docs/ENGINEERING.md §14)
 - `services/reasoning/reasoning_svc/evon.py`: `understand_turn()` (unified prompt, strict JSON, legacy intent names
@@ -43,8 +76,8 @@ the LLM and core-api down. Everything is committed locally, nothing is pushed.
 - Two action questions still get the fixed doctor line instead of a useful answer: "औषधांची गोळी किती घ्यायची?" and
   "माझी गोळी चुकली तर काय करू?" (dose guidance is deliberately forbidden - route them to the family/doctor, do not
   invent a dose).
-- A recipe ask ("पुरणपोळी कशी करतात थोडक्यात सांग") sometimes gets the doctor line; it should be an ordinary chat
-  answer.
+- Recipe how-to requests now stay in companion chat and are answered with short basics; explicit video requests
+  remain media actions. This is covered by a regression test.
 - Severe STT noise ("मोचात घालून", long garbled strings) honestly answers "समजलं नाही" and offers the family. That is
   the intended floor, not a bug, but it is still the loudest pattern in the replay.
 - One replay turn hit the script's 30 s client timeout; the reasoning call itself is bounded, but a slow Sarvam turn

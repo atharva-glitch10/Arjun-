@@ -4,6 +4,8 @@ export interface User {
   language: "mr" | "hi" | "en";
   /** How Arjun addresses her ("" = the name). */
   honorific: string;
+  /** Preferred address form used in companion replies. */
+  address_as: string;
   age: number | null;
   /** Read-only context: shown to the family, never used for advice. */
   conditions: string[];

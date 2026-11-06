@@ -53,12 +53,20 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
    - Both lexicons are UNVERIFIED until a native speaker reviews them. The external distress test
      set (T12) must pass before any public demo.
 9. **No engagement tricks**: no streaks, no "I missed you", nothing discouraging human contact.
-10. **Companion never recites recipes/facts from model memory.** It asks the user to teach it.
-    At most one opener per day window; "nako" means no more that day.
+10. **Owner decision 2026-11-04 (widened):** Arjun may answer general knowledge, festivals, word meanings,
+    everyday how-to questions, and recipe basics from model knowledge. A recipe answer is 2-3 short steps, then
+    offer "व्हिडिओ लावू?". Never provide medical/health/medicine advice, doses or diagnoses, and never state news
+    facts from model memory; news facts may come only from approved sources. At most one opener per day window;
+    "nako" means no more that day.
 11. **Stories are private by default**; (2026-10-31: kept privately without asking; shared only when she asks,
     "हे घरच्यांना सांग";
     "he visar" deletes. Never invent memories: reference a past story only from stored text.
     No raw audio stored. Demo uses synthetic data only.
+    **Facts and consent (owner decision 2026-11-04):** life facts are stored for Arjun's own use regardless of the
+    family sharing consent. The family sees the facts list only when "share how she is doing" is on. Body-complaint
+    facts are stored only with that consent. Deleting a fact never requires consent.
+    Address her using `address_as`: family-set when present; otherwise first name + "बाई", or "आजी" when her age is
+    known and at least 60. Never invent "ताई".
 12. **Secrets**: ONE root `.env` (only `.env.example` is tracked). `LLM_API_KEY` is read only by reasoning. `GNANI_API_KEY` and LiveKit keys
     are read only by voice-agent (it loads just `GNANI_*`/`LIVEKIT_*`/`ARJUN_*`) and by core-api's
     future LiveKit token endpoint. Never in React code, never in Git, never logged, never printed.

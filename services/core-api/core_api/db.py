@@ -39,6 +39,7 @@ ADDED_COLUMNS: list[tuple[str, str, str, str | None]] = [
     ("users", "bp_check_time", "VARCHAR(5)", None),
     ("users", "daily_checkins", "BOOLEAN", "FALSE"),
     ("users", "honorific", "VARCHAR(60)", "''"),
+    ("users", "address_as", "VARCHAR(60)", "''"),
     ("users", "age", "INTEGER", None),
     ("users", "conditions", "JSON", "'[]'"),
     ("appointments", "weekdays", "JSON", None),
@@ -71,4 +72,8 @@ def ensure_columns(eng) -> list[str]:  # type: ignore[no-untyped-def]
         with eng.begin() as conn:
             conn.execute(text(ddl))
         added.append(f"{table}.{column}")
+    if "users" in tables and "address_as" in {c["name"] for c in inspect(eng).get_columns("users")}:
+        with eng.begin() as conn:
+            conn.execute(text("UPDATE users SET address_as = 'आजी' WHERE trim(address_as) = '' AND age >= 60"))
+            conn.execute(text("UPDATE users SET address_as = trim(substr(name, 1, instr(name || ' ', ' ') - 1)) || 'बाई' WHERE trim(address_as) = ''"))
     return added

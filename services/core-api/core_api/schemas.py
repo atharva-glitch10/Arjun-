@@ -28,6 +28,7 @@ class UserIn(BaseModel):
     bp_check_time: str | None = None
     daily_checkins: bool = False  # meal / walk / BP check-ins are spoken only when the family switches this on
     honorific: str = Field(default="", max_length=60)
+    address_as: str | None = Field(default=None, max_length=60)
     age: int | None = Field(default=None, ge=0, le=120)
     conditions: list[str] = []
     interests: list[str] = []
@@ -52,6 +53,7 @@ class UserPatch(BaseModel):
     bp_check_time: str | None = None
     daily_checkins: bool | None = None
     honorific: str | None = Field(default=None, max_length=60)
+    address_as: str | None = Field(default=None, max_length=60)
     age: int | None = Field(default=None, ge=0, le=120)
     conditions: list[str] | None = None
     interests: list[str] | None = None
@@ -68,6 +70,7 @@ class UserPatch(BaseModel):
 class UserOut(UserIn):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    address_as: str
 
 
 class ContactIn(BaseModel):

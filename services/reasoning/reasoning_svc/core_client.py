@@ -82,6 +82,10 @@ class CoreClient:
         """The family dashboard's today view: severity, mood, conversations, last_summary, last_at."""
         return self._req("GET", f"/users/{uid}/wellbeing/today")  # type: ignore[no-any-return]
 
+    def wellbeing_recent(self, uid: int, days: int = 2) -> list[dict[str, Any]]:
+        """Recent family summaries, newest first; used only to select a prior-day greeting topic."""
+        return self._req("GET", f"/users/{uid}/wellbeing", params={"days": days})  # type: ignore[no-any-return]
+
     def answer_checkin(self, uid: int, checkin_id: int, answer: str, mood: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {"answer": answer}
         if mood:

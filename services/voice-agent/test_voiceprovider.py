@@ -5,6 +5,7 @@ import json
 import pytest
 import voiceprovider
 from turnlog import TurnLog
+from voice import stt_options
 
 
 class FakePlugin:
@@ -78,3 +79,31 @@ def test_the_turn_log_rows_say_which_services_made_them(tmp_path):
     row = default._new()
     assert (row["stt_provider"], row["tts_provider"]) == ("gnani", "gnani")
     json.dumps(row)  # stays a plain JSON line
+
+
+def test_stt_options_match_supported_plugin_constructor(monkeypatch):
+    monkeypatch.setenv("GNANI_STT_FORMAT", "transcribe")
+    monkeypatch.setenv("GNANI_STT_SAMPLE_RATE", "16000")
+    monkeypatch.setenv("GNANI_STT_LANGUAGE", "mr-IN")
+    assert stt_options() == {
+        "language": "mr-IN", "format": "transcribe", "itn_native_numerals": True, "sample_rate": 16000
+    }
+
+
+@pytest.mark.parametrize("value", ["codemix", "transliterate", "nonsense"])
+def test_unsupported_stt_modes_fail_fast(monkeypatch, value):
+    monkeypatch.setenv("GNANI_STT_FORMAT", value)
+    with pytest.raises(ValueError, match="GNANI_STT_FORMAT"):
+        stt_options()
+
+
+def test_auto_language_is_not_claimed_without_a_supported_adapter(monkeypatch):
+    monkeypatch.setenv("GNANI_STT_LANGUAGE", "auto")
+    with pytest.raises(ValueError, match="Auto-LID adapter"):
+        stt_options()
+
+
+def test_invalid_sample_rate_fails_fast(monkeypatch):
+    monkeypatch.setenv("GNANI_STT_SAMPLE_RATE", "12345")
+    with pytest.raises(ValueError, match="GNANI_STT_SAMPLE_RATE"):
+        stt_options()

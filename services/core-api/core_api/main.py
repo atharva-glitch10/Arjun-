@@ -60,7 +60,11 @@ def _user(db: Session, user_id: int) -> m.User:
 # ---- users & contacts -------------------------------------------------------------------------
 @router.post("/users", response_model=s.UserOut, status_code=201)
 def create_user(body: s.UserIn, db: Session = Depends(get_db)) -> m.User:
-    user = m.User(**body.model_dump())
+    values = body.model_dump()
+    if not values.get("address_as"):
+        name = str(values.get("name", "")).split()[0].split("(", 1)[0].strip()
+        values["address_as"] = "आजी" if values.get("age") is not None and values["age"] >= 60 else f"{name}बाई"
+    user = m.User(**values)
     db.add(user)
     db.commit()
     return user

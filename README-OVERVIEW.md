@@ -7,6 +7,11 @@
 >
 > **Partly stale (last full update 2026-10-18).** README.md and STATUS.md are current.
 
+> **Speech integration note (2026-11-07):** the pinned Gnani LiveKit plugin does not expose explicit
+> Prisma v3 model selection or Auto-LID, keyterms, speaker names, previous context, code-mix, and
+> transliteration controls. Current STT is plugin-selected with Marathi hint, streaming, and transcribe
+> format; live Prisma and full-turn verification are outstanding. See `docs/ENGINEERING.md`.
+
 This document describes what is implemented, how the tech stack is used, and what is still open.
 For run instructions and the short status table, see [README.md](README.md).
 

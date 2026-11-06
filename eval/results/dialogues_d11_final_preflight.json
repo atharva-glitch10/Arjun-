@@ -1,0 +1,21 @@
+{
+ "tag": "d11_final_preflight",
+ "provider": "gemini",
+ "dialogues": {
+  "d11_not_repetitive": {
+   "title": "short statements; Arjun must not repeat the same question",
+   "transcript": "[2026-11-04T13:10] HER: आज थोडं ऊन होतं\n[2026-11-04T13:10] ARJUN: आजी, आज ऊन आहे खरंच.\n[2026-11-04T13:10] HER: हो, बरोबर आहे\n[2026-11-04T13:10] ARJUN: अजून सांगा, मी ऐकतोय.\n[2026-11-04T13:11] HER: मी जेवण केलं\n[2026-11-04T13:11] ARJUN: छानच आजी!\n[2026-11-04T13:11] HER: ठीक आहे\n[2026-11-04T13:11] ARJUN: आजी, दुपारचं काय मग?\n[2026-11-04T13:12] HER: आता थोडा आराम करते\n[2026-11-04T13:12] ARJUN: हो आजी, आराम करा.",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 1,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun followed the conversation well, acknowledged her statements, maintained natural respectful Marathi, and avoided repetitive questioning."
+   },
+   "llm_calls": 6
+  }
+ },
+ "judge_failed": 0
+}

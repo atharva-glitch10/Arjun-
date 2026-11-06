@@ -715,6 +715,11 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               initial={user.honorific}
               onSave={(v) => run(() => api.patchUser(userId, { honorific: v.trim() }))}
             />
+            <TextField
+              label="Address form (आजी, ताई, हीराबाई)"
+              initial={user.address_as}
+              onSave={(v) => run(() => api.patchUser(userId, { address_as: v.trim() }))}
+            />
           </div>
         </section>
 

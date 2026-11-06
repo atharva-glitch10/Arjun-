@@ -203,7 +203,9 @@ def is_media_request(text: str) -> bool:
         return False
     toks = tokens(norm)
     if has_any(norm, _RECIPE_PHRASES):
-        return True
+        # A how-to question is answered conversationally; only an explicit request to watch/play a recipe is media.
+        recipe_media = any(t in toks for t in ("व्हिडिओ", "video", "youtube", "यूट्यूब", "दाखव", "लाव", "play"))
+        return recipe_media
     media_word = bool(_YOUTUBE.search(norm)) or any(
         t.startswith(_MEDIA_WORD_STEMS) for t in toks
     )

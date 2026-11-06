@@ -229,7 +229,8 @@ def test_the_prompt_asks_for_answers_names_and_at_most_one_question(core_http, u
     eng.handle(uid, STORY)
     s = spy.system
     assert "ANSWER IT properly" in s and "AT MOST ONE question" in s and "by name and relation" in s
-    assert "RECIPE" in s  # boundary 10 stays: a recipe is never recited
+    assert "2-3 simple steps" in s and "व्हिडिओ लावू?" in s  # boundary 10 permits short recipe basics
+    assert "Never give medical/health/medicine advice" in s and "news facts" in s
     assert "male" in s and "तुम्ही" in s
 
 

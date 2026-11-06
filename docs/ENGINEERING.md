@@ -1,5 +1,29 @@
 # Arjun: engineering notes (2026-10-31)
 
+## Prisma integration audit (2026-11-07)
+
+The voice-agent requirements pin `livekit-plugins-gnani==1.8.6`. Its installed `gnani.STT` constructor
+accepts `language`, `sample_rate`, `base_url`, `preferred_language`, `format`, `itn_native_numerals`,
+`use_streaming`, and `api_key`. It does not accept a model selector, Auto-LID, keyterms, named speakers,
+previous-context state, or the product brief's `codemix` and `transliterate` modes. The package therefore
+does not let this application explicitly select `prisma-v3.0`; its internal `/stt/v3` endpoint name alone
+does not establish that model. The plugin's extra keyword handling also does not provide a documented way
+to send the v3 product-page request fields.
+
+The application uses `format=transcribe` by default, `itn_native_numerals=true`, `mr-IN`, 16 kHz, and
+streaming enabled. Configuration validation now rejects unsupported format names and the `auto` language
+placeholder instead of silently implying those features work. Only `verbatim` and `transcribe` are exposed.
+No model upgrade or direct WebSocket implementation was made because the request/response event schema and
+authentication details for the v3 product API were not supplied by the pinned package. A compatible adapter
+needs official API wire documentation or an updated Gnani-supported SDK, then mocked protocol tests and live
+account validation.
+
+`scripts/check_gnani.py` reports whether `GNANI_API_KEY` is present/nonempty and whether it has surrounding
+whitespace, along with configured model/mode labels. It performs no API call, so it does not verify
+authentication. TTS remains configured as `timbre-v3.0` / `Avinash` with an existing probe and fallback to
+`timbre-v2.5` / `Omkar`; v3.0 voice availability has not been verified live. The only historical live TTS
+evidence is a v2.5 response on 2026-10-21. No live Prisma or full spoken-turn verification is recorded.
+
 How the "learn important" topics from the brief show up in this codebase: where to look, why it was built that way,
 and what is still missing. Every claim points at code or a test. Numbers are only the ones we measured.
 

@@ -11,6 +11,10 @@
 import os
 import re
 
+STT_FORMATS = frozenset({"verbatim", "transcribe"})
+STT_SAMPLE_RATES = frozenset({8000, 16000, 44100, 48000})
+STT_LANGUAGES = frozenset({"mr-IN", "hi-IN", "en-IN", "auto"})
+
 TAG_MODELS = frozenset({"timbre-v3.0"})
 _TAG = re.compile(r"<\s*[a-z][a-z ]{1,20}\s*>", re.IGNORECASE)
 
@@ -32,11 +36,27 @@ def tts_text(reply: str, speech: str, model: str) -> str:
 
 
 def stt_options() -> dict[str, object]:
-    """Prisma options from the environment (defaults: transcribe + native numerals, as the brief asks)."""
-    fmt = os.environ.get("GNANI_STT_FORMAT", "transcribe")
+    """Options supported by the pinned LiveKit Gnani plugin (not Prisma v3-only options)."""
+    fmt = os.environ.get("GNANI_STT_FORMAT", "transcribe").strip().lower()
+    if fmt not in STT_FORMATS:
+        raise ValueError("GNANI_STT_FORMAT must be verbatim or transcribe for the installed Gnani plugin")
+    try:
+        sample_rate = int(os.environ.get("GNANI_STT_SAMPLE_RATE", "16000"))
+    except ValueError as exc:
+        raise ValueError("GNANI_STT_SAMPLE_RATE must be an integer") from exc
+    if sample_rate not in STT_SAMPLE_RATES:
+        raise ValueError("GNANI_STT_SAMPLE_RATE must be 8000, 16000, 44100, or 48000")
+    language = os.environ.get("GNANI_STT_LANGUAGE", "mr-IN").strip()
+    if language not in STT_LANGUAGES:
+        raise ValueError("GNANI_STT_LANGUAGE must be mr-IN, hi-IN, en-IN, or auto")
+    if language == "auto":
+        # The installed plugin requires a language code. Do not pretend its language hint is Auto-LID.
+        raise ValueError("GNANI_STT_LANGUAGE=auto requires a Prisma v3 Auto-LID adapter, which is not installed")
     return {
-        "format": fmt if fmt in ("verbatim", "transcribe") else "transcribe",
+        "language": language,
+        "format": fmt,
         "itn_native_numerals": env_bool("GNANI_ITN_NATIVE_NUMERALS", True),
+        "sample_rate": sample_rate,
     }
 
 

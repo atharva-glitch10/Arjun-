@@ -1,5 +1,38 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Gnani Prisma v3.0 audit (2026-11-07)
+- Audited the installed/pinned `livekit-plugins-gnani==1.8.6` constructor: it has no explicit Prisma model argument and exposes only `verbatim`/`transcribe`, not v3 `codemix`/`transliterate`, Auto-LID, keyterms, named speakers, or previous-context controls.
+- Current configured path remains plugin-selected STT, `mr-IN`, streaming, 16 kHz, `transcribe`, native numerals. These settings are not evidence of explicit `prisma-v3.0` selection.
+- Added fail-fast validation for supported format, language hint, and sample rate; unsupported Auto-LID and modes are rejected. No protocol adapter was attempted because the pinned SDK does not document the v3-specific request/response messages.
+- `scripts/check_gnani.py` now safely checks key presence/whitespace and configured model labels without making a request or printing secrets. It does not test authentication.
+- Timbre config remains `timbre-v3.0` / `Avinash` with fallback `timbre-v2.5` / `Omkar`. v3.0 is not live-verified; historical live evidence is v2.5 only. No live Prisma or complete spoken-turn verification.
+- Focused voice-agent configuration tests: 23 passed; Ruff passed for edited Python files. Safe diagnostic reported key present and no surrounding whitespace, but made no request, so this does not resolve the historical 401.
+- See `docs/ENGINEERING.md` for the limits and next integration requirement. Full regression suites and live Gnani checks were not run in this change.
+
+## Verification for latest work (2026-11-04)
+- core-api: 269 passed; reasoning: 950 passed; voice-agent: 310 passed; scheduler: 8 passed.
+- Web: 133 tests passed; `npx tsc --noEmit`, production build, Ruff, and intent/slot/distress/emergency evals passed.
+- Dialogue run `final1` completed with d12 at 12/12 and no judge failures. Gemini then sustained throttling;
+  `final2` and `final3` did not complete, so the requested three-run means remain outstanding. Repeat after recovery.
+- Graphify security scan: zero requested secret/token/phone patterns. No local commits were made because the
+  required three-run dialogue evaluation did not finish green.
+
+## Latest work (2026-11-04): widened companion boundary, address form, next-day memory and LLM summaries
+- Boundary 10 now permits general knowledge, festivals, meanings, everyday how-to and recipe basics; recipes are
+  2-3 short steps followed by "व्हिडिओ लावू?". Medical/health/medicine advice, doses, diagnoses and model-sourced
+  news facts remain blocked. Recipe how-to questions stay in chat; explicit video requests still use media.
+- Consent behavior is documented in `CLAUDE.md`: facts stay available to Arjun regardless of sharing consent, the
+  family list is consent-gated, body-complaint facts are consent-gated, and deletion needs no consent.
+- Added editable profile `address_as`, defaulting to first name + "बाई" or "आजी" at age 60+. Old SQLite profiles
+  receive a non-destructive backfill. The family dashboard can edit it; LLM context and prompt use the exact value.
+- Rest agreement is allowed when she states her own plan; unprompted rest advice remains blocked. Leading "का" and
+  "अहो" are stripped. Dialogue d11's fixed fallback regression is covered.
+- Greetings select yesterday's latest event fact deterministically, or a recent summary topic if no event exists;
+  the model only phrases the selection. Idle family summaries now request 2-3 unquoted, non-transcript lines from
+  the configured LLM, with the rules summary on provider failure.
+- Graphify output docs scan: 8 files, zero matches for requested secret/token/phone patterns. `graphify-out/` is
+  ignored; the Markdown architecture analysis is staged for its own local documentation commit.
+
 ## Built 2026-11-04 (night): session + long-term memory, smarter companion (tests + a scripted eval on the real LLM; NOT heard with a real voice)
 - **Why:** replies felt foolish and context was lost: check-in lines, tool replies and safety turns never reached the
   LLM history, silence over 30 min or a distress wiped it, `companion_reply` got no user context, and nothing lasted
@@ -17,12 +50,9 @@
   narrower "doctor" pattern in the sanitizer (mentioning the visit is not advice, "डॉक्टरकडे जा" still is),
   greeting through the companion when she has history. Env: `ARJUN_SESSION_IDLE_MIN`, `ARJUN_SESSION_EXCHANGES`,
   `ARJUN_FACTS_IN_CONTEXT` (in `.env.example`; `.env` untouched). Design: docs/ENGINEERING.md section 15.
-- **Decisions to confirm:** (1) facts are stored for Arjun's own use regardless of consent (like the chat history sent
-  to the LLM), but the family SEES them only with the consent flag, and a `concern` fact is stored only with it.
-  (2) The prompt now lets Arjun answer festival / meaning / how-to questions from the model's own knowledge. This is
-  looser than boundary 10 as written ("never recites recipes/facts from model memory"): recipes and health stay
-  refused, other facts do not. CLAUDE.md was NOT edited; say if the boundary should be widened in writing or the
-  prompt narrowed again.
+- **Owner decisions recorded 2026-11-04:** fact storage and family visibility consent rules are documented in
+  `CLAUDE.md`; boundary 10 is widened to allow everyday knowledge, how-to and recipe basics while preserving health,
+  medicine, dose, diagnosis and model-news restrictions.
 - **Eval (`eval/dialogues.jsonl`, 15 multi-turn dialogues, `scripts/eval_dialogues.py`, judge = the same provider,
   Gemini via `LLM_*`, temperature 0, n=1 per dialogue):** BEFORE (previous commit, same harness) vs AFTER, mean /2:
   remembers_context 1.47 -> 1.73, uses_her_life 1.33 -> 1.53, smart_answer 1.40 -> 1.80, natural 1.87 -> 1.93,
@@ -30,10 +60,9 @@
   `dialogues_after.json`. Caveats: one run each; the LLM is not deterministic (an earlier AFTER run scored 8.94, an
   earlier one 7.80); the judge is lenient at times (it scored d05 as remembered even for BEFORE, when the reply only
   echoed the name). Treat +1 as real, not +1.12 exactly.
-- **Still weak:** "नमस्कार" the next day follows up on yesterday's visit only some of the time (d12); when the model
-  keeps suggesting rest the sanitizer blocks it and a fixed line ("मग पुढे काय झालं?") answers, which reads oddly
-  after "आता आराम करते" (d11); the 3-line summary is rule-made (her longest sentences), not an LLM summary; Gemini
-  flash-lite sometimes takes 6-7 s on the first call.
+- **Resolved in latest work:** d11's agreement with her own rest plan now passes sanitization; d12's first greeting
+  selects yesterday's latest event fact deterministically; idle family summaries use the LLM with the rules summary
+  as fallback. Provider latency and occasional rate limits remain real deployment constraints.
 - **Verified:** core-api 268, reasoning 945, voice-agent 310, scheduler 8 pytest; `ruff check .`; `tsc --noEmit`; vitest
   133; `eval/run_eval.py` 42/42, emergency recall 87/87, 0/12 false. **NOT verified:** a real voice session, the
   dashboard card in a browser, Postgres (SQLite only), facts extraction with Sarvam (only Gemini was available).

@@ -58,7 +58,7 @@ _LANG_NAMES = {
 # ---- what the companion may NOT say: the narrow safety net on top of the prompt --------------------------
 # New contract (2026-11-04): reject ONLY medical advice / diagnosis, a claim to be human or to have a body or
 # family, Latin script when the turn is Marathi/Hindi, more than four sentences, or more than 300 characters.
-# Everything else (brevity, no guilt, no recipes from memory) is the prompt's job; the sanitizer must not throw
+# Everything else (brevity, no guilt) is the prompt's job; the sanitizer must not throw
 # away a useful, slightly longer answer.
 _VIOLATIONS: dict[str, re.Pattern[str]] = {
     # claims to be human, or to have a family / body
@@ -93,6 +93,10 @@ _MAX_REPLY_CHARS = 300  # a longer reply is a runaway, not a long answer; 1-3 se
 _MAX_SENTENCES = 4  # more than four sentences is a runaway; a how-to may use three
 
 
+def _stated_rest_plan(text: str) -> bool:
+    return bool(re.search(r"(?:आराम\s+(?:करते|करतो|करणार|करायचं)|विश्रांती\s+(?:घेते|घेतो|घेणार|घ्यायची)|झोप(?:णार|ायला))", text))
+
+
 # A refusal followed by a topic change ("... बघता येत नाही, पण तुमची सकाळ कशी गेली?"): the real transcripts from the
 # elder screen showed Arjun saying he cannot do something and then asking an unrelated question. Never spoken: the
 # companion admits the limit in one fixed line and does not change the subject.
@@ -110,9 +114,14 @@ _REFUSAL_LINE = {
 }
 
 
-def companion_violations(text: str, language: str) -> list[str]:
+def companion_violations(text: str, language: str, user_text: str = "") -> list[str]:
     """Names of the boundaries a companion reply breaks (empty = fine). Heuristic, not a proof."""
     reasons = [name for name, rx in _VIOLATIONS.items() if rx.search(text)]
+    # Agreeing with her own stated plan to rest is not unsolicited health advice.
+    if "medical" in reasons and _stated_rest_plan(user_text) and re.search(r"आराम|विश्रांती|झोप", text):
+        rest_only = re.sub(r"आराम\s+(?:करा|कर|घ्या)|विश्रांती\s+(?:घ्या|करा)|झोपून\s+राहा", "", text)
+        if not _VIOLATIONS["medical"].search(rest_only):
+            reasons.remove("medical")
     if language in ("mr", "hi") and not any("\u0900" <= ch <= "\u097f" for ch in text):
         reasons.append("script")  # asked for Devanagari, got Latin
     if len(text) > _MAX_REPLY_CHARS:
@@ -127,7 +136,7 @@ def companion_violations(text: str, language: str) -> list[str]:
 _FILLERS = (
     "मला वाटतं", "मला वाटते", "मला वाटतंय", "मला वाटतय", "मला समजलं", "मला समजले", "मला कळलं", "मला आनंद झाला",
     "मुझे लगता है", "अरेरे", "अरे वा", "वा", "ओह", "अच्छा", "बरं", "हो", "हां", "ठीक आहे",
-    "i think", "i feel", "i understand", "i see", "oh", "wow", "okay", "ok", "sure",
+    "का", "अहो", "i think", "i feel", "i understand", "i see", "oh", "wow", "okay", "ok", "sure",
 )
 _FILLER_RX = re.compile(
     r"^[\s,.!?।-]*(?:" + "|".join(re.escape(f) for f in sorted(_FILLERS, key=len, reverse=True)) + r")(?=[\s,.!?।-]|$)",
@@ -135,17 +144,19 @@ _FILLER_RX = re.compile(
 )
 
 
-def strip_filler(text: str) -> str:
+def strip_filler(text: str, user_text: str = "") -> str:
     """Remove leading fillers and opinion openers, repeatedly, from the START only."""
     out = text.strip()
     while True:
+        if _stated_rest_plan(user_text) and re.match(r"^हो[\s,.!?à¥¤-]+", out):
+            return out.lstrip(" ,.!?à¥¤-")  # preserve agreement with her stated plan
         cut = _FILLER_RX.sub("", out, count=1)
         if cut == out:
             return out.lstrip(" ,.!?।-")
         out = cut.lstrip(" ,.!?।-")
 
 
-def sanitize_companion(text: str | None, language: str) -> tuple[str | None, list[str]]:
+def sanitize_companion(text: str | None, language: str, user_text: str = "") -> tuple[str | None, list[str]]:
     """Strip leading fillers, then reject the reply if it breaks a narrow boundary.
 
     Keeps up to four sentences so a how-to answer can use three; never cuts by character count alone.
@@ -153,7 +164,7 @@ def sanitize_companion(text: str | None, language: str) -> tuple[str | None, lis
     if not text or not text.strip():
         debug_log("sanitize", verdict="rejected", reasons=["empty"], text=text)
         return None, ["empty"]
-    text = strip_filler(text)
+    text = strip_filler(text, user_text)
     if not text:
         debug_log("sanitize", verdict="rejected", reasons=["empty"], text=text)
         return None, ["empty"]
@@ -162,7 +173,9 @@ def sanitize_companion(text: str | None, language: str) -> tuple[str | None, lis
         line = _REFUSAL_LINE.get(language, _REFUSAL_LINE["mr"])
         debug_log("sanitize", verdict="replaced", reasons=["refusal"], text=text, out=line)
         return line, []
-    reasons = companion_violations(cut, language)
+    reasons = companion_violations(cut, language, user_text)
+    if reasons == ["medical"] and language == "mr" and _stated_rest_plan(user_text) and re.search(r"आराम|विश्रांती|झोप", cut):
+        return "हो, आराम करा, नंतर बोलूया.", []  # keep only agreement with her plan; discard extra advice
     if reasons:
         debug_log("sanitize", verdict="rejected", reasons=reasons, text=text)
         return None, reasons
@@ -170,25 +183,25 @@ def sanitize_companion(text: str | None, language: str) -> tuple[str | None, lis
     return cut, []
 
 
-def salvage_companion(text: str, language: str) -> str | None:
+def salvage_companion(text: str, language: str, user_text: str = "") -> str | None:
     """A reply with ONE bad sentence ("... आराम करा.") should not be thrown away whole: keep the sentences that break no
     boundary. None when nothing usable is left (the fixed line then answers)."""
     parts = [p.strip() for p in re.findall(r"[^।.!?]+[।.!?]*", text) if p.strip()]
-    kept = [p for p in parts if not companion_violations(p, language)]
+    kept = [p for p in parts if not companion_violations(p, language, user_text)]
     if not kept or len(kept) == len(parts):
         return None
-    reply, _ = sanitize_companion(" ".join(kept), language)
+    reply, _ = sanitize_companion(" ".join(kept), language, user_text)
     return reply
 
 
 _LEADING_TAGS = re.compile(r"^((?:\s*<\s*[a-z][a-z ]{1,20}\s*>)*)\s*(.*)$", re.IGNORECASE | re.DOTALL)
 
 
-def strip_filler_voiced(voiced: str) -> str:
+def strip_filler_voiced(voiced: str, user_text: str = "") -> str:
     """strip_filler for the TTS text: the leading voice tags stay, the filler after them goes."""
     m = _LEADING_TAGS.match(voiced.strip())
     tags, rest = (m.group(1).strip(), m.group(2)) if m else ("", voiced)
-    rest = strip_filler(rest)
+    rest = strip_filler(rest, user_text)
     return f"{tags} {rest}".strip() if tags else rest
 
 
@@ -262,8 +275,10 @@ def _conversation_rules(language: str) -> str:
         f"steps; if she asks about her day, reminders, family or an app, give the useful answer or the next step. "
         f"If she asks a real question (a festival, a word's meaning, how a household or garden thing works, general "
         f"knowledge) ANSWER IT properly in 1-3 simple sentences; never say 'I don't know', 'I cannot' or 'teach me' "
-        f"when you can answer. Only two things you never answer from memory: a RECIPE (ask her to tell you how she "
-        f"makes it) and anything about health, medicines or doses. "
+        f"when you can answer. For a recipe, give 2-3 simple steps in 2-3 short sentences, then finish with the exact offer "
+        f"'व्हिडिओ लावू?'. "
+        f"Never give medical/health/medicine advice, doses or diagnosis. Never state news facts from memory; news "
+        f"may come only from the approved news source. "
         f"USE WHAT YOU KNOW about her: call the people she told you about by name and relation (नातू आर्यन), recall "
         f"what she said earlier today ('सकाळी तुम्ही सांगितलं होतं की…'), and follow up on an event she mentioned "
         f"('कालचा डॉक्टरचा दिवस कसा गेला?') when the facts below say it happened; never invent a name, event or "
@@ -276,8 +291,10 @@ def _conversation_rules(language: str) -> str:
         f"to what she said. Never repeat a question that was already asked today. "
         f"Reply in 1-2 short sentences; a how-to or an explanation may use up to 3 short sentences. Never write a "
         f"list or a long explanation. "
-        f"Never give medical advice or a diagnosis, never suggest a dose, rest, water or a doctor visit; if she "
-        f"mentions a health problem, acknowledge it and ask what she needs, or point her to her family. "
+        f"Never give medical advice or a diagnosis, and never suggest a dose, rest, water or a doctor visit on your "
+        f"own. If she says she plans to rest, brief agreement is allowed (for example, 'हो, आराम करा, नंतर बोलूया.'); "
+        f"do not add any other advice. If she mentions another health problem, acknowledge it and ask what she needs, "
+        f"or point her to her family. "
         f"Never claim to be human or to have a body, feelings, a family or experiences. If she asks whether you "
         f"are a human or a machine, say clearly that you are an AI companion. "
         f"Never say you missed her, never make her feel guilty, and encourage her to talk to her family. "
@@ -311,6 +328,10 @@ def _system_prompt(
         system += (
             "USER CONTEXT (from the family dashboard and today's records; use it only when it helps the reply, "
             "never read it out as a list, never mention that you have a dashboard):\n" + context + "\n"
+        )
+        system += (
+            "Address her using the exact 'address her as' value in USER CONTEXT. Never invent a form of address; "
+            "in particular, never call her ताई unless that exact value is ताई. "
         )
     if memory:
         system += memory + "\n"
@@ -820,8 +841,9 @@ class EvonClient:
         system = (
             "You write a short note for the family of an elderly person about one conversation she had with "
             "Arjun, an AI voice companion. Output ONLY one JSON object: "
-            '{"summary": string (English, at most 2 short sentences, what she talked about and how she seemed; '
-            "paraphrase, never quote her; report only what she said, never diagnose, never guess causes, never "
+            '{"summary": string (English, exactly 2-3 brief lines, what she talked about and how she seemed; '
+            "paraphrase, no quotation marks, never quote her or provide a transcript; report only what she said, "
+            "never diagnose, never guess causes, never "
             'give advice), "mood": one of ' + json.dumps(list(MOODS)) + ', "severity": one of '
             + json.dumps(list(LEVELS)) + ' (normal = ordinary chat; watch = lonely, sad, worried, a complaint '
             "worth a call today; urgent = asked for help, very upset, pain; emergency = chest pain, a fall, "
@@ -836,6 +858,9 @@ class EvonClient:
                 if data.get("mood") not in MOODS or data.get("severity") not in LEVELS:
                     raise ValueError("bad enum")
                 summary = str(data.get("summary") or "").strip()[:400]
+                lines = [line.strip() for line in summary.splitlines() if line.strip()]
+                if not 2 <= len(lines) <= 3 or any(q in summary for q in ('"', "'", "“", "”", "‘", "’")):
+                    raise ValueError("summary must have 2-3 unquoted lines")
                 topics = [str(t)[:30] for t in (data.get("topics") or [])][:4]
                 return {"summary": summary, "mood": data["mood"], "severity": data["severity"], "topics": topics}
             except (httpx.HTTPError, ValueError, KeyError, TypeError):

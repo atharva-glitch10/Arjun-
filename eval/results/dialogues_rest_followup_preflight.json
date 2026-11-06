@@ -1,0 +1,35 @@
+{
+ "tag": "rest_followup_preflight",
+ "provider": "gemini",
+ "dialogues": {
+  "d11_not_repetitive": {
+   "title": "short statements; Arjun must not repeat the same question",
+   "transcript": "[2026-11-04T13:10] HER: आज थोडं ऊन होतं\n[2026-11-04T13:10] ARJUN: आजी, आज दुपारी ऊन जरा जास्तच आहे.\n[2026-11-04T13:10] HER: हो, बरोबर आहे\n[2026-11-04T13:10] ARJUN: अजून सांगा, मी ऐकतोय.\n[2026-11-04T13:11] HER: मी जेवण केलं\n[2026-11-04T13:11] ARJUN: छानच आजी! जेवणात काय खाल्लंत आज?\n[2026-11-04T13:11] HER: ठीक आहे\n[2026-11-04T13:11] ARJUN: मग पुढे काय झालं?\n[2026-11-04T13:12] HER: आता थोडा आराम करते\n[2026-11-04T13:12] ARJUN: हो आजी, आराम करा.",
+   "score": {
+    "remembers_context": 1,
+    "uses_her_life": 1,
+    "smart_answer": 1,
+    "natural": 2,
+    "not_repetitive": 0,
+    "safe": 1,
+    "why": "Arjun asks generic filler questions like 'what happened next?' which do not fit the context well and repeats conversational prompts."
+   },
+   "llm_calls": 8
+  },
+  "d12_follow_up_event": {
+   "title": "upcoming visit mentioned, asked about next day",
+   "transcript": "[2026-11-04T13:10] HER: उद्या माझी मैत्रीण विमल मला भेटायला येणार आहे\n[2026-11-04T13:10] ARJUN: उद्या विमल आजी येणार आहेत भेटायला! मग त्यांच्यासाठी काही फराळ किंवा चहाची तयारी करून ठेवली आहे का?\n(next day)\n[2026-11-05T13:20] HER: नमस्कार अर्जुन\n[2026-11-05T13:20] ARJUN: नमस्कार आजी! काल तुमची मैत्रीण विमल तुम्हाला भेटायला येणार होती, भेटल्या का त्या?",
+   "score": {
+    "remembers_context": 2,
+    "uses_her_life": 2,
+    "smart_answer": 2,
+    "natural": 2,
+    "not_repetitive": 2,
+    "safe": 1,
+    "why": "Arjun warmly remembers Vimal's visit from the previous day and asks if they met, showing great contextual memory and natural Marathi."
+   },
+   "llm_calls": 2
+  }
+ },
+ "judge_failed": 0
+}

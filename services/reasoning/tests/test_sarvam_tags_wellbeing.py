@@ -156,13 +156,26 @@ def test_summary_prompt_forbids_quotes_and_diagnosis():
 
     def handler(req: httpx.Request) -> httpx.Response:
         seen.update(json.loads(req.content))
-        body = {"summary": "Chatted about cooking.", "mood": "happy", "severity": "normal", "topics": ["food"]}
+        body = {"summary": "She talked about cooking.\nShe sounded cheerful.", "mood": "happy", "severity": "normal", "topics": ["food"]}
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(body)}}]})
 
     got = _client(handler).summarize_conversation([("user", "मी पुरणपोळी केली")], "mr")
-    assert got == {"summary": "Chatted about cooking.", "mood": "happy", "severity": "normal", "topics": ["food"]}
+    assert got == {"summary": "She talked about cooking.\nShe sounded cheerful.", "mood": "happy", "severity": "normal", "topics": ["food"]}
     prompt = seen["messages"][0]["content"]
-    assert "never quote" in prompt and "never diagnose" in prompt
+    assert "never quote" in prompt and "never diagnose" in prompt and "2-3 brief lines" in prompt
+
+
+def test_summary_rejects_quoted_single_line_and_tracker_uses_rules_fallback():
+    client = _client(lambda req: httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(
+        {"summary": 'She said "hello".', "mood": "happy", "severity": "normal", "topics": []})}}]}))
+    assert client.summarize_conversation([("user", "hello")], "en") is None
+
+    class Broken:
+        def summarize_conversation(self, turns, language):
+            raise httpx.TimeoutException("timeout")
+
+    row = Tracker(core=None, llm=Broken()).entry(_conv("CHAT"), consent=True)  # type: ignore[arg-type]
+    assert row["source"] == "rules" and row["summary"].startswith("Talked with Arjun")
 
 
 # ---- /turn rate limit + flush endpoint -----------------------------------------------------------------------
