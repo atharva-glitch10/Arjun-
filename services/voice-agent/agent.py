@@ -25,6 +25,7 @@ from bridge import (
     reply_or_fallback,
     session_busy,
 )
+from bridge import media_stopped as notify_media_stopped
 from delivery import DeliveryLoop
 from dotenv import dotenv_values
 from endpointing import ConjunctionHold, EndpointingPolicy, turn_detection_from_env
@@ -221,6 +222,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         tts_plugin, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
         # The pinned plugin does not expose model selection; it chooses its own endpoint/model.
         stt_plugin = gnani.STT(use_streaming=USE_STREAMING, **STT_OPTIONS)
+        logger.info("stt stream recreated: fresh Gnani STT instance for voice session")
         logger.info("voice provider: gnani (stt prisma, tts %s)", active_model)
         logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
     endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's
@@ -289,35 +291,54 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 raise RuntimeError("the speech did not play")
             return True
 
-    media = MediaState()  # media mode: while a video plays, only "अर्जुन ..." / stop / safety phrases get through
+    media = MediaState()  # enabled only after the elder page confirms the YouTube player is playing
     family = FamilyPresence()  # while a family member is in the room, Arjun stays quiet
 
     async def publish(reply, turn) -> None:  # type: ignore[no-untyped-def]
         await publish_screen(ctx.room.local_participant, reply, turn)  # screen + "arjun.action" for the page
+        if reply.action and reply.action.get("type") == "open" and str(reply.action.get("kind", "")).startswith("youtube"):
+            media_stop_notified[0] = False
+        if reply.action and reply.action.get("type") == "control" and reply.action.get("kind") == "stop":
+            set_media("stopped", "voice stop")
         media.on_action(reply.action)
 
     _heartbeat_task: list[asyncio.Task[None] | None] = [None]
+    media_stop_notified = [True]
+
+    def set_media(value: str, reason: str) -> None:
+        was_playing = media.playing
+        media.on_page_state(value)
+        if media.playing != was_playing:
+            logger.info("media mode %s: %s", "on" if media.playing else "off", reason)
+            asyncio.create_task(_set_media_duck(False))
+        if media.playing:
+            media_stop_notified[0] = False
+        elif not media_stop_notified[0]:
+            media_stop_notified[0] = True
+            asyncio.create_task(asyncio.to_thread(notify_media_stopped, user_id))
 
     async def _heartbeat_clear() -> None:
         await asyncio.sleep(30)
-        media.reset()
-        logger.info("media mode cleared: no heartbeat for 30 s")
+        if media.heartbeat_expired():
+            set_media("stopped", "heartbeat timeout")
 
     @ctx.room.on("participant_attributes_changed")
     def _on_page_attributes(changed, participant) -> None:  # type: ignore[no-untyped-def]
-        if ATTR_MEDIA in changed:  # the elder page says whether its player is playing
-            val = changed[ATTR_MEDIA]
+        if ATTR_MEDIA in changed or "arjun.media.heartbeat" in changed:
+            val = changed.get(ATTR_MEDIA, participant.attributes.get(ATTR_MEDIA, "stopped"))
+            if _heartbeat_task[0] is not None:
+                _heartbeat_task[0].cancel()
+                _heartbeat_task[0] = None
             if val == "playing":
-                media.on_page_state(val)
-                logger.info("media heartbeat received")
-                if _heartbeat_task[0] is not None:
-                    _heartbeat_task[0].cancel()
-                _heartbeat_task[0] = asyncio.ensure_future(_heartbeat_clear())
+                set_media("playing", "page playing report")
+                _heartbeat_task[0] = asyncio.create_task(_heartbeat_clear())
             else:
-                if _heartbeat_task[0] is not None:
-                    _heartbeat_task[0].cancel()
-                    _heartbeat_task[0] = None
-                media.on_page_state(val)
+                set_media("stopped", "page stopped report")
+
+    def clear_media_timer() -> None:
+        if _heartbeat_task[0] is not None:
+            _heartbeat_task[0].cancel()
+            _heartbeat_task[0] = None
 
     @ctx.room.on("participant_connected")
     def _on_family_joined(participant) -> None:  # type: ignore[no-untyped-def]
@@ -327,7 +348,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     @ctx.room.on("participant_disconnected")
     def _on_page_left(participant) -> None:  # type: ignore[no-untyped-def]
         family.left(participant.identity)
-        media.reset()
+        if participant.identity != "family":
+            clear_media_timer()
+            set_media("stopped", "participant left")
 
     for _p in ctx.room.remote_participants.values():  # a family member may already be waiting
         family.joined(_p.identity)
@@ -358,11 +381,38 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             await responder.respond(ev.text, "tap")
         policy.touch()
 
+    _media_utterance_task: list[asyncio.Task[None] | None] = [None]
+
+    async def _set_media_duck(duck: bool) -> None:
+        try:
+            await ctx.room.local_participant.set_attributes({"arjun.media.duck": "1" if duck and media.playing else "0"})
+        except Exception as exc:  # noqa: BLE001
+            logger.info("media audio duck update failed (%s)", type(exc).__name__)
+
+    async def _force_media_utterance_end() -> None:
+        await asyncio.sleep(8)
+        if media.playing and state.user == "speaking":
+            logger.info("media utterance force-ended at 8 s")
+            try:
+                await session.commit_user_turn(transcript_timeout=2, stt_flush_duration=1)
+            except Exception as exc:  # noqa: BLE001
+                logger.info("media utterance force-end failed (%s)", type(exc).__name__)
+
     @session.on("user_state_changed")
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
         state.on_user_state(ev.new_state)
         if ev.new_state == "speaking":
             user_started.set()
+            if media.playing:
+                asyncio.create_task(_set_media_duck(True))
+                if _media_utterance_task[0] is not None:
+                    _media_utterance_task[0].cancel()
+                _media_utterance_task[0] = asyncio.create_task(_force_media_utterance_end())
+        elif ev.old_state == "speaking":
+            if _media_utterance_task[0] is not None:
+                _media_utterance_task[0].cancel()
+                _media_utterance_task[0] = None
+            asyncio.create_task(_set_media_duck(False))
         policy.touch()
         if ev.old_state == "speaking" and ev.new_state == "listening":
             turns.end_of_speech(ev.created_at)
@@ -379,11 +429,22 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if ev.new_state == "speaking":
             turns.agent_speaking(ev.created_at)
 
+    stt_restart_requested = [False]
+
     @session.on("error")
     def _on_error(ev) -> None:  # type: ignore[no-untyped-def]
         # STT / TTS / plugin failures: type and a short message only (never headers or keys).
         err = getattr(ev, "error", ev)
         logger.error("session error: %s: %s", type(err).__name__, str(err)[:300])
+        if type(err).__name__ == "STTError" and not stt_restart_requested[0]:
+            stt_restart_requested[0] = True
+
+            async def restart_after_stt_failure() -> None:
+                await asyncio.sleep(0.5)
+                logger.warning("STT stream failed; restarting the voice session to create a fresh stream")
+                ctx.shutdown(reason="stt_stream_recovery")
+
+            asyncio.create_task(restart_after_stt_failure())
 
     background: list[asyncio.Task[None]] = []
 

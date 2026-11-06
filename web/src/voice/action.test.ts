@@ -144,7 +144,7 @@ describe("mediaReport: what the page tells the agent (arjun.media)", () => {
   const states = (phase: MediaState["phase"]) => ({ ...idleMedia(), phase });
   it("playing / loading count as playing, everything else as stopped", () => {
     expect(mediaReport(states("playing"))).toBe("playing");
-    expect(mediaReport(states("loading"))).toBe("playing");
+    expect(mediaReport(states("loading"))).toBe("stopped");
     for (const p of ["closed", "paused", "blocked", "ended", "error"] as const) expect(mediaReport(states(p))).toBe("stopped");
   });
 });

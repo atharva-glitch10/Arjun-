@@ -448,6 +448,13 @@ def test_the_gate_lets_safety_and_controls_through_and_nothing_else():
     assert gate("भीमसेन जोशींचं भजन लावा") == {"safety": False, "control": False}  # a new request needs the wake word
 
 
+def test_media_control_phrases_cover_stop_back_and_previous():
+    assert parse_app_command("बंद कर ना").control == "stop"
+    assert parse_app_command("थांब").control == "stop"
+    assert parse_app_command("परत").control == "stop"
+    assert parse_app_command("मागचं").control == "previous"
+
+
 def test_a_headline_keeps_its_own_ending_and_gets_a_full_stop_only_when_it_has_none(core_http, uid, household, monkeypatch):
     feed = ("<rss><channel><item><title>पाऊस कधी थांबणार?</title></item><item><title>धक्कादायक निकाल!</title></item>"
             "<item><title>नवी योजना</title></item></channel></rss>")

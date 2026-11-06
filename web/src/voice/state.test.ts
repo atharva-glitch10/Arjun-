@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FAILURE_TEXT, isFreshAction, parseActionAttribute, parseAttributes, shownFor } from "./state";
+import { FAILURE_TEXT, isFreshAction, microphoneNeedsRepublish, parseActionAttribute, parseAttributes, shownFor } from "./state";
 import type { VoiceSnapshot } from "./state";
 
 const base: VoiceSnapshot = {
@@ -86,6 +86,7 @@ describe("reading the agent's attributes", () => {
       turn: 4,
       agentState: "speaking",
       item: "",
+      mediaDuck: false,
     });
   });
 
@@ -95,8 +96,17 @@ describe("reading the agent's attributes", () => {
       turn: 0,
       agentState: undefined,
       item: "",
+      mediaDuck: false,
     });
-    expect(parseAttributes({})).toEqual({ screen: undefined, turn: 0, agentState: undefined, item: "" });
+    expect(parseAttributes({})).toEqual({ screen: undefined, turn: 0, agentState: undefined, item: "", mediaDuck: false });
+  });
+
+  it("reads media duck state and identifies ended/muted microphone tracks", () => {
+    expect(parseAttributes({ "arjun.media.duck": "1" }).mediaDuck).toBe(true);
+    expect(microphoneNeedsRepublish(undefined)).toBe(true);
+    expect(microphoneNeedsRepublish({ readyState: "ended" })).toBe(true);
+    expect(microphoneNeedsRepublish({ readyState: "live", muted: true })).toBe(true);
+    expect(microphoneNeedsRepublish({ readyState: "live", muted: false })).toBe(false);
   });
 });
 

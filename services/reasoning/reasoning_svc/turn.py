@@ -265,6 +265,12 @@ class TurnEngine:
         """Seconds left of this turn's ONE LLM time budget (the voice path waits about 5 s in total)."""
         return max(0.0, self._llm_deadline - self._mono())
 
+    def media_stopped(self, user_id: int) -> None:
+        """Drop in-memory media answer state when the elder page reports playback ended."""
+        self._media_ask.pop(user_id, None)
+        self._media_choice.pop(user_id, None)
+        self.memory.event(user_id, self.clock(), "[media stopped]")
+
     def handle(self, user_id: int, text: str) -> TurnResult:
         """One turn. Whatever path answers (safety, rules, a tool, the LLM), the exchange is recorded ONCE in the session
         memory afterwards, so no spoken line is ever missing from the history the LLM sees."""

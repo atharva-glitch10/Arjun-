@@ -96,11 +96,12 @@ _GENERIC_MEDIA = frozenset(
     "video song songs music news recipe exercise yoga".split()
 )
 
-_STOP_WORDS = frozenset("थांबव थांबवा बंद stop band रोक रोको रोकिए बंद-कर".split())
+_STOP_WORDS = frozenset("थांब थांबव थांबवा बंद stop band रोक रोको रोकिए बंद-कर परत".split())
 _CONTROL_NOISE = frozenset("अर्जुन arjun जरा आता please ना कर करा karo kar कृपया तू".split())
 _DOWN = frozenset("कमी हळू कम धीमा धीरे low down lower खाली कमि".split())
 _UP = frozenset("वाढव वाढवा जास्त मोठा मोठी मोठं बढ़ा बढ़ाओ बढाओ ज्यादा up high louder loud higher".split())
 _NEXT = frozenset("पुढचं पुढचे पुढचा पुढची पुढचंच अगला अगली अगले next agla skip".split())
+_PREVIOUS = frozenset("मागचं मागचा मागची मागचे मागे previous पिछला पिछली पीछे back".split())
 _PAUSE = frozenset("pause पॉज पॉझ".split())
 _RESUME = frozenset("सुरू सुरु चालू resume continue".split())
 # A control is only a control in a short phrase, or when it is addressed to Arjun ("अर्जुन, ...").
@@ -111,7 +112,7 @@ _WAKE_NAMES = ("अर्जुन", "arjun")
 @dataclass
 class AppCmd:
     intent: str
-    control: str | None = None  # MEDIA_CONTROL: stop | pause | resume | next | volume_up | volume_down
+    control: str | None = None  # MEDIA_CONTROL: stop | pause | resume | next | previous | volume_up | volume_down
     topic: str | None = None  # OPEN_MEDIA: "news_video" | "youtube" | "play"
     query: str = ""  # the words left after the command words: a song / singer / name / link label
 
@@ -230,6 +231,8 @@ def _control(toks: list[str]) -> str | None:
         return None
     if _has(words, _NEXT) and not {"what", "what's", "whats", "काय", "क्या", "kay", "kya"} & set(words):
         return "next"
+    if _has(words, _PREVIOUS):
+        return "previous"
     if _has(words, _STOP_WORDS):
         return "stop"
     if _has(words, _PAUSE):

@@ -1,5 +1,32 @@
 # HANDOFF (2026-11-04, memory + smarter companion on top of LLM-first understanding)
 
+## YouTube playback listening recovery (2026-11-07)
+Diagnosis from the newest media session in `logs/voice-agent.app.log`: the open-media action was followed by turns
+logged `ignored_media:true`; voice-agent wrote `ignored_media (54 characters; the words are not kept)`. At session end,
+the log recorded `stream closed ... SOURCE_MICROPHONE`, `input stream detached`, then
+`session closed {"reason":"participant_disconnected"}`. The transcript stream was still producing utterances before
+the gate discarded them. The YouTube video path already embeds in `MediaScreen`; the inspected source did not have
+visibility, pageshow, or focus recovery. This supports a stuck media-gate cause and an additional room/microphone
+disconnect; it does not prove that a new tab caused the disconnect.
+
+Fix: voice-agent media mode turns on only after the elder page reports actual player state `playing`. The web page
+publishes `arjun.media` plus a changing `arjun.media.heartbeat` every 10 seconds; stop, ended, player error, page
+hidden, unmount, voice stop, and 30 seconds without heartbeat turn it off and log transitions once. Stopping calls
+reasoning `/media/stopped`, clearing pending media ask/choice and adding the single `[media stopped]` memory note.
+YouTube remains embedded. The voice hook recovers on visibility/pageshow/focus, reconnects a lost room with bounded
+backoff, republishes a missing/muted/ended microphone, restarts LiveKit audio playback, and republishes media state
+to a fresh room. Browser capture keeps echo cancellation, noise suppression, and auto gain control enabled.
+
+During playback, the local safety check still wins, short media controls pass without the wake word, the video
+volume ducks to 20% while VAD reports speech and returns afterward, and media utterances are force-committed at
+8 seconds. An STT error requests a fresh LiveKit session so the Gnani STT instance/stream is created again; the
+page then reconnects to a fresh room. This is automated-path coverage, not a live Gnani or phone verification.
+
+Verification: voice-agent 318, reasoning 969, core-api 269, scheduler 8, web 139; TypeScript, production build,
+Ruff and `eval/run_eval.py` passed. Phone check remains required: play an embedded YouTube video; speak a bare
+`बंद कर ना`; confirm it stops; say `आज काय आहे`; then test `पुढचं`, `मागचं`, volume, safety during playback, tab-hide
+and return, and wait over 30 seconds after stopping to confirm ordinary turns continue.
+
 ## Gnani speech status update (2026-11-07)
 The pinned `livekit-plugins-gnani==1.8.6` API does not expose an explicit Prisma model selector or the v3
 Auto-LID, keyterms, speaker names, previous-context, `codemix`, and `transliterate` controls. The configured

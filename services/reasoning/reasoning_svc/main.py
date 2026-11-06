@@ -185,6 +185,10 @@ class GateIn(BaseModel):
     text: str = Field(max_length=2000)
 
 
+class MediaStoppedIn(BaseModel):
+    user_id: int
+
+
 @app.post("/media/gate")
 def media_gate(body: GateIn) -> dict[str, bool]:
     """Media mode filter (voice agent): while a video plays, only a SAFETY phrase or a bare control phrase gets through
@@ -195,6 +199,12 @@ def media_gate(body: GateIn) -> dict[str, bool]:
         "safety": is_emergency(text) or is_distress(text),
         "control": cmd is not None and cmd.intent == MEDIA_CONTROL,
     }
+
+
+@app.post("/media/stopped")
+def media_stopped(body: MediaStoppedIn) -> dict[str, bool]:
+    get_engine().media_stopped(body.user_id)
+    return {"ok": True}
 
 
 @app.post("/conversations/flush-idle")

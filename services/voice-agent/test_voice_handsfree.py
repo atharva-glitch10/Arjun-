@@ -3,6 +3,7 @@
 import asyncio
 
 import httpx
+import pytest
 from bridge import BridgeReply, ask_reasoning
 from idle import IdleCloser, IdlePolicy
 from responder import Responder
@@ -20,13 +21,16 @@ def test_tags_go_to_timbre_v3_only():
 def test_defaults_follow_the_brief(monkeypatch):
     for k in ("GNANI_STT_FORMAT", "GNANI_ITN_NATIVE_NUMERALS", "GNANI_TTS_MODEL", "GNANI_TTS_METHOD"):
         monkeypatch.delenv(k, raising=False)
-    assert stt_options() == {"format": "transcribe", "itn_native_numerals": True}
+    assert stt_options() == {
+        "language": "mr-IN", "format": "transcribe", "itn_native_numerals": True, "sample_rate": 16000
+    }
     t = tts_choice()
     assert t["model"] == "timbre-v3.0" and t["method"] == "sse"
     assert (t["fallback_model"], t["fallback_voice"]) == ("timbre-v2.5", "Omkar")  # the voice verified live
     monkeypatch.setenv("GNANI_STT_FORMAT", "nonsense")
     monkeypatch.setenv("GNANI_ITN_NATIVE_NUMERALS", "0")
-    assert stt_options() == {"format": "transcribe", "itn_native_numerals": False}
+    with pytest.raises(ValueError, match="GNANI_STT_FORMAT"):
+        stt_options()
 
 
 def test_bridge_reads_the_spoken_line_with_tags():

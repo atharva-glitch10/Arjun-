@@ -602,6 +602,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           control={apps.control}
           onReport={apps.reportMedia}
           onClosed={apps.onMediaClosed}
+          ducked={voice.mediaDuck}
         />
       )}
       {apps.blocked && shown !== "safety" && (

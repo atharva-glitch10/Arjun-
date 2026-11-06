@@ -156,6 +156,14 @@ def media_gate(user_id: int, text: str, http: httpx.Client | None = None) -> dic
         return None
 
 
+def media_stopped(user_id: int, http: httpx.Client | None = None) -> None:
+    client = http or _shared_client()
+    try:
+        client.post(f"{REASONING_URL}/media/stopped", json={"user_id": user_id}).raise_for_status()
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("media stop state reset failed (%s)", type(exc).__name__)
+
+
 def should_speak(reply: BridgeReply, stale: bool) -> bool:
     """Speak this reply? An outdated one is dropped: the user has already said something newer, and
     answering the old sentence is how Arjun seemed to reply to the wrong thing (2026-10-24).

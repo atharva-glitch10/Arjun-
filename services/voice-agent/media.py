@@ -7,6 +7,7 @@ own audio must never reach reasoning, and safety must never depend on a service 
 """
 
 import re
+import time
 
 from safety_words import is_safety_phrase
 
@@ -14,7 +15,9 @@ ATTR_MEDIA = "arjun.media"  # set by the ELDER PAGE on its own participant: "pla
 MEDIA_KINDS = frozenset({"youtube_video", "youtube_playlist", "youtube_channel_live", "youtube_live"})
 WAKE_WORDS = ("अर्जुन", "अर्जून", "अर्जन", "अर्जुना", "arjun", "arjoon", "arjuna")
 CONTROL_PHRASES = (
-    "थांबव", "थांबवा", "थांब", "थांबा", "बंद कर", "बंद करा", "बंद", "पॉज",
+    "थांबव", "थांबवा", "थांब", "थांबा", "बंद कर", "बंद करा", "बंद कर ना", "बंद करो", "बंद", "पॉज",
+    "रोक", "रोक दो", "पॉज़", "अगला", "अगली", "पिछला", "पीछे", "आवाज़ बढ़ाओ", "आवाज बढ़ाओ",
+    "आवाज़ कम करो", "आवाज कम करो", "फिर से", "चलाओ",
     "पुढचं", "पुढे", "मागचं", "मागे", "आवाज कमी कर", "आवाज वाढव",
     "आवाज कमी", "आवाज वाढवा", "परत", "stop",
     "pause", "next", "play", "resume",
@@ -81,26 +84,31 @@ def should_send(transcript: str, playing: bool) -> bool:
 class MediaState:
     """Whether a video is playing, from the page's own attribute and from the actions we publish."""
 
-    def __init__(self, playing: bool = False) -> None:
+    def __init__(self, playing: bool = False, clock=time.monotonic) -> None:
         self.playing = playing
+        self._clock = clock
+        self.last_heartbeat = clock() if playing else None
 
     def on_action(self, action: dict | None) -> None:  # type: ignore[type-arg]
-        """Called right after an action is published: a YouTube open starts media mode, a stop ends it."""
+        """Only a page player report may turn media mode on; an explicit stop turns it off immediately."""
         if not action:
             return
-        kind = str(action.get("kind", ""))
-        if action.get("type") == "open" and (kind in MEDIA_KINDS or kind.startswith("youtube")):
-            self.playing = True
-        elif action.get("type") == "control" and kind == "stop":
+        if action.get("type") == "control" and action.get("kind") == "stop":
             self.playing = False
 
     def on_page_state(self, value: str | None) -> None:
         """The elder page reports what its player is doing ("arjun.media")."""
         if value == "playing":
             self.playing = True
+            self.last_heartbeat = self._clock()
         elif value in ("stopped", "", None):
             self.playing = False
+            self.last_heartbeat = None
+
+    def heartbeat_expired(self, timeout_s: float = 30.0) -> bool:
+        return self.playing and self.last_heartbeat is not None and self._clock() - self.last_heartbeat >= timeout_s
 
     def reset(self) -> None:
         """The page left the room: nothing is playing for us any more."""
         self.playing = False
+        self.last_heartbeat = None

@@ -8,13 +8,13 @@
 
 export type VideoKind = "youtube_video" | "youtube_playlist" | "youtube_channel_live";
 export type OpenKind = VideoKind | "whatsapp" | "link";
-export type ControlKind = "stop" | "pause" | "resume" | "next" | "volume_up" | "volume_down";
+export type ControlKind = "stop" | "pause" | "resume" | "next" | "previous" | "volume_up" | "volume_down";
 
 export type ArjunAction =
   | { type: "open"; kind: OpenKind; value: string; title: string; turn: number }
   | { type: "control"; kind: ControlKind; value: string; title: string; turn: number };
 
-const CONTROLS: readonly ControlKind[] = ["stop", "pause", "resume", "next", "volume_up", "volume_down"];
+const CONTROLS: readonly ControlKind[] = ["stop", "pause", "resume", "next", "previous", "volume_up", "volume_down"];
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const PLAYLIST_ID = /^[A-Za-z0-9_-]{12,64}$/;
 const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
@@ -120,11 +120,17 @@ export function mediaReducer(s: MediaState, e: MediaEvent): MediaState {
     case "volume_down":
       return { ...s, volume: Math.max(10, s.volume - 20) };
     default:
-      return s; // "next" is done by the player itself
+      return s; // next/previous are done by the player itself
   }
 }
 
 /** What the page tells the agent in "arjun.media": while it says "playing" the agent ignores what the mic hears
  *  unless it starts with "अर्जुन", is a bare control phrase, or is a safety phrase. */
 export const mediaReport = (s: MediaState): "playing" | "stopped" =>
-  s.phase === "playing" || s.phase === "loading" ? "playing" : "stopped";
+  s.phase === "playing" ? "playing" : "stopped";
+
+export const reportableMediaState = (s: MediaState, hidden: boolean): "playing" | "stopped" =>
+  hidden ? "stopped" : mediaReport(s);
+
+export const shouldHeartbeatMedia = (phase: MediaPhase, hidden: boolean): boolean =>
+  phase === "playing" && !hidden;

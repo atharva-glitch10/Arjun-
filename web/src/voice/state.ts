@@ -24,6 +24,9 @@ export type Shown =
   | "reply"
   | "story";
 
+export const microphoneNeedsRepublish = (track: { muted?: boolean; readyState?: string } | null | undefined): boolean =>
+  !track || track.muted === true || track.readyState !== "live";
+
 export interface VoiceSnapshot {
   phase: Phase;
   failure?: Failure;
@@ -112,13 +115,17 @@ export function parseAttributes(attrs: Record<string, string>): {
   agentState: AgentState | undefined;
   /** "reminder:<id>" | "dose:<id>" for a delivered card, else "". */
   item: string;
+  mediaDuck: boolean;
 } {
   const screen = SCREENS.find((s) => s === attrs["arjun.screen"]);
   const turn = Number.parseInt(attrs["arjun.turn"] ?? "", 10);
   const agentState = STATES.find((s) => s === attrs["lk.agent.state"]);
   const rawItem = attrs["arjun.item"] ?? "";
   const item = ITEM.test(rawItem) ? rawItem : "";
-  return { screen, turn: Number.isFinite(turn) && turn > 0 ? turn : 0, agentState, item };
+  return {
+    screen, turn: Number.isFinite(turn) && turn > 0 ? turn : 0, agentState, item,
+    mediaDuck: attrs["arjun.media.duck"] === "1",
+  };
 }
 
 export function shownFor(v: VoiceSnapshot): Shown {

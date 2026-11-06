@@ -1,5 +1,12 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## YouTube playback no longer strands listening (2026-11-07)
+- Root cause evidence: newest media session logged `ignored_media (54 characters; the words are not kept)` on later turns after `OPEN_MEDIA`; then `stream closed ... SOURCE_MICROPHONE`, `input stream detached`, and `session closed {"reason":"participant_disconnected"}`. This confirms the media gate was discarding later recognized speech. The disconnect cause itself is not proven to be YouTube opening a new tab; YouTube was already handled by an in-page iframe.
+- Media mode now starts only after the embedded player reports `playing`, receives a changing 10-second heartbeat, and turns off for stop/end/error/unmount/page hidden or a 30-second heartbeat timeout. Mode transitions log once with a reason.
+- Media stop notifies reasoning to clear pending media question/choice and store one `[media stopped]` history note. Safety still passes during playback; supported bare controls include stop/back, pause, next/previous, and volume. The page ducks video to 20% while VAD reports speech, then restores volume; long media utterances commit at 8 seconds.
+- Elder page recovers LiveKit on visible/pageshow/focus, recreates a disconnected room with bounded backoff, republishes an ended/muted/missing mic, resumes LiveKit audio and attached audio elements, and resends media state on joining. Echo cancellation, noise suppression, and auto gain remain enabled. A Gnani STT error requests a fresh LiveKit session, which creates a fresh STT stream.
+- Automated verification: voice-agent 318 passed; reasoning 969 passed; core-api 269 passed; scheduler 8 passed; web 139 passed; TypeScript, build, Ruff, and `eval/run_eval.py` passed (42/42 intent, 12/12 slots, 5/5 distress, 87/87 emergency, 0/12 harmless false alarms). No live phone or Gnani STT-restart test was run; perform the checklist in HANDOFF.md.
+
 ## Gnani Prisma v3.0 audit (2026-11-07)
 - Audited the installed/pinned `livekit-plugins-gnani==1.8.6` constructor: it has no explicit Prisma model argument and exposes only `verbatim`/`transcribe`, not v3 `codemix`/`transliterate`, Auto-LID, keyterms, named speakers, or previous-context controls.
 - Current configured path remains plugin-selected STT, `mr-IN`, streaming, 16 kHz, `transcribe`, native numerals. These settings are not evidence of explicit `prisma-v3.0` selection.

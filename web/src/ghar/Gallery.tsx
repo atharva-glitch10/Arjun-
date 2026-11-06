@@ -43,7 +43,7 @@ function MediaPreview() {
         : null;
   const action = pick && parseAction(JSON.stringify({ type: "open", kind: pick[0], value: pick[1], title: "preview", turn: 1 }));
   if (!action || !open) return null;
-  return <MediaScreen action={action} control={null} onReport={(s) => console.info("[arjun.media]", s)} onClosed={() => setOpen(false)} />;
+  return <MediaScreen action={action} control={null} onReport={(s) => console.info("[arjun.media]", s)} onClosed={() => setOpen(false)} ducked={false} />;
 }
 
 export function Gallery() {

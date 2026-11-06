@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Contact } from "../api";
-import { idleMedia, mediaReducer, mediaReport } from "../voice/action";
+import { idleMedia, mediaReducer, mediaReport, reportableMediaState, shouldHeartbeatMedia } from "../voice/action";
 import type { ActionAttribute } from "../voice/state";
 import { isFreshAction } from "../voice/state";
 import { embedSrc, planAction, waNumber, whatsappUrl, youtubeTarget } from "./media";
@@ -136,7 +136,7 @@ describe("the MediaScreen state machine: playing -> stop -> home", () => {
   it("opens, plays, stops and ends closed (the screen calls onClosed for both closed and ended)", () => {
     let s = mediaReducer(idleMedia(), { t: "open", action });
     expect(s.phase).toBe("loading");
-    expect(mediaReport(s)).toBe("playing");
+    expect(mediaReport(s)).toBe("stopped"); // loading is not confirmation that YouTube actually started
     s = mediaReducer(s, { t: "player", state: "playing" });
     expect(s.phase).toBe("playing");
     s = mediaReducer(s, { t: "control", kind: "stop" });
@@ -145,5 +145,20 @@ describe("the MediaScreen state machine: playing -> stop -> home", () => {
     const ended = mediaReducer({ ...idleMedia(), phase: "playing" }, { t: "player", state: "ended" });
     expect(ended.phase).toBe("ended");
     expect(mediaReport(ended)).toBe("stopped");
+    const error = mediaReducer({ ...idleMedia(), phase: "playing" }, { t: "player", state: "error" });
+    expect(mediaReport(error)).toBe("stopped");
+  });
+});
+
+describe("media reporting and heartbeat", () => {
+  it("reports playing only when playback is confirmed and the elder page is visible", () => {
+    const state = { ...idleMedia(), phase: "playing" as const };
+    expect(reportableMediaState(state, false)).toBe("playing");
+    expect(reportableMediaState(state, true)).toBe("stopped");
+    expect(shouldHeartbeatMedia("playing", false)).toBe(true);
+    expect(shouldHeartbeatMedia("playing", true)).toBe(false);
+    expect(shouldHeartbeatMedia("loading", false)).toBe(false);
+    // Six 10-second heartbeats keep a 60-second playback session actively reported.
+    for (let elapsed = 0; elapsed < 60; elapsed += 10) expect(shouldHeartbeatMedia("playing", false)).toBe(true);
   });
 });

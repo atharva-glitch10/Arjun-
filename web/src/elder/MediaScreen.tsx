@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef } from "react";
 
-import { embedSrc, idleMedia, mediaReducer, mediaReport } from "../voice/action";
+import { embedSrc, idleMedia, mediaReducer, reportableMediaState, shouldHeartbeatMedia } from "../voice/action";
 import type { ArjunAction, ControlKind, MediaState, PlayerState } from "../voice/action";
 
 // The little part of the YouTube IFrame Player API we use (loaded from youtube.com/iframe_api, no key in the browser).
@@ -8,6 +8,7 @@ interface YtPlayer {
   playVideo(): void;
   pauseVideo(): void;
   nextVideo(): void;
+  previousVideo(): void;
   setVolume(v: number): void;
   destroy(): void;
 }
@@ -66,11 +67,13 @@ export function MediaScreen({
   control,
   onReport,
   onClosed,
+  ducked,
 }: {
   action: ArjunAction;
   control: MediaControlEvent | null;
   onReport: (state: "playing" | "stopped") => void;
   onClosed: () => void;
+  ducked: boolean;
 }) {
   const [state, dispatch] = useReducer(mediaReducer, undefined, () => mediaReducer(idleMedia(), { t: "open", action }));
   const iframe = useRef<HTMLIFrameElement | null>(null);
@@ -118,21 +121,39 @@ export function MediaScreen({
     if (control.kind === "pause") p?.pauseVideo();
     else if (control.kind === "resume") p?.playVideo();
     else if (control.kind === "next" && stateRef.current.canNext) p?.nextVideo();
+    else if (control.kind === "previous") p?.previousVideo();
     else if (control.kind === "volume_up") p?.setVolume(Math.min(100, stateRef.current.volume + 20));
     else if (control.kind === "volume_down") p?.setVolume(Math.max(10, stateRef.current.volume - 20));
   }, [control]);
 
+  useEffect(() => {
+    player.current?.setVolume(ducked ? Math.round(state.volume * 0.2) : state.volume);
+  }, [ducked, state.volume]);
+
   // Heartbeat: tell the agent the player is still playing every 10 s so media mode can never get stuck.
   useEffect(() => {
     const id = window.setInterval(() => {
-      if (stateRef.current.phase === "playing" || stateRef.current.phase === "loading") onReport("playing");
+      if (shouldHeartbeatMedia(stateRef.current.phase, document.hidden)) onReport("playing");
     }, 10_000);
     return () => window.clearInterval(id);
   }, [onReport]);
   useEffect(() => () => onReport("stopped"), [onReport]); // the screen went away: nothing is playing any more
 
   useEffect(() => {
-    onReport(mediaReport(state));
+    const stopWhenHidden = () => {
+      if (document.hidden) onReport("stopped");
+      else if (stateRef.current.phase === "playing") onReport("playing");
+    };
+    document.addEventListener("visibilitychange", stopWhenHidden);
+    window.addEventListener("pagehide", stopWhenHidden);
+    return () => {
+      document.removeEventListener("visibilitychange", stopWhenHidden);
+      window.removeEventListener("pagehide", stopWhenHidden);
+    };
+  }, [onReport]);
+
+  useEffect(() => {
+    onReport(reportableMediaState(state, document.hidden));
     // A closed screen and a finished video both go home: nothing is playing and the agent must hear her again.
     if (state.phase === "closed" || state.phase === "ended") onClosed();
   }, [state, onReport, onClosed]);

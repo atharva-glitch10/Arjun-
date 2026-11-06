@@ -57,6 +57,11 @@ def test_playing_passes_a_bare_control_phrase():
     assert not is_bare_control("बंद कर आणि मग गाणं लाव")
 
 
+def test_media_controls_from_requested_short_phrases_work_without_wake_word():
+    for phrase in ("बंद कर ना", "बंद करा", "थांब", "पॉज", "पुढचं", "मागचं", "आवाज वाढव", "आवाज कमी कर", "परत"):
+        assert should_send(phrase, playing=True), phrase
+
+
 def test_playing_never_ignores_a_safety_phrase():
     for phrase in ("छातीत दुखतंय", "श्वास घेता येत नाही", "मी पडले", "मला मरायचं आहे", "chest pain"):
         assert should_send(phrase, playing=True), phrase
@@ -75,11 +80,27 @@ def test_playing_passes_a_long_sentence_that_starts_with_the_wake_word():
 def test_state_follows_the_page_and_the_published_actions():
     m = MediaState()
     assert not m.playing
+
+
+def test_play_heartbeat_keeps_media_on_and_stale_heartbeat_clears_after_30_seconds():
+    now = [0.0]
+    m = MediaState(clock=lambda: now[0])
+    m.on_action({"type": "open", "kind": "youtube_video"})
+    assert not m.playing  # an action is not proof the page/player started
+    m.on_page_state("playing")
+    for _ in range(6):
+        now[0] += 10
+        m.on_page_state("playing")
+        assert not m.heartbeat_expired()
+    now[0] += 30
+    assert m.heartbeat_expired()
     m.on_page_state("playing")
     assert m.playing
     m.on_page_state("stopped")
     assert not m.playing
     m.on_action({"type": "open", "kind": "youtube_video", "value": "x"})
+    assert not m.playing  # media gating starts only after the player confirms playback
+    m.on_page_state("playing")
     assert m.playing
     m.on_action({"type": "control", "kind": "volume_down"})
     assert m.playing  # a volume change does not end the video

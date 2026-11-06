@@ -3,7 +3,7 @@ import type { Participant, RemoteParticipant } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
-import { isFreshAction, parseActionAttribute, parseAttributes } from "./state";
+import { isFreshAction, microphoneNeedsRepublish, parseActionAttribute, parseAttributes } from "./state";
 import type { ActionAttribute, AgentScreen, AgentState, Failure, Phase, VoiceSnapshot } from "./state";
 
 /** Give the agent this long to come up after joining before telling the elder plainly. */
@@ -40,6 +40,7 @@ export interface ArjunVoice {
   thinking: boolean;
   /** The newest "arjun.action" (open a video / WhatsApp / a link, or a media control). Run each once, by `turn`. */
   action: ActionAttribute | null;
+  mediaDuck: boolean;
   /** Tell the agent whether the video player is playing ("arjun.media"): it ignores the video's own audio meanwhile. */
   reportMedia: (state: "playing" | "stopped") => void;
   /** Arjun's voice volume, 0..1 (the slider on the elder screen). Kept on this device. */
@@ -73,10 +74,12 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [family, setFamily] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [mediaDuck, setMediaDuck] = useState(false);
   const [action, setAction] = useState<ActionAttribute | null>(null);
   const [volume, setVolumeState] = useState(savedVolume);
   const volumeRef = useRef(volume);
   const audioEls = useRef(new Set<HTMLMediaElement>());
+  const mediaStateRef = useRef<"playing" | "stopped">("stopped");
 
   const room = useRef<Room | null>(null);
   const stopping = useRef(false);
@@ -86,6 +89,10 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const actionTurn = useRef(0); // the last action turn taken: an attribute that returns after a reconnect never runs twice
   const warm = useRef(false); // a room joined without the mic, waiting for the first tap
   const joining = useRef(false);
+  const recovering = useRef(false);
+  const recoverRef = useRef<((freshRoom?: boolean) => Promise<void>) | null>(null);
+  const needsFreshRoom = useRef(false);
+  const recoverAttempts = useRef(0);
 
   const setPhaseBoth = (p: Phase) => {
     phaseRef.current = p;
@@ -145,6 +152,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
       }
       setAgentState(a.agentState);
       setThinking(p.attributes["arjun.thinking"] === "1" || a.agentState === "thinking");
+      setMediaDuck(a.mediaDuck);
       if (a.screen) setScreen(a.screen);
       if (a.item) setItem(a.item);
       const act = parseActionAttribute(p.attributes["arjun.action"]);
@@ -211,7 +219,10 @@ export function useArjunVoice(userId: number): ArjunVoice {
         seeFamily(p);
       });
       r.on(RoomEvent.ParticipantConnected, (p) => {
-        if (isAgent(p)) applyAgent(p, t0);
+        if (isAgent(p)) {
+          recoverAttempts.current = 0;
+          applyAgent(p, t0);
+        }
         seeFamily(p);
       });
       const lost = () => {
@@ -222,14 +233,19 @@ export function useArjunVoice(userId: number): ArjunVoice {
           warm.current = false;
           return;
         }
-        fail("dropped");
+        needsFreshRoom.current = true;
+        if (document.hidden) return; // hidden-page teardown is repaired on visibilitychange/pageshow
+        void recoverRef.current?.(true);
       };
       r.on(RoomEvent.ParticipantDisconnected, (p) => {
         if (isAgent(p)) lost();
         if (p.identity === "family") setFamily("");
       });
       r.on(RoomEvent.Reconnecting, () => {
-        timers.current.push(window.setTimeout(() => fail("dropped"), RECONNECT_GIVE_UP_MS));
+        timers.current.push(window.setTimeout(() => {
+          if (!document.hidden) fail("dropped");
+          else needsFreshRoom.current = true;
+        }, RECONNECT_GIVE_UP_MS));
       });
       r.on(RoomEvent.Reconnected, () => clearTimers());
       r.on(RoomEvent.Disconnected, lost);
@@ -248,6 +264,10 @@ export function useArjunVoice(userId: number): ArjunVoice {
         room.current = null;
         return null;
       }
+      void r.localParticipant.setAttributes({
+        "arjun.media": mediaStateRef.current,
+        "arjun.media.heartbeat": String(Date.now()),
+      }).catch(() => {});
       for (const p of r.remoteParticipants.values()) seeFamily(p);
       return r;
     },
@@ -325,6 +345,78 @@ export function useArjunVoice(userId: number): ArjunVoice {
     if (a) applyAgent(a, t0);
   }, [applyAgent, fail, join, teardown]);
 
+  const recover = useCallback(async (freshRoom = false) => {
+    if (recovering.current || document.hidden || !["live", "waiting"].includes(phaseRef.current)) return;
+    recovering.current = true;
+    try {
+      let r = room.current;
+      if (freshRoom || !r || r.state !== "connected") {
+        if (recoverAttempts.current >= 3) {
+          fail("dropped");
+          return;
+        }
+        const delay = Math.min(500 * 2 ** recoverAttempts.current, 2_000);
+        recoverAttempts.current += 1;
+        await new Promise((resolve) => window.setTimeout(resolve, delay));
+        if (document.hidden) {
+          needsFreshRoom.current = true;
+          return;
+        }
+        needsFreshRoom.current = false;
+        const old = room.current;
+        room.current = null;
+        stopping.current = true;
+        await old?.disconnect();
+        stopping.current = false;
+        setPhaseBoth("connecting");
+        r = await join(performance.now());
+        if (!r) {
+          fail("dropped");
+          return;
+        }
+        setPhaseBoth("waiting");
+        timers.current.push(window.setTimeout(() => fail("timeout"), READY_TIMEOUT_MS));
+        console.info("[arjun] recovery: LiveKit room reconnected");
+      }
+      await r.startAudio(); // resumes LiveKit's suspended AudioContext after browser tab suspension
+      const pub = r.localParticipant.getTrackPublication(Track.Source.Microphone);
+      const mediaTrack = pub?.track?.mediaStreamTrack;
+      const micNeedsRepublish = !pub || pub.isMuted || microphoneNeedsRepublish(mediaTrack);
+      if (micNeedsRepublish) {
+        await r.localParticipant.setMicrophoneEnabled(false);
+        await r.localParticipant.setMicrophoneEnabled(true);
+        console.info("[arjun] recovery: microphone republished");
+      }
+      for (const el of audioEls.current) {
+        try {
+          await el.play();
+        } catch {
+          setAudioBlocked(true);
+        }
+      }
+      setAudioBlocked(!r.canPlaybackAudio);
+    } catch {
+      console.info("[arjun] recovery: audio resume needs another tap");
+    } finally {
+      recovering.current = false;
+    }
+  }, [fail, join]);
+  recoverRef.current = recover;
+
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState === "visible") void recoverRef.current?.(needsFreshRoom.current);
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("pageshow", resume);
+    window.addEventListener("focus", resume);
+    return () => {
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("pageshow", resume);
+      window.removeEventListener("focus", resume);
+    };
+  }, []);
+
   const unlockAudio = useCallback(async () => {
     const r = room.current;
     if (!r) return;
@@ -350,10 +442,12 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const dismissSafety = useCallback(() => setSafetyDismissedTurn(turnRef.current), []);
 
   const reportMedia = useCallback((state: "playing" | "stopped") => {
+    mediaStateRef.current = state;
     const r = room.current;
     if (!r || r.state !== "connected") return;
-    void r.localParticipant.setAttributes({ "arjun.media": state }).catch(() => {
-      // a failed report only means the agent keeps its own guess (it assumes "playing" after an open action)
+    const attrs = { "arjun.media": state, "arjun.media.heartbeat": String(Date.now()) };
+    void r.localParticipant.setAttributes(attrs).catch(() => {
+      // The voice-agent clears media mode after 30 seconds without a confirmed page heartbeat.
     });
   }, []);
 
@@ -386,6 +480,6 @@ export function useArjunVoice(userId: number): ArjunVoice {
   };
   return {
     snapshot, reply, heard, readyMs, item, family, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
-    thinking, volume, setVolume, action, reportMedia,
+    thinking, volume, setVolume, action, mediaDuck, reportMedia,
   };
 }
