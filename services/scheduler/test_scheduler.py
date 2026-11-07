@@ -18,6 +18,8 @@ def _http(calls, briefing_text="सुप्रभात", opener_text="आज�
             return httpx.Response(200, json={"released": 0, "superseded": 0, "shown_only": 0, "notified": 0})
         if path == "/conversations/flush-idle":
             return httpx.Response(200, json={"sent": 1, "open": 0})
+        if path == "/internal/briefings/send-due":
+            return httpx.Response(200, json={"sent": 0, "failed": 0, "skipped": 0})
         if path.startswith("/briefing/"):
             return httpx.Response(200, json={"text": briefing_text})
         if path.startswith("/opener/"):
@@ -30,9 +32,7 @@ def _http(calls, briefing_text="सुप्रभात", opener_text="आज�
 def _reset(monkeypatch, users):
     monkeypatch.setattr(scheduler, "CORE", "")
     monkeypatch.setattr(scheduler, "REASONING", "")
-    monkeypatch.setattr(scheduler, "BRIEFING_USER_IDS", users)
     monkeypatch.setattr(scheduler, "OPENER_USER_IDS", users)
-    scheduler._briefed_today.clear()
     scheduler._opened_today.clear()
 
 
@@ -51,19 +51,10 @@ def test_briefing_and_opener_at_most_once_per_day(monkeypatch):
     http = _http(calls)
     scheduler.tick(http, "2026-10-24")
     scheduler.tick(http, "2026-10-24")
-    assert calls.count(("GET", "/briefing/1")) == 1
+    assert calls.count(("POST", "/internal/briefings/send-due")) == 2
     assert calls.count(("POST", "/opener/1")) == 1
     scheduler.tick(http, "2026-10-25")  # next day: allowed again
-    assert calls.count(("GET", "/briefing/1")) == 2
-
-
-def test_null_briefing_is_retried_later_same_day(monkeypatch):
-    _reset(monkeypatch, [1])
-    calls = []
-    scheduler.tick(_http(calls, briefing_text=None, opener_text=None), "2026-10-24")
-    scheduler.tick(_http(calls, briefing_text=None, opener_text=None), "2026-10-24")
-    assert calls.count(("GET", "/briefing/1")) == 2  # None (before wake time) is not "done"
-    assert calls.count(("POST", "/opener/1")) == 2
+    assert calls.count(("POST", "/internal/briefings/send-due")) == 3
 
 
 def test_each_tick_queues_then_sweeps_in_that_order(monkeypatch):
@@ -77,6 +68,7 @@ def test_each_tick_queues_then_sweeps_in_that_order(monkeypatch):
         "/internal/medicines/tick",
         "/internal/checkins/tick",
         "/internal/deliveries/sweep",
+        "/internal/briefings/send-due",
     ]
 
 
@@ -97,12 +89,14 @@ def test_a_failing_sweep_does_not_stop_the_briefing_or_the_opener(monkeypatch):
             return httpx.Response(200, json={"asked": [], "followed_up": [], "closed": []})
         if path == "/internal/checkin-users":
             return httpx.Response(200, json=[])
+        if path == "/internal/briefings/send-due":
+            return httpx.Response(200, json={"sent": 1, "failed": 0, "skipped": 0})
         if path.startswith("/briefing/"):
             return httpx.Response(200, json={"text": "सुप्रभात"})
         return httpx.Response(200, json={"text": "आजी"})
 
     scheduler.tick(httpx.Client(transport=httpx.MockTransport(handler), base_url="http://x"), "2026-10-24")
-    assert ("GET", "/briefing/1") in calls and ("POST", "/opener/1") in calls
+    assert ("POST", "/internal/briefings/send-due") in calls and ("POST", "/opener/1") in calls
 
 
 def test_the_log_never_claims_a_reminder_was_spoken(monkeypatch, caplog):
@@ -127,7 +121,7 @@ def test_dev_up_starts_the_scheduler_without_giving_it_secrets_it_does_not_need(
         assert needed in entry
     for forbidden in ("LLM_API_KEY", "GNANI_API_KEY", "LIVEKIT_API_SECRET"):
         assert forbidden not in entry
-    assert "OPENER_USER_IDS" in entry and "BRIEFING_USER_IDS" in entry
+    assert "OPENER_USER_IDS" in entry and "BRIEFING_USER_IDS" not in entry
     assert '"scheduler"' in script.split("ValidateSet(")[1].split(")")[0]
 
 

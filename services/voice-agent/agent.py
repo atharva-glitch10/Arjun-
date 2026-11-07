@@ -78,7 +78,7 @@ ENV_PREFIXES = ("GNANI_", "LIVEKIT_", "ARJUN_")
 
 
 def load_agent_env(env_file: Path | None = None) -> None:
-    """Copy only GNANI_* / LIVEKIT_* / ARJUN_* from the root .env into os.environ; .env wins over inherited values.
+    """Copy voice settings plus CORE_API_KEY for the local briefing endpoint; .env wins over inherited values.
 
     .env must win: a shell started before a key rotation still carries the old keys, and using those
     gives 403 API_KEY_INACTIVE (seen 2026-10-21). Variables absent from .env keep their environment value.
@@ -88,7 +88,7 @@ def load_agent_env(env_file: Path | None = None) -> None:
     path = env_file or Path(__file__).resolve().parents[2] / ".env"
     values = dotenv_values(path) if path.is_file() else {}
     for name, value in values.items():
-        if (name.startswith(ENV_PREFIXES) or name == "SARVAM_API_KEY") and value:
+        if (name.startswith(ENV_PREFIXES) or name in ("SARVAM_API_KEY", "CORE_API_KEY")) and value:
             os.environ[name] = value
     sarvam_on = os.environ.get("ARJUN_VOICE_PROVIDER", "").strip().lower() == "sarvam"
     missing = [n for n in (SARVAM_REQUIRED_ENV if sarvam_on else REQUIRED_ENV) if not os.environ.get(n)]
@@ -558,4 +558,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
 
 if __name__ == "__main__":
+    from briefing_audio import start_server
+
+    start_server()
     agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name=AGENT_NAME))

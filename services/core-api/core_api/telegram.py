@@ -176,6 +176,25 @@ def _post(text: str, join_url: str | None, button_text: str | None = None) -> bo
         return False
 
 
+def send_voice(audio: bytes, caption: str) -> bool:
+    """Send a generated OGG/Opus voice note without ever logging Telegram's token or request URL."""
+    if not ready() or not audio:
+        return False
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    try:
+        res = httpx.post(
+            f"{API}/bot{token}/sendVoice",
+            data={"chat_id": chat, "caption": caption},
+            files={"voice": ("briefing.ogg", audio, "audio/ogg")},
+            timeout=30,
+        )
+        return res.status_code == 200 and bool(res.json().get("ok"))
+    except Exception as exc:  # noqa: BLE001 - request URL contains the bot token
+        log.warning("telegram voice delivery failed: %s", type(exc).__name__)
+        return False
+
+
 def _record(user_id: int, ok: bool, bind: Any) -> None:
     kind = "alert_sent" if ok else "alert_failed"
     body = (

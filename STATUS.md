@@ -1,5 +1,20 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Daily Telegram voice briefing (2026-11-07)
+- Added core-api `build_briefing(user_id, date)` using current-day medicine doses, raw BP readings, meal check-ins, and
+  consent-gated mood/paraphrased conversation summary. Text stays in memory for the request only; transcripts and briefing
+  text are not stored or logged. Sugar values are omitted because the database has no sugar-reading model.
+- Added Telegram `sendVoice`, a per-user/local-date attempt record, honest `briefing_sent` / `briefing_failed` feed events,
+  a force-send dashboard button, and a scheduler sweep gated by `BRIEFING_TIME` (default 20:30) and `daily_checkins`.
+- The voice-agent process serves the protected loopback OGG/Opus synthesis endpoint. Plugin 1.8.6 exposes OGG/Opus and
+  declares model ids v2.0/v2.5. A real one-word key-backed probe resolved to the known fallback `timbre-v2.5` / Omkar;
+  configured v3.0 failed its probe, so the unverified model/tag path was skipped. No Telegram poller exists, so `/summary`
+  was not added.
+- Verification: core-api 287, reasoning 982, voice-agent 325, scheduler 7, Vitest 145; TypeScript, production build,
+  Ruff and eval pass. A synthetic WAV converted to valid OGG locally. A real Timbre OGG request was blocked because this
+  sandbox could not reach `api.vachana.ai`; Telegram delivery and physical-phone playback still need the hand test in
+  HANDOFF.md. No `.env` values or database files were edited.
+
 ## Daily health check-ins enabled for the demo user (2026-11-07)
 - Root cause of "Arjun never asks": user 1 had `daily_checkins=0`, and the plan had no seeded profile times, so
   `ensure_checkins` returned early and the tick loop skipped the user. The DB was correct; the seed/profile was not.

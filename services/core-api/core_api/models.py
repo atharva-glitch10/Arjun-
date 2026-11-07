@@ -256,6 +256,18 @@ class BpReading(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class DailyBriefing(Base):
+    """One Telegram briefing attempt per user and local day; contents are never stored."""
+
+    __tablename__ = "daily_briefings"
+    __table_args__ = (UniqueConstraint("user_id", "for_date", name="uq_briefing_user_day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    for_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(10), default="pending")  # pending | sent | failed
+    attempted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class WatchSample(Base):
     """One raw sample from the SYNTHETIC watch. No device is paired and no target or alert is derived."""
 

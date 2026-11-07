@@ -358,6 +358,8 @@ export const api = {
   familyCallAnswer: (token: string) => core<{ status: string }>("/family/calls/answer", post({ t: token })),
   startVideoCall: (userId: number, contactId: number) =>
     core<VideoCall>(`/users/${userId}/calls`, post({ contact_id: contactId, mode: "video" })),
+  sendBriefing: (userId: number, force = false) =>
+    core<{ status: string }>(`/users/${userId}/briefing/send`, post({ force })),
   videoCallStatus: (userId: number, callId: number) => core<VideoCall>(`/users/${userId}/calls/${callId}`),
   endVideoCall: (userId: number, callId: number) =>
     core<VideoCall>(`/users/${userId}/calls/${callId}/end`, post({})),

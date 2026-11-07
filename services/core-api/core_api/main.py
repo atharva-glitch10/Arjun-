@@ -12,6 +12,7 @@ from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
 from .applinks import router as applinks_router
+from .briefings import router as briefings_router
 from .checkins import router as checkins_router
 from .day import router as day_router
 from .db import Base, engine, ensure_columns, get_db
@@ -771,5 +772,6 @@ app.include_router(applinks_router)
 app.include_router(media_router)
 app.include_router(facts_router)
 app.include_router(video_calls_router)
+app.include_router(briefings_router)
 app.include_router(feed_router)
 app.include_router(feed_ws_router)

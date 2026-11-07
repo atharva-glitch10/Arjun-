@@ -132,6 +132,7 @@ function MarkCell({ mark }: { mark: Mark }) {
 export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: number) => void }) {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState("");
+  const [briefingStatus, setBriefingStatus] = useState("");
   const [updated, setUpdated] = useState(() => new Date());
 
   // quiet = a background refresh: a hiccup must never blank the dashboard (and so never show "Create demo
@@ -232,6 +233,18 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
       await fn();
       await load();
     } catch (e) {
+      setError(e instanceof Error ? e.message : "Request failed");
+    }
+  };
+
+  const sendBriefingNow = async () => {
+    setBriefingStatus("सारांश पाठवत आहे…");
+    try {
+      const result = await api.sendBriefing(userId, true);
+      setBriefingStatus(result.status === "sent" ? "सारांश Telegram वर पाठवला." : "सारांश पाठवता आला नाही.");
+      await load(true);
+    } catch (e) {
+      setBriefingStatus("सारांश पाठवता आला नाही.");
       setError(e instanceof Error ? e.message : "Request failed");
     }
   };
@@ -392,6 +405,10 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </span>
           </div>
           <span className="grow" />
+          <button className="fbtn solid" onClick={() => void sendBriefingNow()}>
+            आत्ता सारांश पाठवा
+          </button>
+          {briefingStatus && <span role="status" className="t-muted">{briefingStatus}</span>}
           <div className="pill" style={{ fontSize: 17, alignSelf: "center" }}>
             {requestsToday === 0 ? (
               <>

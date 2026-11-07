@@ -51,6 +51,8 @@ _KINDS: dict[str, tuple[str, str]] = {
     "undelivered": ("watch", "Reminder not delivered"),
     "help_cancelled": ("info", "Help request cancelled"),
     "video_call_missed": ("info", "Video call missed"),
+    "briefing_sent": ("info", "Daily briefing sent"),
+    "briefing_failed": ("watch", "Daily briefing failed"),
 }
 
 

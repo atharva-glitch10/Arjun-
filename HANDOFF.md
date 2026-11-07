@@ -1,5 +1,26 @@
 # HANDOFF (2026-11-04, memory + smarter companion on top of LLM-first understanding)
 
+## Daily Telegram voice briefing (2026-11-07)
+- Core-api composes 3-5 short Marathi sentences from the selected user's current-day medicine status, raw BP values,
+  meal check-ins, and (only with `consent_distress_alert`) the existing mood word and paraphrased conversation highlight.
+  It does not save or log briefing text. Sugar readings are not modeled in this repo yet, so no sugar values are invented.
+- The family dashboard's **आत्ता सारांश पाठवा** button forces a send. The scheduler calls core-api every tick; core-api sends
+  after household-local `BRIEFING_TIME` (default 20:30) for users with `daily_checkins` enabled. SQL dedupe is one attempt
+  per user/day; a manual force can resend. Feed records `briefing_sent` or `briefing_failed` only after the outcome.
+- `voice-agent` hosts an authenticated loopback Timbre endpoint on port 8002. It uses the agent's verified SSE mode,
+  combines PCM frames to WAV in memory, then encodes Telegram-ready OGG/Opus with ffmpeg (available on this machine).
+  Core-api sends it with caption "आजचा सारांश" using Telegram `sendVoice`. The pinned 1.8.6 plugin supports SSE;
+  its model literal lists v2.0/v2.5. A key-backed one-word probe selected the same fallback as Arjun, `timbre-v2.5` / Omkar;
+  configured v3.0 did not pass its probe and is not the plugin's declared model. No unverified warm tag is used.
+- No Telegram command poller exists, so `/summary` was not added. No `.env` values or DB files were changed.
+- Verification: core-api 287, reasoning 982, voice-agent 325, scheduler 7, web 145; TypeScript/build, Ruff and eval pass.
+  A synthetic WAV converted to a valid OGG container locally. The real OGG endpoint request could not reach
+  `api.vachana.ai` from this sandbox (outbound access denied); Telegram was not contacted. Phone test: start/restart with
+  `scripts\\dev-up.ps1`, open the protected family dashboard,
+  tap **आत्ता सारांश पाठवा**, then confirm Telegram receives one voice note with the stated caption. With `daily_checkins` on,
+  confirm the scheduled send after the configured time; press the button again to verify explicit force-send. Check that a
+  failed/unconfigured Telegram route yields a `briefing_failed` feed event, never a success claim.
+
 ## Daily health check-ins for the demo user (2026-11-07)
 The demo user was silent because `daily_checkins=0` and no profile times were seeded; the engine and scheduler were
 running. `scripts/seed_heerabai.py --apply` now sets user 1 to check-ins ON with opener 07:30-21:00, wake 06:30,

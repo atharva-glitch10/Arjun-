@@ -7,7 +7,7 @@ still only means "the due time passed"; only a delivery with `spoken_at` was hea
 sweep that retires finished items, applies the late / backlog rules and tells the family about items that
 could not be spoken on time.
 
-Briefings and openers are NOT part of T8: they are still only logged here, never spoken.
+Daily voice briefings are sent by core-api at BRIEFING_TIME; openers remain a separate reasoning flow.
 """
 
 import logging
@@ -24,16 +24,10 @@ KEY = os.environ.get("CORE_API_KEY", "")
 INTERVAL = int(os.environ.get("SCHEDULER_INTERVAL_SECONDS", "30"))
 OPENER_USER_IDS = [int(x) for x in os.environ.get("OPENER_USER_IDS", "").split(",") if x.strip()]
 
-BRIEFING_USER_IDS = [
-    int(x) for x in os.environ.get("BRIEFING_USER_IDS", os.environ.get("OPENER_USER_IDS", "")).split(",")
-    if x.strip()
-]
-
 log = logging.getLogger("scheduler")
 # In-memory only: a scheduler RESTART forgets these, so a second opener/briefing can happen the same
 # day. Known limitation; core-api's decline gate still blocks openers after "nako".
 _opened_today: dict[int, str] = {}  # user_id -> ISO date; at most one opener per day
-_briefed_today: dict[int, str] = {}  # user_id -> ISO date; one day briefing per day
 
 
 def today_local() -> str:
@@ -48,14 +42,12 @@ def today_local() -> str:
 
 def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
     opener_ids = OPENER_USER_IDS
-    briefing_ids = BRIEFING_USER_IDS
-    if not opener_ids or not briefing_ids:
-        try:  # empty env lists mean "every user with daily check-ins on" (owner decision 2026-11-07)
+    if not opener_ids:
+        try:  # empty opener list means every user with daily check-ins on
             ids = [int(x) for x in http.get(f"{CORE}/internal/checkin-users").json()]
             opener_ids = opener_ids or ids
-            briefing_ids = briefing_ids or ids
         except (httpx.HTTPError, ValueError, TypeError) as exc:
-            log.warning("could not read the check-in users (opener/briefing stay empty): %s", exc)
+            log.warning("could not read the check-in users (opener stays empty): %s", type(exc).__name__)
     fired = http.post(f"{CORE}/internal/reminders/fire-due").json()
     for item in fired:
         log.info("reminder due, queued for delivery user=%s task=%s", item["user_id"], item["task"])
@@ -87,13 +79,14 @@ def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
             log.info("conversation summaries sent: %s", flushed.json()["sent"])
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("conversation flush failed (the rest of the tick still runs): %s", exc)
-    for uid in briefing_ids:
-        if _briefed_today.get(uid) == today:
-            continue
-        text = http.get(f"{REASONING}/briefing/{uid}").json().get("text")  # None before wake time
-        if text:
-            _briefed_today[uid] = today
-            log.info("briefing user=%s: %s", uid, text)  # logged only; voice delivery is T8
+    try:  # core-api enforces BRIEFING_TIME and the persistent per-user/day dedupe
+        response = http.post(f"{CORE}/internal/briefings/send-due")
+        response.raise_for_status()
+        outcomes = response.json()
+        if outcomes.get("sent") or outcomes.get("failed"):
+            log.info("daily briefing delivery: sent=%s failed=%s", outcomes.get("sent"), outcomes.get("failed"))
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("daily briefing sweep failed: %s", type(exc).__name__)
     for uid in opener_ids:
         if _opened_today.get(uid) == today:
             continue

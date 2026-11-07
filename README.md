@@ -329,6 +329,16 @@ WER and latency measurement.
 ## Elder initiated video calls
 The elder can say “व्हिडिओ कॉल कर” or name a family contact. Arjun opens an in-page LiveKit video call, while Telegram sends the family a signed “उचला” join button. A 60-second unanswered call becomes missed and offers a return button. Family video calls require browser camera and microphone permission; ordinary voice calls remain voice-only. Arjun stays quiet while family is connected, while emergency and distress phrases remain active. This feature is covered by service and web tests, but its physical phone and Telegram path still needs the steps in [HANDOFF.md](HANDOFF.md).
 
+## Daily Telegram voice briefing
+Users with daily check-ins enabled receive one short Marathi voice note after `BRIEFING_TIME` (default 20:30, household
+timezone). The family dashboard can force-send it with **आत्ता सारांश पाठवा**. Core-api summarizes only current-day
+medicine status, raw BP values, and meal check-ins; mood and a paraphrased conversation highlight are included only when
+the existing family consent is on. The text is not saved or logged. The voice-agent uses Timbre SSE and encodes OGG/Opus
+for Telegram's `sendVoice` API with caption **आजचा सारांश**. The key-backed probe selected the `timbre-v2.5` / Omkar fallback;
+the configured v3 model was not accepted. Sugar reading values are omitted because no sugar-reading table exists, and no
+Telegram `/summary` command is wired because this project has no bot poller. Real delivery still needs the hand test in
+[HANDOFF.md](HANDOFF.md).
+
 ## Open questions (need a human / credentials - not guessed)
 Prisma streaming support for the target language; credit cost per Gnani call; whether noise
 cancellation helps or hurts Prisma; whether LiveKit turn-detection can change mid-session (the
