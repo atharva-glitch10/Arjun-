@@ -138,6 +138,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   const [error, setError] = useState("");
   const [briefingStatus, setBriefingStatus] = useState("");
   const [updated, setUpdated] = useState(() => new Date());
+  const [tab, setTab] = useState<Tab>("today");
 
   // quiet = a background refresh: a hiccup must never blank the dashboard (and so never show "Create demo
   // user"); keep the last data and say so in a small banner.
@@ -443,6 +444,18 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           </p>
         )}
 
+        <nav className="fam-tabs" role="tablist" aria-label="Dashboard sections">
+          {TABS.map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {tab === "today" && (
+          <>
+        <BeforeYouCall name={name} summary={data.today.last_summary} book={data.book} feed={feed} />
+
         <section
           className="fam-card"
           aria-label={`How is ${name} today`}
@@ -610,6 +623,27 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </p>
           </section>
 
+          <section className="fam-card" style={{ flex: "1 1 480px" }}>
+            <h2>Requests and alerts</h2>
+            {data.requests.length + data.notes.length === 0 && <p>None.</p>}
+            <ul className="fam-list">
+              {data.requests.map((n) => (
+                <li key={`r${n.id}`}>Request: {n.message}</li>
+              ))}
+              {data.notes.map((n) => (
+                <li key={`n${n.id}`}>
+                  {n.kind}: {n.body}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+          </>
+        )}
+
+        {tab === "health" && (
+          <>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 22, alignItems: "flex-start" }}>
           <div style={{ flex: "1 1 420px", minWidth: 0, display: "flex", flexDirection: "column", gap: 22 }}>
             <section className="fam-card">
               <h2>This week</h2>
@@ -717,6 +751,11 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           onDelete={(id) => run(() => api.deleteMedicine(userId, id))}
         />
 
+          </>
+        )}
+
+        {tab === "settings" && (
+          <>
         <section className="fam-card">
           <h2>Her day (family-set times)</h2>
           <div className="fam-form" aria-label="Speech preferences">
@@ -840,6 +879,13 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             <AddAppointment onAdd={(t, s, l) => run(() => api.addAppointment(userId, t, s, l))} />
           </section>
 
+
+        </div>
+          </>
+        )}
+
+        {tab === "family" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 22, alignItems: "flex-start" }}>
           <section className="fam-card" style={{ flex: "1 1 420px" }}>
             <h2>Family contacts</h2>
             <ul className="fam-list">
@@ -872,26 +918,13 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               ))}
             </ul>
           </section>
-
-          <section className="fam-card" style={{ flex: "1 1 420px" }}>
-            <h2>Requests and alerts</h2>
-            {data.requests.length + data.notes.length === 0 && <p>None.</p>}
-            <ul className="fam-list">
-              {data.requests.map((n) => (
-                <li key={`r${n.id}`}>Request: {n.message}</li>
-              ))}
-              {data.notes.map((n) => (
-                <li key={`n${n.id}`}>
-                  {n.kind}: {n.body}
-                </li>
-              ))}
-            </ul>
-          </section>
         </div>
+        )}
       </div>
     </div>
   );
 }
+
 
 function VoicePerformance({ metrics }: { metrics: VoiceMetrics | null }) {
   const rows = metrics
@@ -925,6 +958,40 @@ function VoicePerformance({ metrics }: { metrics: VoiceMetrics | null }) {
         <div className="fam-note">≤300 ms: {metrics.stages.barge_in_stop.within_300_ms ?? 0}/{metrics.counts.barge_ins}</div>
       ) : null}
     </div>
+  );
+}
+
+type Tab = "today" | "health" | "family" | "settings";
+const TABS: [Tab, string][] = [
+  ["today", "Today"],
+  ["health", "Health & medicines"],
+  ["family", "Family & memories"],
+  ["settings", "Settings"],
+];
+
+// Talking points for the family's next call, built only from what this dashboard already shows (today's
+// summary, stories she chose to share, today's non-routine feed titles). Nothing new is collected.
+function BeforeYouCall({ name, summary, book, feed }: { name: string; summary: string; book: SharedStory[]; feed: FeedEvent[] }) {
+  const points = [
+    ...(summary ? [summary] : []),
+    ...book.slice(0, 2).map((b) => `Ask about her story: ${b.summary}`),
+    ...feed.filter((e) => SEVERITY_RANK[e.severity] >= SEVERITY_RANK.watch).slice(0, 2).map((e) => `Check in on: ${e.title}`),
+  ].slice(0, 4);
+  return (
+    <section className="fam-card call-card" aria-label={`Before you call ${name}`}>
+      <h2>Before you call {name}</h2>
+      {points.length === 0 ? (
+        <p className="fam-note" style={{ marginTop: 0 }}>
+          Nothing new yet. After she chats with Arjun, the main points to talk about show up here.
+        </p>
+      ) : (
+        <ul className="call-points">
+          {points.map((t, i) => (
+            <li key={i}>{t}</li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
