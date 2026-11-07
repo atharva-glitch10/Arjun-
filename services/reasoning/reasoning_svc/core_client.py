@@ -127,6 +127,12 @@ class CoreClient:
         """kind="emergency" ALWAYS alerts the family; "distress" only with the user's consent."""
         return self._req("POST", f"/users/{uid}/distress", params={"kind": kind})  # type: ignore[no-any-return]
 
+    def sound_event(self, uid: int, label: str, confidence: float) -> dict[str, Any]:
+        return self._req("POST", f"/users/{uid}/sound-events", json={"label": label, "confidence": confidence})
+
+    def escalate_sound_event(self, uid: int) -> dict[str, Any]:
+        return self._req("POST", f"/users/{uid}/sound-events/escalate")
+
     def decline(self, uid: int) -> None:
         self._req("POST", f"/users/{uid}/declines")
 

@@ -48,6 +48,12 @@ export interface VoiceMetrics {
   };
 }
 
+export interface SoundEventTrend {
+  enabled: boolean;
+  days: { date: string; cough_count: number }[];
+  total_coughs: number;
+}
+
 export interface Reminder {
   id: number;
   task: string;
@@ -314,6 +320,7 @@ export const api = {
     core<User>("/users", post({ name, language: "mr", interests: ["cooking"] })),
   getUser: (id: number) => core<User>(`/users/${id}`),
   voiceMetrics: (hours = 24) => core<VoiceMetrics>(`/metrics/voice?hours=${hours}`),
+  soundEventTrend: (id: number, days = 7) => core<SoundEventTrend>(`/users/${id}/sound-events?days=${days}`),
   patchUser: (id: number, body: Partial<Omit<User, "id" | "name">>) =>
     core<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   reminders: (id: number) => core<Reminder[]>(`/users/${id}/reminders`),

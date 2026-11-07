@@ -156,6 +156,17 @@ class DistressEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class SoundEvent(Base):
+    """A classified sound label and confidence only. Raw audio and derived features are never stored."""
+
+    __tablename__ = "sound_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    label: Mapped[str] = mapped_column(String(12))  # cough | scream | crying | bang
+    confidence: Mapped[float] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
 class Activity(Base):
     """Last time the elder spoke to Arjun or tapped the elder screen. Time only: no words are stored."""
 

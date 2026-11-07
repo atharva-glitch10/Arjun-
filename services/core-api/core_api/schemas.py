@@ -190,6 +190,11 @@ class DistressOut(BaseModel):
     caregiver_alerted: bool
 
 
+class SoundEventIn(BaseModel):
+    label: Literal["cough", "scream", "crying", "bang"]
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
 Anchor = Literal["fixed", "wake", "breakfast", "lunch", "dinner"]
 
 

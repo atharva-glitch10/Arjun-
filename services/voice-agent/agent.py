@@ -23,6 +23,7 @@ from bridge import (
     mark_delivery_spoken,
     release_delivery,
     reply_or_fallback,
+    report_sound_event,
     session_busy,
 )
 from bridge import media_stopped as notify_media_stopped
@@ -67,6 +68,16 @@ from responder import Responder
 from safety_words import is_safety_phrase
 from screenstate import publish_closed, publish_delivery, publish_screen, publish_thinking
 from sessionstate import SessionState
+from soundevents import (
+    OnnxYamnet,
+    SoundCheckWindow,
+    SoundEvent,
+    SoundEventAudioInput,
+    SoundEventMonitor,
+)
+from soundevents import (
+    enabled as sound_events_enabled,
+)
 from ttsgate import TtsGate
 from turnlog import TurnLog
 from usermeta import user_id_from_metadata
@@ -318,6 +329,39 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         async with speech_lock:
             await session.say(text)
 
+    sound_check_task: list[asyncio.Task[None] | None] = [None]
+    sound_monitor: list[SoundEventMonitor | None] = [None]
+    sound_check = SoundCheckWindow()
+
+    async def handle_sound_event(event: SoundEvent) -> None:
+        if not event.check_in:
+            await asyncio.to_thread(report_sound_event, user_id, event.label, event.confidence)
+        if event.label == "crying" and not event.check_in:
+            if not family.present():
+                await say_locked("तुम्हाला बोलावंसं वाटतंय का? मी ऐकायला आहे.")
+            return
+        if not event.check_in or event.label not in {"scream", "bang"} or family.present():
+            return
+        previous = sound_check_task[0]
+        if previous is not None and not previous.done():
+            return
+
+        async def ask_and_escalate() -> None:
+            sound_check.start(time.monotonic())
+            user_started.clear()
+            await say_locked("तुम्ही ठीक आहात का?")
+            if state.user == "speaking":  # speech during the prompt counts as an answer
+                sound_check.answered()
+                return
+            try:
+                await asyncio.wait_for(user_started.wait(), timeout=20.0)
+            except asyncio.TimeoutError:
+                if sound_check.should_escalate(time.monotonic()) and state.user != "speaking" and not family.present():
+                    logger.warning("sound event check-in unanswered; emergency flow started")
+                    await asyncio.to_thread(report_sound_event, user_id, event.label, event.confidence, escalate=True)
+
+        sound_check_task[0] = asyncio.create_task(ask_and_escalate(), name="sound-event-check-in")
+
     async def speak_checked(text: str) -> bool:
         """Speak and say whether it REALLY played to the end. False = the elder interrupted. Raises if no audio was
         produced (awaiting a speech handle never raises by itself, so a TTS failure would otherwise look like success)."""
@@ -460,6 +504,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
         state.on_user_state(ev.new_state)
         if ev.new_state == "speaking":
+            sound_check.answered()
             turns.user_started_speaking(ev.created_at)
             user_started.set()
             if media.playing:
@@ -511,6 +556,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     @session.on("close")
     def _on_close(ev) -> None:  # type: ignore[no-untyped-def]
         turns.close()
+        if sound_monitor[0] is not None:
+            sound_monitor[0].close()
+        if sound_check_task[0] is not None:
+            sound_check_task[0].cancel()
         for task in background:
             task.cancel()
 
@@ -519,6 +568,28 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         agent=Arjun(turns, responder, state, policy, hold, media, family, user_id, say_locked, call_active),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
+
+    if sound_events_enabled():
+        model_path = os.environ.get("ARJUN_SOUND_MODEL_PATH", "").strip()
+        try:
+            if not model_path:
+                raise FileNotFoundError("ARJUN_SOUND_MODEL_PATH is empty")
+            event_loop = asyncio.get_running_loop()
+            sound_monitor[0] = SoundEventMonitor(
+                await asyncio.to_thread(OnnxYamnet, model_path),
+                lambda event: event_loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(handle_sound_event(event))
+                ),
+            )
+            if session.input.audio is not None:
+                session.input.audio = SoundEventAudioInput(session.input.audio, sound_monitor[0])
+                logger.info("sound events enabled (ONNX CPU, bounded worker)")
+            else:
+                sound_monitor[0].close()
+                sound_monitor[0] = None
+                logger.warning("sound events skipped: session has no audio input")
+        except Exception as exc:  # noqa: BLE001 - missing/invalid optional model must not stop voice service
+            logger.warning("sound events skipped (%s)", type(exc).__name__)
 
     # ---- T8: queued reminders / medicines are spoken here; an idle session closes itself -------------------
     async def claim_next():  # type: ignore[no-untyped-def]

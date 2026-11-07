@@ -32,6 +32,7 @@ import type {
   SharedStory,
   User,
   VoiceMetrics,
+  SoundEventTrend,
   WatchSample,
 } from "../api";
 import { CheckIcon, ClockIcon, CrossIcon, Diya } from "../ghar/Motifs";
@@ -56,6 +57,7 @@ interface Data {
   bp: BpReading[];
   watch: WatchSample[];
   voiceMetrics: VoiceMetrics | null;
+  soundEvents: SoundEventTrend | null;
 }
 
 const DAY = 86_400_000;
@@ -141,7 +143,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks, mediaStatus, dayCard, voiceMetrics] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks, mediaStatus, dayCard, voiceMetrics, soundEvents] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -164,8 +166,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         api.mediaStatus().catch((): MediaStatus | null => null), // older core-api
         api.checkinCard(userId).catch((): CheckinCardItem[] => []), // older core-api
         api.voiceMetrics(24).catch((): VoiceMetrics | null => null),
+        api.soundEventTrend(userId, 7).catch((): SoundEventTrend | null => null),
       ]);
-      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, mediaStatus, book, requests, notes, medicines, doses, deliveries, dayCard, activity, today, bp, watch, voiceMetrics });
+      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, mediaStatus, book, requests, notes, medicines, doses, deliveries, dayCard, activity, today, bp, watch, voiceMetrics, soundEvents });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -548,6 +551,20 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           <section className="fam-card" style={{ flex: "1 1 480px" }} aria-label="Voice performance">
             <h2>Voice performance</h2>
             <VoicePerformance metrics={data.voiceMetrics} />
+          </section>
+
+          <section className="fam-card" style={{ flex: "1 1 320px" }} aria-label="Cough trend">
+            <h2>Sound events</h2>
+            <p className="fam-note">{data.soundEvents?.enabled ? `Cough events, last 7 days · ${data.soundEvents.total_coughs} total` : "Detection is off"}</p>
+            <div style={{ display: "flex", alignItems: "end", gap: 8, minHeight: 72 }} aria-label="Daily cough counts">
+              {(data.soundEvents?.days ?? []).map((day) => {
+                const peak = Math.max(1, ...(data.soundEvents?.days ?? []).map((item) => item.cough_count));
+                return <div key={day.date} title={`${day.date}: ${day.cough_count}`} style={{ flex: 1, textAlign: "center" }}>
+                  <span style={{ display: "block", height: `${Math.max(4, (day.cough_count / peak) * 48)}px`, background: "#b5c9b9", borderRadius: 6 }} />
+                  <small>{day.cough_count}</small>
+                </div>;
+              })}
+            </div>
           </section>
 
           <section className="fam-card" style={{ flex: "1 1 480px" }} aria-label="आजचा दिवस">

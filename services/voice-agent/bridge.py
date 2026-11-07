@@ -176,6 +176,24 @@ def video_call_stopped(user_id: int, http: httpx.Client | None = None) -> None:
         log.warning("video call state reset failed (%s)", type(exc).__name__)
 
 
+def report_sound_event(
+    user_id: int, label: str, confidence: float, *, escalate: bool = False, http: httpx.Client | None = None
+) -> bool:
+    """Send labels/score only to reasoning; audio and audio-derived features never leave voice-agent."""
+    client = http or _shared_client()
+    try:
+        path = "/sound-event/escalate" if escalate else "/sound-event"
+        payload = {"user_id": user_id}
+        if not escalate:
+            payload.update({"label": label, "confidence": confidence})
+        response = client.post(f"{REASONING_URL}{path}", json=payload)
+        response.raise_for_status()
+        return True
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("sound event request failed (%s)", type(exc).__name__)
+        return False
+
+
 def should_speak(reply: BridgeReply, stale: bool) -> bool:
     """Speak this reply? An outdated one is dropped: the user has already said something newer, and
     answering the old sentence is how Arjun seemed to reply to the wrong thing (2026-10-24).

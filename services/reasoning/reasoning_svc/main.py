@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -73,6 +73,16 @@ class TurnIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
 
+class SoundEventIn(BaseModel):
+    user_id: int
+    label: Literal["cough", "scream", "crying", "bang"]
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class SoundEventEscalationIn(BaseModel):
+    user_id: int
+
+
 class TurnOut(BaseModel):
     reply: str
     intent: str
@@ -98,6 +108,24 @@ def health() -> dict[str, object]:
         "llm_model": s.model if s.configured else "none",
         "ask_before_acting": config.ASK_BEFORE_ACTING,
     }
+
+
+@app.post("/sound-event")
+def sound_event(body: SoundEventIn) -> dict[str, object]:
+    """Store only a fixed sound label and confidence; the request never contains audio."""
+    try:
+        get_engine().core.sound_event(body.user_id, body.label, body.confidence)
+    except CoreError as exc:
+        raise HTTPException(502, "sound event could not be recorded") from exc
+    return {"recorded": True}
+
+
+@app.post("/sound-event/escalate")
+def sound_event_escalate(body: SoundEventEscalationIn) -> dict[str, object]:
+    try:
+        return get_engine().core.escalate_sound_event(body.user_id)
+    except CoreError as exc:
+        raise HTTPException(502, "sound event escalation failed") from exc
 
 
 class DeliveryClaimIn(BaseModel):

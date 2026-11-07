@@ -339,6 +339,21 @@ the configured v3 model was not accepted. Sugar reading values are omitted becau
 Telegram `/summary` command is wired because this project has no bot poller. Real delivery still needs the hand test in
 [HANDOFF.md](HANDOFF.md).
 
+## Optional sound events (experimental)
+`ARJUN_SOUND_EVENTS` defaults to `0`. The voice agent can use a local YAMNet ONNX model on CPU for cough, scream/shout,
+crying, glass/shatter and bang labels. It keeps only the detected label and confidence; audio frames are transient in
+memory. Cough event counts appear in the family dashboard. A scream/bang followed by silence prompts a fixed “are you
+okay?” check-in; no answer within 20 seconds goes through the existing emergency alert route. Crying gets a gentle
+check-in. These labels do not diagnose or establish that a fall occurred.
+
+This checkout has ONNX Runtime 1.31.0 installed, but it has no YAMNet model asset. Detection is therefore inactive here,
+even if the feature flag is enabled; the agent logs a short model-unavailable status and continues normal voice service.
+To enable it, provide a YAMNet ONNX file and adjacent `yamnet_class_map.csv`, then set `ARJUN_SOUND_EVENTS=1` and
+`ARJUN_SOUND_MODEL_PATH` in the local process environment. One available ONNX conversion describes itself as an
+Apache-2.0 conversion of Google's YAMNet; the upstream TensorFlow tutorial documents 521 labels and 16 kHz mono input.
+The model was not downloaded or validated on this phone/device in this change. See [HANDOFF.md](HANDOFF.md) for the
+test steps and current limitation.
+
 ## Open questions (need a human / credentials - not guessed)
 Prisma streaming support for the target language; credit cost per Gnani call; whether noise
 cancellation helps or hurts Prisma; whether LiveKit turn-detection can change mid-session (the

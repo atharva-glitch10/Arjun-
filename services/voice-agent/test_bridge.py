@@ -1,5 +1,7 @@
+import json
+
 import httpx
-from bridge import ask_reasoning, fallback_text, reply_or_fallback
+from bridge import ask_reasoning, fallback_text, reply_or_fallback, report_sound_event
 
 
 def _client(handler):
@@ -43,3 +45,12 @@ def test_fallback_on_malformed_json():
 def test_unknown_language_falls_back_to_marathi():
     assert fallback_text("en-IN,hi-IN") == fallback_text("en")
     assert fallback_text("ta-IN") == fallback_text("mr")
+
+
+def test_sound_event_forwards_label_and_score_only():
+    def ok(request):
+        assert request.url.path == "/sound-event"
+        assert json.loads(request.read()) == {"user_id": 1, "label": "cough", "confidence": 0.8}
+        return httpx.Response(200, json={"recorded": True})
+
+    assert report_sound_event(1, "cough", 0.8, http=_client(ok))

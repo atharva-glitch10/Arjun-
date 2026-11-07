@@ -181,7 +181,7 @@ $services = [ordered]@{
                        "CORE_RATE_LIMIT", "CORE_RATE_PER_S", "CORE_RATE_BURST", "UNDO_TTL_S", "FEED_RECHECK_S", "YOUTUBE_API_KEY",
                        "YOUTUBE_MAX_SEARCHES_PER_DAY", "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
                        "BASE_URL", "JOIN_SECRET", "ARJUN_CHECKINS_ENABLED", "ARJUN_CHECKIN_MAX_PER_DAY", "ARJUN_CHECKIN_MIN_GAP_MIN", "ARJUN_CHECKIN_DEMO",
-                       "BRIEFING_TIME", "BRIEFING_VOICE_URL" }
+                       "BRIEFING_TIME", "BRIEFING_VOICE_URL", "ARJUN_SOUND_EVENTS" }
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
                        "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
@@ -194,7 +194,7 @@ $services = [ordered]@{
                               "OPENER_USER_IDS" }
     "voice-agent" = @{ Dir = "services\voice-agent"; Cmd = "& '$py' agent.py dev"
                        Vars = "CORE_API_KEY", "REASONING_URL", "REASONING_TIMEOUT_S", "ARJUN_USER_ID", "ARJUN_TZ", "ARJUN_VOICE_PROVIDER",
-                       "ARJUN_SARVAM_SPEAKER", "SARVAM_API_KEY" }
+                       "ARJUN_SARVAM_SPEAKER", "ARJUN_SOUND_EVENTS", "ARJUN_SOUND_MODEL_PATH", "SARVAM_API_KEY" }
     "web"         = @{ Dir = "web"; Cmd = "npm run dev"; Vars = "CORE_API_KEY", "CORE_API_URL", "ARJUN_ACCESS_CODE" }  # the Vite proxy injects the key; the browser never talks to reasoning
 }
 

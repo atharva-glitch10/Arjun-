@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import joins, telegram
@@ -52,6 +52,49 @@ router = APIRouter(dependencies=[Depends(require_key)])
 def voice_metrics(hours: int = Query(default=24, ge=1, le=168)) -> dict[str, object]:
     """Return timing percentiles and counts only; never expose the source turnlog's text fields."""
     return load_voice_metrics(hours)
+
+
+@router.post("/users/{user_id}/sound-events", status_code=201)
+def record_sound_event(
+    user_id: int, body: s.SoundEventIn, db: Session = Depends(get_db), now: datetime = Depends(get_now)
+) -> dict[str, object]:
+    _user(db, user_id)
+    row = m.SoundEvent(user_id=user_id, label=body.label, confidence=body.confidence, created_at=now)
+    db.add(row)
+    db.commit()
+    return {"recorded": True, "label": row.label, "confidence": row.confidence}
+
+
+@router.get("/users/{user_id}/sound-events")
+def sound_event_trend(
+    user_id: int, days: int = Query(default=7, ge=1, le=30), db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> dict[str, object]:
+    _user(db, user_id)
+    start_day = now.date() - timedelta(days=days - 1)
+    rows = db.execute(
+        select(func.date(m.SoundEvent.created_at), func.count(m.SoundEvent.id))
+        .where(
+            m.SoundEvent.user_id == user_id,
+            m.SoundEvent.label == "cough",
+            m.SoundEvent.created_at >= datetime.combine(start_day, time.min),
+        )
+        .group_by(func.date(m.SoundEvent.created_at))
+    ).all()
+    counts = {str(day): int(count) for day, count in rows}
+    trend = [
+        {"date": (start_day + timedelta(days=offset)).isoformat(), "cough_count": counts.get((start_day + timedelta(days=offset)).isoformat(), 0)}
+        for offset in range(days)
+    ]
+    sound_on = os.environ.get("ARJUN_SOUND_EVENTS", "0").strip().lower() in {"1", "true", "yes", "on"}
+    return {"enabled": sound_on, "days": trend, "total_coughs": sum(item["cough_count"] for item in trend)}
+
+
+@router.post("/users/{user_id}/sound-events/escalate")
+def escalate_sound_event(user_id: int, db: Session = Depends(get_db)) -> dict[str, object]:
+    """No-answer escalation after the fixed sound-event check-in; use the existing emergency alert path."""
+    result = record_distress(user_id, kind="emergency", db=db, now=get_now())
+    return {"alerted": result.caregiver_alerted}
 
 
 @app.get("/health")

@@ -18,6 +18,7 @@ services:
       DATABASE_URL: postgresql+psycopg://arjun:arjun@postgres:5432/arjun
       CORE_API_KEY: ${CORE_API_KEY:-dev-change-me}
       ARJUN_VOICE_TURNLOG_PATH: /app/eval/results/turns.jsonl
+      ARJUN_SOUND_EVENTS: ${ARJUN_SOUND_EVENTS:-0}
     volumes:
       - ./eval/results:/app/eval/results:ro
     depends_on:
