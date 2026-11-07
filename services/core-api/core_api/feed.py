@@ -26,8 +26,9 @@ from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from . import models as m
+from .auth import authorize_websocket
 from .db import get_db
-from .deps import require_key, testing
+from .deps import auth_enabled, require_key, testing
 
 router = APIRouter(dependencies=[Depends(require_key)])
 ws_router = APIRouter()  # WebSockets authenticate themselves (browsers cannot always set headers on a WS)
@@ -181,7 +182,8 @@ def _ws_key_ok(ws: WebSocket) -> bool:
 @ws_router.websocket("/ws/users/{user_id}/feed")
 async def feed_socket(ws: WebSocket, user_id: int, after: int = 0, db: Session = Depends(get_db)) -> None:
     """Push: sends {"type":"event", ...} for every new row, {"type":"ping"} when idle. Resume with ?after=<id>."""
-    if not _ws_key_ok(ws):
+    allowed = authorize_websocket(ws, user_id, db) if auth_enabled() else _ws_key_ok(ws)
+    if not allowed:
         await ws.close(code=4401)
         return
     await ws.accept()

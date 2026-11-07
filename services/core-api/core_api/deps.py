@@ -2,29 +2,13 @@
 
 import hmac
 import os
-from datetime import datetime, timedelta, timezone, tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import datetime
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request, Response
+from sqlalchemy.orm import Session
 
-_IST = timezone(timedelta(hours=5, minutes=30), "IST")
-
-
-def _zone() -> tzinfo | None:
-    name = os.environ.get("ARJUN_TZ", "Asia/Kolkata")
-    try:
-        return ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        return _IST if name == "Asia/Kolkata" else None  # tzdata missing: IST has no DST
-
-
-def local_now() -> datetime:
-    """Wall-clock time in the household's timezone (default Asia/Kolkata), naive.
-
-    Containers run in UTC, so a bare `datetime.now()` would put every reminder 5h30 off.
-    """
-    zone = _zone()
-    return datetime.now(zone).replace(tzinfo=None) if zone else datetime.now()
+from .clock import local_now
+from .db import get_db
 
 
 def get_now() -> datetime:
@@ -46,12 +30,28 @@ def check_api_key_configured() -> None:
         )
 
 
-def require_key(x_api_key: str | None = Header(default=None)) -> None:
+def require_key(
+    request: Request,
+    response: Response,
+    x_api_key: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> None:
     expected = os.environ.get("CORE_API_KEY")
-    if not expected:
-        if testing():
+    key_ok = bool(expected) and hmac.compare_digest((x_api_key or "").encode(), (expected or "").encode())
+    if key_ok:
+        return
+    if not auth_enabled():
+        if not expected and testing():
             return
-        raise HTTPException(503, "CORE_API_KEY not configured")
-    # constant-time comparison so the key can't be guessed byte by byte from response timing
-    if not hmac.compare_digest((x_api_key or "").encode(), expected.encode()):
+        if not expected:
+            raise HTTPException(503, "CORE_API_KEY not configured")
         raise HTTPException(401, "invalid api key")
+    if testing() and os.environ.get("ARJUN_AUTH") != "1":
+        return
+    from .auth import authorize_core_request
+
+    authorize_core_request(request, response, db)
+
+
+def auth_enabled() -> bool:
+    return os.environ.get("ARJUN_AUTH", "0").strip() == "1"

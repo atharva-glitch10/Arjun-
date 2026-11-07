@@ -11,16 +11,16 @@ import secrets
 import threading
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from livekit.api import AccessToken, RoomAgentDispatch, RoomConfiguration, VideoGrants
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import models as m
+from .auth import require_livekit_access
 from .db import get_db
-from .deps import require_key
 
-router = APIRouter(dependencies=[Depends(require_key)])
+router = APIRouter()
 
 TOKEN_TTL_S = 600  # only needed to join; LiveKit renews the connection itself afterwards
 
@@ -58,7 +58,13 @@ class TokenOut(BaseModel):
 
 
 @router.post("/livekit/token", response_model=TokenOut)
-def livekit_token(body: TokenIn, db: Session = Depends(get_db)) -> TokenOut:
+def livekit_token(
+    body: TokenIn,
+    request: Request,
+    x_api_key: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> TokenOut:
+    require_livekit_access(body.user_id, request, x_api_key, db)
     url = os.environ.get("LIVEKIT_URL")
     key = os.environ.get("LIVEKIT_API_KEY")
     secret = os.environ.get("LIVEKIT_API_SECRET")

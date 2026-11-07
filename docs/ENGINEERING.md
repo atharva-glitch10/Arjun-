@@ -1,5 +1,50 @@
 # Arjun: engineering notes (2026-10-31)
 
+## Phase 1 accounts and per-user authorization (2026-11-07)
+
+Account authorization is opt-in with `ARJUN_AUTH=1`; the default `0` preserves the current API-key deployment.
+Passwords are Argon2id hashes. Browser sessions and elder-device credentials are random 256-bit opaque values; SQL
+stores the session token itself for revocation and only a SHA-256 digest of device, invite, and pairing credentials.
+Session cookies are HttpOnly, SameSite=Lax and Secure on HTTPS. Sessions slide by 12 hours up to a 30-day maximum.
+Login errors are generic and rate-limited per hashed remote-address/email key. Pairing is one-time and expires after
+15 minutes. Invites are one-time and expire after seven days.
+
+The core-api request dependency preserves `X-API-Key` for service calls. Otherwise it checks family session plus
+membership for family routes, a user-bound device cookie for elder routes, and membership for each requested elder.
+The same membership check protects the feed WebSocket; API keys in WS query strings are rejected. Signed family call
+join endpoints retain their existing token validation. The existing web tunnel role gate remains in place; the new
+account UI and browser proxy integration are Phase 2. Do not enable account mode on the current browser UI until that
+integration is deployed.
+
+```mermaid
+sequenceDiagram
+  participant F as Family browser
+  participant API as Core API
+  participant DB as SQL
+  participant E as Elder device
+  F->>API: signup/login (email + password)
+  API->>DB: verify Argon2id / create opaque session
+  API-->>F: HttpOnly session cookie
+  F->>API: family request for elder N
+  API->>DB: session + membership(account, N)
+  API-->>F: scoped response or 403
+  F->>API: create one-time pairing code for N
+  E->>API: redeem code
+  API->>DB: consume code; store device-token digest bound to N
+  API-->>E: HttpOnly device cookie
+  E->>API: elder request for N
+  API->>DB: validate device digest and bound user N
+  API-->>E: scoped response or 403
+```
+
+### Concurrency and scale boundary
+
+Phase 1 provides authorization, not horizontal scaling. SQL holds account, membership, session and device records, but
+reasoning turn context and the LiveKit active-room mapping remain process-local. Multiple reasoning workers can lose
+or diverge turn context; multiple core-api workers can resolve different active rooms. Before adding replicas, move
+those keyed states to a shared store and define atomic ownership/expiry semantics. Phase 1 tests authorization against
+multiple synthetic accounts; they do not claim multi-worker call or dialogue correctness.
+
 ## Prisma integration audit (2026-11-07)
 
 The voice-agent requirements pin `livekit-plugins-gnani==1.8.6` to preserve LiveKit Agents compatibility.

@@ -1,5 +1,19 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Accounts and per-user authorization — Phase 1 (2026-11-07)
+- Added opt-in `ARJUN_AUTH=1` core-api account/session/membership/device auth. Default `0` and service `X-API-Key`
+  behavior remain compatible. Argon2id hashes passwords; sessions use HttpOnly cookies; invite and device-pairing
+  credentials are single-use and hashed in SQL. Family accounts are checked against each elder membership, and elder
+  device credentials are bound to one user. WebSocket feed requests receive the same membership check.
+- Added `accounts`, `memberships`, `sessions`, `devices`, `invites`, and `pairing_codes` tables through the existing
+  `create_all` startup mechanism. No `.env` values or database files were changed. Compose accepts the opt-in flag.
+- Auth tests: 4 passed. Full verification: core-api 297, reasoning 987, voice-agent 335, scheduler 7, web 146;
+  TypeScript, production build, Ruff and `eval/run_eval.py` pass. Pytest used workspace-local `--basetemp` because
+  the account's system temp directory denies access. The current web tunnel still uses its service-key role gate;
+  browser login/proxy integration is Phase 2, so leave `ARJUN_AUTH=0` until that integration is available. Shared
+  reasoning and active-call state for multiple workers are Phase 3 and are not implemented.
+
+
 ## Daily Telegram voice briefing (2026-11-07)
 - Added core-api `build_briefing(user_id, date)` using current-day medicine doses, raw BP readings, meal check-ins, and
   consent-gated mood/paraphrased conversation summary. Text stays in memory for the request only; transcripts and briefing

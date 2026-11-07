@@ -263,3 +263,24 @@ mention remains chat. Regression tests cover the exact command and the three Mar
 - Environment check: the workspace has CPU `onnxruntime` 1.31.0, but no YAMNet ONNX model or class map. The production classifier was not run and stays inactive; if `ARJUN_SOUND_EVENTS=1` with no valid model path, voice service logs the model-unavailable reason and continues. A third-party ONNX conversion is described at https://huggingface.co/audiomagic/yamnet-onnx as an Apache-2.0 conversion of Google's YAMNet; model file/phone performance was not verified here. Supply a model and adjacent `yamnet_class_map.csv`, set `ARJUN_SOUND_EVENTS=1` and `ARJUN_SOUND_MODEL_PATH` locally.
 - Automated coverage: sound thresholds, scream/bang then silence, 20-second no-answer escalation/cancel-on-answer, transient audio/no file writes, label-only transport, persistence and daily cough aggregation. Synthetic waveforms and mocked inference do not prove event recall or false-alarm rates on a phone.
 - Phone test after supplying a valid model: set the two variables locally and restart `scripts\dev-up.ps1`; confirm the dashboard says detection is on. Play synthetic cough/shout/glass clips near the elder mic and verify only cough counts trend, scream/bang followed by silence asks the fixed check-in, an answer cancels the 20-second timer, and silence raises the existing emergency banner. Repeat with the flag off and confirm no event rows/check-ins occur. Do not use real calls or recordings for the demo.
+# Accounts and per-user authorization — Phase 1 (2026-11-07)
+
+Implemented opt-in core-api authorization with `ARJUN_AUTH=0` by default. Account passwords use Argon2id; sessions
+are opaque, HttpOnly cookies with 12-hour sliding expiry and a 30-day cap. Family membership scopes each user route,
+one-time invites add a family member, and a 15-minute pairing code binds an opaque elder-device cookie to one user.
+Device/invite/pairing values are stored as hashes. Login and pairing attempts are rate-limited. The existing
+service-to-service API key remains valid, and auth-off test/development behavior stays compatible. Docker Compose
+passes through `ARJUN_AUTH` without changing any `.env` values.
+
+Tests added for account signup/session/logout, normalized email, membership isolation, elder device binding, login
+throttling, raw-story route denial, and auth-off compatibility. Full suites pass: core-api 297, reasoning 987,
+voice-agent 335, scheduler 7, web 146, plus TypeScript/build, Ruff and eval. Pytest used workspace-local `--basetemp`
+because the system temp directory denies access. Do not treat the account flow as ready for the existing web tunnel: its
+proxy injects the service key, and browser login/account management are Phase 2. Keep `ARJUN_AUTH=0` until Phase 2
+provides the authenticated browser integration. Phase 3 shared reasoning/call state and multi-worker safety remain
+unimplemented. No database files were touched; `create_all` creates new tables on service startup.
+
+Phone/API smoke steps after Phase 2 integration: enable `ARJUN_AUTH=1` in the local process environment, restart
+core-api, create a synthetic family account, add a synthetic elder, issue a pairing code, redeem it on the elder
+device, and confirm that device can fetch only its paired elder's day. Sign in as a second family account and confirm
+requests for the first account's elder return 403. Invite the second account to verify a single-use family membership.

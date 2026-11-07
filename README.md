@@ -354,6 +354,23 @@ Apache-2.0 conversion of Google's YAMNet; the upstream TensorFlow tutorial docum
 The model was not downloaded or validated on this phone/device in this change. See [HANDOFF.md](HANDOFF.md) for the
 test steps and current limitation.
 
+## Accounts, multiple elders, and scaling
+
+Phase 1 adds opt-in core-api account authorization. `ARJUN_AUTH=0` (the default) preserves the current API-key
+deployment. With `ARJUN_AUTH=1`, family accounts use Argon2id password hashes and opaque, HttpOnly session cookies;
+memberships scope family access to linked elders. One-time, expiring invite links add family members. A family member
+can issue a one-time pairing code for an elder device; the device cookie is bound to that elder and stored as a hash.
+Family data remains operational summaries and feed events, never conversation transcripts.
+
+This is a backend/API phase. Browser login and account-management screens are Phase 2 and are not included, so turning
+`ARJUN_AUTH=1` on for the current web UI requires an authenticated client/proxy integration. The existing
+service-to-service `X-API-Key` path remains supported. Core-api enforces sessions and memberships for direct requests
+and WebSocket feed access. Do not expose a development API key to a browser.
+
+Phase 1 does not make reasoning horizontally scalable: per-user turn state and LiveKit's current-room lookup remain
+process-local. Multi-worker deployment needs shared state and concurrency controls in Phase 3. See
+[docs/ENGINEERING.md](docs/ENGINEERING.md) for the authorization flow and concurrency boundary.
+
 ## Open questions (need a human / credentials - not guessed)
 Prisma streaming support for the target language; credit cost per Gnani call; whether noise
 cancellation helps or hurts Prisma; whether LiveKit turn-detection can change mid-session (the

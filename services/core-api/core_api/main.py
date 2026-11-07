@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,13 +12,14 @@ from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
 from .applinks import router as applinks_router
+from .auth import router as auth_router
 from .briefings import router as briefings_router
 from .checkins import router as checkins_router
 from .day import router as day_router
 from .db import Base, engine, ensure_columns, get_db
 from .deliveries import ack_item, enqueue
 from .deliveries import router as deliveries_router
-from .deps import check_api_key_configured, get_now, require_key
+from .deps import auth_enabled, check_api_key_configured, get_now, require_key
 from .facts import router as facts_router
 from .family_call import router as family_router
 from .feed import router as feed_router
@@ -111,13 +112,16 @@ def _user(db: Session, user_id: int) -> m.User:
 
 # ---- users & contacts -------------------------------------------------------------------------
 @router.post("/users", response_model=s.UserOut, status_code=201)
-def create_user(body: s.UserIn, db: Session = Depends(get_db)) -> m.User:
+def create_user(body: s.UserIn, request: Request, db: Session = Depends(get_db)) -> m.User:
     values = body.model_dump()
     if not values.get("address_as"):
         name = str(values.get("name", "")).split()[0].split("(", 1)[0].strip()
         values["address_as"] = "आजी" if values.get("age") is not None and values["age"] >= 60 else f"{name}बाई"
     user = m.User(**values)
     db.add(user)
+    if auth_enabled() and getattr(request.state, "account_id", None) is not None:
+        db.flush()
+        db.add(m.Membership(account_id=request.state.account_id, user_id=user.id, role="owner"))
     db.commit()
     return user
 
@@ -825,3 +829,4 @@ app.include_router(video_calls_router)
 app.include_router(briefings_router)
 app.include_router(feed_router)
 app.include_router(feed_ws_router)
+app.include_router(auth_router)
