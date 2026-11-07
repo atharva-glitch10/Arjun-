@@ -14,6 +14,8 @@ import re
 STT_FORMATS = frozenset({"verbatim", "transcribe"})
 STT_SAMPLE_RATES = frozenset({8000, 16000, 44100, 48000})
 STT_LANGUAGES = frozenset({"mr-IN", "hi-IN", "en-IN", "auto"})
+TTS_LANGUAGE_MAP = {"mr": "mr-IN", "hi": "hi-IN", "en": "en-IN", "bn": "bn-IN", "gu": "gu-IN",
+                   "kn": "kn-IN", "ml": "ml-IN", "pa": "pa-IN", "ta": "ta-IN", "te": "te-IN", "or": "or-IN"}
 
 TAG_MODELS = frozenset({"timbre-v3.0"})
 _TAG = re.compile(r"<\s*[a-z][a-z ]{1,20}\s*>", re.IGNORECASE)
@@ -75,3 +77,20 @@ def tts_choice() -> dict[str, str]:
         "fallback_model": os.environ.get("GNANI_TTS_FALLBACK_MODEL", "timbre-v2.5"),
         "fallback_voice": os.environ.get("GNANI_TTS_FALLBACK_VOICE", "Omkar"),
     }
+
+
+def tts_language_for(detected: str | None, fallback: str) -> str:
+    """Map a supported Prisma locale to a Timbre locale; unsupported or absent values use configured default."""
+    normalized = (detected or "").replace("_", "-").lower()
+    if normalized == "hi-en":
+        return "hi-en"
+    prefix = normalized.split("-", 1)[0]
+    return TTS_LANGUAGE_MAP.get(prefix, fallback)
+
+
+def tts_voice_for(detected: str | None, language: str, configured: str) -> str:
+    """Choose from documented Timbre v3 catalogue where known; preserve configured v2.5 language voice otherwise."""
+    prefix = (detected or "").replace("_", "-").split("-", 1)[0].lower()
+    if prefix in {"en", "hi"} or language == "hi-en":
+        return "Esha" if os.environ.get("GNANI_TTS_MULTILINGUAL_VOICE", "0") == "1" else configured
+    return configured

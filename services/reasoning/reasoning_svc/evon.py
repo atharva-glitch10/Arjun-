@@ -52,6 +52,10 @@ _LANG_NAMES = {
     "mr": ("Marathi", "Devanagari"),
     "hi": ("Hindi", "Devanagari"),
     "en": ("English", "Latin"),
+    "bn": ("Bengali", "Bengali"), "gu": ("Gujarati", "Gujarati"),
+    "kn": ("Kannada", "Kannada"), "ml": ("Malayalam", "Malayalam"),
+    "pa": ("Punjabi", "Gurmukhi"), "ta": ("Tamil", "Tamil"),
+    "te": ("Telugu", "Telugu"), "or": ("Odia", "Odia"),
 }
 
 
@@ -124,6 +128,13 @@ def companion_violations(text: str, language: str, user_text: str = "") -> list[
             reasons.remove("medical")
     if language in ("mr", "hi") and not any("\u0900" <= ch <= "\u097f" for ch in text):
         reasons.append("script")  # asked for Devanagari, got Latin
+    elif language in _LANG_NAMES and language not in ("mr", "hi", "en"):
+        ranges = {"bn": ("\u0980", "\u09ff"), "gu": ("\u0a80", "\u0aff"), "pa": ("\u0a00", "\u0a7f"),
+                  "or": ("\u0b00", "\u0b7f"), "ta": ("\u0b80", "\u0bff"), "te": ("\u0c00", "\u0c7f"),
+                  "kn": ("\u0c80", "\u0cff"), "ml": ("\u0d00", "\u0d7f")}
+        low, high = ranges[language]
+        if not any(low <= ch <= high for ch in text):
+            reasons.append("script")
     if len(text) > _MAX_REPLY_CHARS:
         reasons.append("too_long")
     if len(re.split(r"(?<=[.?!।])\s+", text.strip())) > _MAX_SENTENCES:
@@ -265,7 +276,7 @@ _OLD_TO_NEW = {
 def _conversation_rules(language: str) -> str:
     lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
     return (
-        f"You are Arjun, a warm, practical male voice companion for an elderly Marathi speaker. "
+        f"You are Arjun, a warm, practical male voice companion for an elderly speaker. "
         f"Always answer in {lang_name}, written in {script} script, the way a kind younger man in her family "
         f"would speak. Speak as a man: use masculine forms for yourself (सांगतो, विचारतो, करतो, ऐकतो, बघतो; "
         f"never सांगते / विचारते / करते). Address her with respectful तुम्ही / तुमचं, never तू. "
@@ -852,7 +863,8 @@ class EvonClient:
     ) -> dict[str, Any] | None:
         """For the family dashboard: {"summary", "mood", "severity", "topics"}. None on any failure.
 
-        Runs after the conversation ended (never in the voice path). The summary is a short English paraphrase:
+        Runs after the conversation ended (never in the voice path). The summary is a short paraphrase in the
+        requested language:
         no quotes, no medical judgement, nothing invented. The caller keeps a rules floor for severity."""
         if not turns:
             return None
@@ -860,7 +872,7 @@ class EvonClient:
         system = (
             "You write a short note for the family of an elderly person about one conversation she had with "
             "Arjun, an AI voice companion. Output ONLY one JSON object: "
-            '{"summary": string (English, exactly 2-3 brief lines, what she talked about and how she seemed; '
+            '{"summary": string (in ' + json.dumps(_LANG_NAMES.get(language, _LANG_NAMES["en"])[0]) + ', exactly 2-3 brief lines, what she talked about and how she seemed; '
             "paraphrase, no quotation marks, never quote her or provide a transcript; report only what she said, "
             "never diagnose, never guess causes, never "
             'give advice), "mood": one of ' + json.dumps(list(MOODS)) + ', "severity": one of '

@@ -1,7 +1,8 @@
 export interface User {
   id: number;
   name: string;
-  language: "mr" | "hi" | "en";
+  language: "mr" | "hi" | "en" | "bn" | "gu" | "kn" | "ml" | "pa" | "ta" | "te" | "or";
+  preferred_languages: User["language"][];
   /** How Arjun addresses her ("" = the name). */
   honorific: string;
   /** Preferred address form used in companion replies. */

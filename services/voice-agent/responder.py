@@ -25,12 +25,14 @@ class Responder:
         fallback_text: Callable[[], str],
         thinking: Callable[[bool], Awaitable[None]] | None = None,
         speakable: Callable[[BridgeReply], str] | None = None,
+        say_reply: Callable[[BridgeReply], Awaitable[bool | None]] | None = None,
         on_mode: Callable[[str], None] | None = None,
     ) -> None:
         self.turns, self.ask, self.say, self.publish, self.fallback_text = turns, ask, say, publish, fallback_text
         self.thinking = thinking  # the "विचार करतोय…" marker on the elder screen
         # reply -> the exact text for TTS (tagged for Timbre v3, plain otherwise); default: the screen text
         self.speakable = speakable or (lambda r: r.text)
+        self.say_reply = say_reply
         self.on_mode = on_mode  # the mode of each reply (care / companion / ...) sets the next turn's endpointing
 
     async def respond(self, transcript: str, source: str = "voice") -> str:
@@ -63,7 +65,7 @@ class Responder:
             logger.exception("could not publish the screen attributes for turn %s", idx)
         self.turns.speaking_for(idx)
         try:
-            played = await self.say(self.speakable(reply))
+            played = await self.say_reply(reply) if self.say_reply else await self.say(self.speakable(reply))
             if played is False:  # cut off before any audio (she spoke again): the log says so instead of going silent
                 self.turns.not_spoken(idx, "interrupted")
             else:

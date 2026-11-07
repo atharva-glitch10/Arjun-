@@ -47,6 +47,15 @@ def test_bad_user_time_rejected(client):
     assert client.post("/users", json={"name": "A", "wake_time": "7am"}).status_code == 422
 
 
+def test_preferred_languages_round_trip_and_validate(client):
+    created = client.post("/users", json={"name": "A", "preferred_languages": ["ta", "en"]})
+    assert created.status_code == 201
+    uid = created.json()["id"]
+    assert created.json()["preferred_languages"] == ["ta", "en"]
+    assert client.patch(f"/users/{uid}", json={"preferred_languages": ["kn"]}).json()["preferred_languages"] == ["kn"]
+    assert client.patch(f"/users/{uid}", json={"preferred_languages": ["xx"]}).status_code == 422
+
+
 def test_propose_confirm_creates_reminder_only_after_confirmation(client, uid):
     payload = {"task": "bp check", "date": "2026-10-07", "time": "07:30"}
     p = _propose(client, uid, "CREATE_REMINDER", payload)

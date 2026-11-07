@@ -47,6 +47,14 @@ def test_unknown_language_falls_back_to_marathi():
     assert fallback_text("ta-IN") == fallback_text("mr")
 
 
+def test_detected_language_code_is_forwarded_without_transcript_logging():
+    def ok(request):
+        assert json.loads(request.read()) == {"user_id": 1, "text": "hello", "language_code": "ta-IN"}
+        return httpx.Response(200, json={"reply": "வணக்கம்", "mode": "care", "awaiting_confirmation": False})
+
+    assert ask_reasoning(1, "hello", _client(ok), "ta-IN").text == "வணக்கம்"
+
+
 def test_sound_event_forwards_label_and_score_only():
     def ok(request):
         assert request.url.path == "/sound-event"

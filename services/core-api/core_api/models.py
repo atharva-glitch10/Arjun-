@@ -40,6 +40,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     language: Mapped[str] = mapped_column(String(2), default="mr")
+    preferred_languages: Mapped[list[str]] = mapped_column(JSON, default=list)
     wake_time: Mapped[str] = mapped_column(String(5), default="07:00")
     lunch_time: Mapped[str] = mapped_column(String(5), default="13:00")
     dinner_time: Mapped[str] = mapped_column(String(5), default="20:00")

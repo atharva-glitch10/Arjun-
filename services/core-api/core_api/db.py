@@ -33,6 +33,7 @@ def get_db() -> Iterator[Session]:
 # to a table that already exists, so a column added after a database was created is added here, once, at startup.
 # (table, column, SQL type, default). Every entry is nullable or has a default, so old rows stay valid.
 ADDED_COLUMNS: list[tuple[str, str, str, str | None]] = [
+    ("users", "preferred_languages", "JSON", "'[]'"),
     ("users", "breakfast_time", "VARCHAR(5)", "'08:00'"),
     ("users", "snack_time", "VARCHAR(5)", "'17:00'"),
     ("users", "walk_time", "VARCHAR(5)", None),

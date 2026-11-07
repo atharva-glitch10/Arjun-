@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-Lang = Literal["mr", "hi", "en"]
+Lang = Literal["mr", "hi", "en", "bn", "gu", "kn", "ml", "pa", "ta", "te", "or"]
 
 
 class SpeechStyle(BaseModel):
@@ -25,6 +25,7 @@ def _check_hhmm(v: str | None) -> str | None:
 class UserIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     language: Lang = "mr"
+    preferred_languages: list[Lang] = Field(default_factory=list, max_length=10)
     wake_time: str = "07:00"
     lunch_time: str = "13:00"
     dinner_time: str = "20:00"
@@ -54,6 +55,7 @@ class UserIn(BaseModel):
 
 class UserPatch(BaseModel):
     language: Lang | None = None
+    preferred_languages: list[Lang] | None = Field(default=None, max_length=10)
     wake_time: str | None = None
     lunch_time: str | None = None
     dinner_time: str | None = None

@@ -56,6 +56,11 @@ def test_emergency_reply_never_diagnoses(engine, uid):
         assert bad not in reply
 
 
+def test_detected_english_emergency_keeps_english_safety_wording(engine, uid):
+    result = engine.handle(uid, "chest pain", "en-IN")
+    assert result.language == "en" and "Call 112" in result.reply
+
+
 def _down_engine():
     def down(request):
         raise httpx.ConnectError("core-api down", request=request)

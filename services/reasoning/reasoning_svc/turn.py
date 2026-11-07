@@ -81,6 +81,13 @@ from .parser import (
 from .readings import format_bp, parse_bp
 from .textutil import collapse_repeats, detect_language, has_any, normalize, tokens
 
+
+def _detected_reply_language(language_code: str | None) -> str | None:
+    if not language_code:
+        return None
+    prefix = language_code.replace("_", "-").split("-", 1)[0].lower()
+    return prefix if prefix in {"mr", "hi", "en", "bn", "gu", "kn", "ml", "pa", "ta", "te", "or"} else None
+
 log = logging.getLogger("reasoning.turn")
 
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
@@ -281,13 +288,13 @@ class TurnEngine:
         self._media_ask.pop(user_id, None)
         self._media_choice.pop(user_id, None)
 
-    def handle(self, user_id: int, text: str) -> TurnResult:
+    def handle(self, user_id: int, text: str, language_code: str | None = None) -> TurnResult:
         """One turn. Whatever path answers (safety, rules, a tool, the LLM), the exchange is recorded ONCE in the session
         memory afterwards, so no spoken line is ever missing from the history the LLM sees."""
         depth = getattr(self._local, "depth", 0)
         self._local.depth = depth + 1
         try:
-            res = self._handle(user_id, text)
+            res = self._handle(user_id, text, language_code)
         finally:
             self._local.depth = depth
         if depth == 0:
@@ -300,7 +307,7 @@ class TurnEngine:
                 self._last_reply_simplifiable[user_id] = res.intent == "CHAT" and res.mode == "companion"
         return res
 
-    def _handle(self, user_id: int, text: str) -> TurnResult:
+    def _handle(self, user_id: int, text: str, language_code: str | None = None) -> TurnResult:
         t0 = time.perf_counter()
         self._llm_deadline = self._mono() + self._llm_timeout_s
         self._last_turn[user_id] = self._mono()
@@ -322,7 +329,7 @@ class TurnEngine:
                 default_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
                 default_lang = "mr"
-            lang = detect_language(text, default_lang)
+            lang = _detected_reply_language(language_code) or detect_language(text, default_lang)
             if emergency:
                 return self._safety(user_id, lang, trace, t0, kind="emergency")
             return self._distress(user_id, lang, trace, t0)
@@ -335,7 +342,7 @@ class TurnEngine:
             lang = detect_language(text, "mr")
             r = rp.R[rp.lang_or_default(lang)]
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
-        lang = detect_language(text, user["language"])
+        lang = _detected_reply_language(language_code) or detect_language(text, user["language"])
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
         style = user.get("speech_style") or {"rate": "normal", "volume": "normal", "simple": False}
@@ -1676,7 +1683,7 @@ class TurnEngine:
         user = self.core.user(user_id)
         if not self.core.opener_allowed(user_id) or not user["interests"]:
             return None
-        lang = rp.lang_or_default(user["language"])
+        lang = rp.lang_or_default((user.get("preferred_languages") or [user["language"]])[0])
         now = self.clock()
         followup = self._yesterday_followup(user_id, now, refresh=True)
         if followup and self.evon is not None and hasattr(self.evon, "companion_reply"):
@@ -2471,18 +2478,30 @@ class TurnEngine:
             alerted = bool((self.core.distress(uid, kind) or {}).get("caregiver_alerted"))
         except (CoreError, httpx.HTTPError) as exc:
             log.error("%s: could not record event / alert caregiver: %s", kind, exc)
-        family_obj = self._family_obj(uid, "mr")
-        ask_call = "मुलाला फोन करायचा असेल तर 'मुलाला फोन लाव' म्हणा."
+        lang = lang if lang in {"mr", "hi", "en"} else "en"
+        family_obj = self._family_obj(uid, lang)
+        ask_call = {
+            "mr": "मुलाला फोन करायचा असेल तर 'मुलाला फोन लाव' म्हणा.",
+            "hi": "परिवार को फोन करना हो तो 'परिवार को फोन लगाओ' कहें।",
+            "en": "If you need family, say 'call my family'.",
+        }[lang]
         if kind == "emergency":
-            reply = (
-                f"मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा."
-                if alerted
-                else f"112 वर फोन करा. {ask_call}"
-            )
-        elif alerted:
+            if lang == "mr":
+                reply = f"मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा." if alerted else f"112 वर फोन करा. {ask_call}"
+            elif lang == "hi":
+                reply = f"मैंने {family_obj} को तुरंत बता दिया है। 112 पर कॉल करें।" if alerted else f"112 पर कॉल करें। {ask_call}"
+            else:
+                reply = f"I alerted {family_obj}. Call 112 now." if alerted else f"Call 112 now. {ask_call}"
+        elif alerted and lang == "mr":
             reply = f"कुठे त्रास होतोय, सांगा. मी {family_obj} कळवलं आहे."
+        elif alerted and lang == "hi":
+            reply = f"कहाँ परेशानी हो रही है, बताइए। मैंने {family_obj} को बता दिया है।"
+        elif alerted:
+            reply = f"Tell me what is troubling you. I alerted {family_obj}."
         else:
-            reply = f"कुठे त्रास होतोय, सांगा. {ask_call}"
+            reply = f"कुठे त्रास होतोय, सांगा. {ask_call}" if lang == "mr" else (
+                f"कहाँ परेशानी हो रही है, बताइए। {ask_call}" if lang == "hi" else f"Tell me what is troubling you. {ask_call}"
+            )
         intent = "EMERGENCY" if kind == "emergency" else "DISTRESS"
         return TurnResult(reply, intent, "safety", lang, trace=self._t(trace, t0), screen="safety")
 

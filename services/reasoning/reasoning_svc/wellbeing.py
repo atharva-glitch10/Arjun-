@@ -77,6 +77,7 @@ class Conversation:
     turns: list[tuple[str, str]] = field(default_factory=list)  # (role, text); memory only
     intents: list[str] = field(default_factory=list)
     watched: list[str] = field(default_factory=list)  # titles of videos she asked for (no transcript)
+    family_language: str = "mr"
 
 
 def _max(*levels: str) -> str:
@@ -96,7 +97,7 @@ class Tracker:
         self._convs: dict[int, Conversation] = {}
         self._lock = threading.Lock()
 
-    def record(self, uid: int, said: str, reply: str, intent: str, detail: str = "") -> None:
+    def record(self, uid: int, said: str, reply: str, intent: str, detail: str = "", family_language: str = "mr") -> None:
         """One finished turn. Never raises (it runs after the reply was sent)."""
         now = self.clock()
         finished: Conversation | None = None
@@ -107,6 +108,7 @@ class Tracker:
                 conv = None
             if conv is None:
                 conv = self._convs[uid] = Conversation(started=now, last=now)
+            conv.family_language = family_language or conv.family_language
             conv.last = now
             conv.turns += [("user", said), ("assistant", reply)]
             conv.turns = conv.turns[-40:]
@@ -169,7 +171,8 @@ class Tracker:
     def _send(self, uid: int, conv: Conversation) -> None:
         try:
             user = self.core.user(uid)
-            row = self.entry(conv, bool(user.get("consent_distress_alert")), user.get("language", "mr"))
+            family_language = (user.get("preferred_languages") or [user.get("language", "mr")])[0]
+            row = self.entry(conv, bool(user.get("consent_distress_alert")), family_language)
             self.core.wellbeing(uid, row)
         except (CoreError, httpx.HTTPError, KeyError) as exc:
             log.warning("could not send conversation summary for user %s: %s", uid, exc)

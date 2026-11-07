@@ -49,11 +49,16 @@ class BridgeReply:
     speech_style: dict | None = None  # type: ignore[type-arg]
 
 
-def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = None) -> BridgeReply:
+def ask_reasoning(
+    user_id: int, transcript: str, http: httpx.Client | None = None, language: str | None = None,
+) -> BridgeReply:
     """Call reasoning /turn. Raises on HTTP or network errors (see reply_or_fallback)."""
     client = http or _shared_client()
     t0 = time.perf_counter()
-    r = client.post(f"{REASONING_URL}/turn", json={"user_id": user_id, "text": transcript})
+    payload = {"user_id": user_id, "text": transcript}
+    if language:
+        payload["language_code"] = language
+    r = client.post(f"{REASONING_URL}/turn", json=payload)
     r.raise_for_status()
     data = r.json()
     return BridgeReply(
@@ -80,7 +85,7 @@ def reply_or_fallback(
     """Like ask_reasoning, but any failure becomes a spoken fallback (mode="fallback")."""
     t0 = time.perf_counter()
     try:
-        return ask_reasoning(user_id, transcript, http)
+        return ask_reasoning(user_id, transcript, http, language)
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         log.error("reasoning call failed (%s): %s", type(exc).__name__, exc)
         return BridgeReply(

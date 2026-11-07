@@ -71,6 +71,7 @@ def get_tracker() -> Tracker:
 class TurnIn(BaseModel):
     user_id: int
     text: str = Field(min_length=1, max_length=2000)
+    language_code: str | None = Field(default=None, max_length=16)
 
 
 class SoundEventIn(BaseModel):
@@ -195,12 +196,12 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
         raise HTTPException(429, "too many turns", headers={"Retry-After": str(max(1, round(wait)))})
     background.add_task(engine.note_activity, body.user_id)
     try:
-        res = engine.handle(body.user_id, body.text)
+        res = engine.handle(body.user_id, body.text, body.language_code)
     except CoreError as exc:
         raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
     # The family's conversation summary: buffered in memory, sent after the conversation ends.
     background.add_task(
-        get_tracker().record, body.user_id, body.text, res.reply, res.intent, res.action.get("title", "")
+        get_tracker().record, body.user_id, body.text, res.reply, res.intent, res.action.get("title", ""),
     )
     if llm_debug_enabled():
         debug_log(

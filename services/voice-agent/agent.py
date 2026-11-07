@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import applog
+import httpx
 import voiceprovider
 from audiowarm import warm_audio_resampler
 from bridge import (
@@ -64,6 +65,7 @@ from media import (
     should_send,
     strip_wake_word,
 )
+from prisma_v3 import PrismaV3STT, user_context_terms
 from responder import Responder
 from safety_words import is_safety_phrase
 from screenstate import publish_closed, publish_delivery, publish_screen, publish_thinking
@@ -81,7 +83,7 @@ from soundevents import (
 from ttsgate import TtsGate
 from turnlog import TurnLog
 from usermeta import user_id_from_metadata
-from voice import slower_text, stt_options, tts_choice, tts_text
+from voice import slower_text, stt_options, tts_choice, tts_language_for, tts_text, tts_voice_for
 
 logger = logging.getLogger("arjun.agent")
 
@@ -125,7 +127,7 @@ USE_STREAMING = os.environ.get("GNANI_USE_STREAMING", "1") == "1"
 # of each worker process is a probe, and on failure the session uses the verified v2.5 + "Omkar" instead.
 TTS = tts_choice()
 TTS_MODEL, TTS_VOICE, TTS_LANGUAGE = TTS["model"], TTS["voice"], TTS["language"]
-STT_OPTIONS = stt_options()  # only constructor options exposed by the pinned 1.8.6 plugin
+STT_OPTIONS = stt_options() if os.environ.get("GNANI_STT_IMPL", "plugin").strip().lower() == "plugin" else {}
 # Explicit dispatch name. An unnamed worker was never sent into Console/Playground rooms (2026-10-21).
 AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
 # Seconds of silence before end of turn: mode-aware since task D (2026-10-31), see endpointing.py. Care 0.8 / 2.5 s,
@@ -133,6 +135,14 @@ AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
 
 
 TTS_GATE = TtsGate()  # Timbre allows ONE active request at a time (429 RATE_LIMITED otherwise); see ttsgate.py
+
+
+def _fetch_user_languages(user_id: int) -> dict:
+    base = os.environ.get("CORE_API_URL", "http://127.0.0.1:8000").rstrip("/")
+    headers = {"X-API-Key": os.environ["CORE_API_KEY"]} if os.environ.get("CORE_API_KEY") else {}
+    response = httpx.get(f"{base}/users/{user_id}", headers=headers, timeout=2.0)
+    response.raise_for_status()
+    return response.json()
 
 
 def _timbre_busy(exc: Exception) -> bool:
@@ -159,8 +169,8 @@ class SseTimbre(gnani.TTS):
         return _GatedSse(tts=self, input_text=text, conn_options=conn_options)
 
 
-def make_tts(model: str, voice: str):  # type: ignore[no-untyped-def]
-    kw = {"model": model, "voice": voice, "language": TTS_LANGUAGE}
+def make_tts(model: str, voice: str, language: str | None = None):  # type: ignore[no-untyped-def]
+    kw = {"model": model, "voice": voice, "language": language or TTS_LANGUAGE}
     if TTS["method"] == "sse":
         return SseTimbre(**kw)
     return gnani.TTS(synthesize_method=TTS["method"], **kw)  # "websocket" / "rest", the old path
@@ -190,7 +200,7 @@ async def working_tts():  # type: ignore[no-untyped-def]
 class Arjun(Agent):
     def __init__(
         self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy, hold: ConjunctionHold,
-        media: MediaState, family: FamilyPresence, user_id: int, event_say, call_active,
+        media: MediaState, family: FamilyPresence, user_id: int, event_say, call_active, transcript_languages,
     ) -> None:
         self.turns = turns
         self.media = media
@@ -202,6 +212,7 @@ class Arjun(Agent):
         self.state = state
         self.policy = policy
         self.call_active = call_active
+        self.transcript_languages = transcript_languages
         # No LLM on the session; instructions are unused but required by the base class.
         super().__init__(instructions="Arjun is an AI voice companion. Replies come from reasoning.")
 
@@ -265,6 +276,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     warm_audio_resampler()  # idempotent, a safety net
     applog.setup_file_log() # the CLI may have reset logging after import; make sure the file handler is on
     await ctx.connect()
+    from_metadata = user_id_from_metadata(ctx.job.metadata, 0)
+    user_id = from_metadata or USER_ID
     use_sarvam = voiceprovider.provider() == "sarvam"  # TESTING switch; the default is the Gnani path below
     if use_sarvam:
         stt_plugin, tts_plugin = voiceprovider.make_sarvam(sarvam)
@@ -272,11 +285,27 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         logger.info(voiceprovider.start_line())  # no Timbre probe
     else:
         tts_plugin, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
-        # The pinned plugin does not expose model selection; it chooses its own endpoint/model.
-        stt_plugin = gnani.STT(use_streaming=USE_STREAMING, **STT_OPTIONS)
+        stt_impl = os.environ.get("GNANI_STT_IMPL", "plugin").strip().lower()
+        if stt_impl not in {"plugin", "v3"}:
+            raise ValueError("GNANI_STT_IMPL must be plugin or v3")
+        if stt_impl == "v3":
+            sample_rate = int(os.environ.get("GNANI_STT_SAMPLE_RATE", "16000"))
+            keyterms, speakers = await asyncio.to_thread(user_context_terms, user_id)
+            try:
+                user = await asyncio.to_thread(_fetch_user_languages, user_id)
+                language_hints = [f"{code}-IN" for code in (user.get("preferred_languages") or [user.get("language", "mr")])]
+            except Exception:
+                language_hints = []
+            stt_plugin = PrismaV3STT(
+                sample_rate=sample_rate, keyterms=keyterms, speaker_names=speakers, language_hints=language_hints,
+            )
+            logger.info("voice provider: gnani (stt prisma-v3.0, tts %s)", active_model)
+        else:
+            stt_plugin = gnani.STT(use_streaming=USE_STREAMING, **STT_OPTIONS)
+            logger.info("voice provider: gnani (stt prisma plugin, tts %s)", active_model)
         logger.info("stt stream recreated: fresh Gnani STT instance for voice session")
-        logger.info("voice provider: gnani (stt prisma, tts %s)", active_model)
-        logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
+        logger.info("TTS %s via %s; STT implementation %s", active_model, TTS["method"],
+                    os.environ.get("GNANI_STT_IMPL", "plugin"))
     endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's
     handling: dict = turn_handling_options()  # type: ignore[assignment]
     detection = turn_detection_from_env()  # "vad" by default; None = LiveKit's cloud detector (see endpointing.py)
@@ -313,12 +342,27 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     )
 
     # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
-    from_metadata = user_id_from_metadata(ctx.job.metadata, 0)
-    user_id = from_metadata or USER_ID
     logger.info("session serves user %s (%s)", user_id, "dispatch metadata" if from_metadata else "ARJUN_USER_ID fallback")
 
     async def ask(text: str):  # type: ignore[no-untyped-def]
-        return await asyncio.to_thread(reply_or_fallback, user_id, text, STT_LANGUAGE)
+        detected = transcript_languages.get("__current__", STT_LANGUAGE)
+        return await asyncio.to_thread(reply_or_fallback, user_id, text, detected)
+
+    async def say_reply(reply) -> bool:  # type: ignore[no-untyped-def]
+        """Synthesize this reply in Prisma's detected language using the verified session model/voice."""
+        detected = transcript_languages.get("__current__", STT_LANGUAGE)
+        language = tts_language_for(detected, TTS_LANGUAGE)
+        voice = TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"]
+        voice = tts_voice_for(detected, language, voice)
+        plugin = make_tts(active_model, voice, language)
+        text = tts_text(reply.text, reply.speech, active_model)
+        if (reply.speech_style or {}).get("rate") == "slow":
+            text = slower_text(text)
+        async with speech_lock:
+            before = state.speaking_count
+            handle = session.say(text, tts=plugin)
+            await handle
+            return not handle.interrupted and handle.exception() is None and state.speaking_count > before
 
     state = SessionState()
     policy = IdlePolicy()
@@ -327,7 +371,11 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     async def say_locked(text: str) -> None:
         async with speech_lock:
-            await session.say(text)
+            detected = transcript_languages.get("__current__", TTS_LANGUAGE)
+            language = tts_language_for(detected, TTS_LANGUAGE)
+            voice = tts_voice_for(detected, language, TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"])
+            plugin = make_tts(active_model, voice, language)
+            await session.say(text, tts=plugin)
 
     sound_check_task: list[asyncio.Task[None] | None] = [None]
     sound_monitor: list[SoundEventMonitor | None] = [None]
@@ -459,6 +507,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         lambda: fallback_text(STT_LANGUAGE),
         thinking=lambda on: publish_thinking(ctx.room.local_participant, on),  # "विचार करतोय…"
         speakable=lambda reply: voiceprovider.sarvam_text(speakable_text(reply)) if use_sarvam else speakable_text(reply),
+        say_reply=None if use_sarvam else say_reply,
         on_mode=apply_mode,
     )
 
@@ -521,11 +570,15 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if ev.old_state == "speaking" and ev.new_state == "listening":
             turns.end_of_speech(ev.created_at)
 
+    transcript_languages: dict[str, str] = {}
+
     @session.on("user_input_transcribed")
     def _on_transcript(ev) -> None:  # type: ignore[no-untyped-def]
         if ev.is_final and ev.transcript.strip():
             if is_system_marker(ev.transcript):
                 return
+            if ev.language:
+                transcript_languages["__current__"] = str(ev.language)
             turns.final_transcript(ev.created_at, ev.transcript, str(ev.language) if ev.language else None)
 
     @session.on("agent_state_changed")
@@ -565,7 +618,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Arjun(turns, responder, state, policy, hold, media, family, user_id, say_locked, call_active),
+        agent=Arjun(turns, responder, state, policy, hold, media, family, user_id, say_locked, call_active,
+                    transcript_languages),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
 

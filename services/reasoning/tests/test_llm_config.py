@@ -32,6 +32,16 @@ def test_evon_names_still_work_as_aliases():
     assert s.provider == "evon" and s.configured
 
 
+def test_evon_can_be_selected_as_primary_when_explicitly_enabled():
+    s = config.llm_settings({"GNANI_REASONING_IMPL": "evon", "EVON_BASE_URL": "http://evon/v1"})
+    assert s.provider == "evon" and s.model == "gnani/gnani-evon-v3.3-30B-A3B"
+
+
+def test_evon_can_be_selected_as_primary_when_explicitly_enabled():
+    s = config.llm_settings({"GNANI_REASONING_IMPL": "evon", "EVON_BASE_URL": "http://evon/v1"})
+    assert s.provider == "evon" and s.model == "gnani/gnani-evon-v3.3-30B-A3B"
+
+
 def test_new_names_win_and_never_borrow_the_evon_model_name():
     # an Evon model name sent to a hosted provider would just 404; a missing LLM_MODEL means "not configured"
     s = config.llm_settings({"LLM_BASE_URL": "https://x.test/v1", "EVON_MODEL": "gnani/evon", "EVON_API_KEY": "old"})

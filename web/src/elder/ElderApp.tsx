@@ -23,6 +23,7 @@ import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHa
 import { useArjunVoice } from "../voice/useArjunVoice";
 import { LinkPrompt, MediaScreen } from "./MediaScreen";
 import { VideoCallScreen } from "./VideoCallScreen";
+import { elderLanguage, elderText } from "./i18n";
 import { useAppActions } from "./useAppActions";
 import {
   dateLine,
@@ -77,6 +78,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [items, setItems] = useState<UpcomingItem[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [displayLanguage, setDisplayLanguage] = useState("mr");
   const [error, setError] = useState("");
   const [due, setDue] = useState<DueNow>({ current: [], next: null });
   const [medState, setMedState] = useState<"due" | "taken" | "snoozed">("due");
@@ -201,11 +203,13 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const loadHome = useCallback(async () => {
     void syncClock();
     try {
-      const [reminders, appt, people] = await Promise.all([
+      const [reminders, appt, people, user] = await Promise.all([
         api.reminders(userId),
         api.nextAppointment(userId),
         api.contacts(userId),
+        api.getUser(userId),
       ]);
+      setDisplayLanguage(elderLanguage(user.preferred_languages?.[0] || user.language));
       setContacts(people);
       const t = clockNow();
       const upcoming: { at: Date; item: UpcomingItem }[] = [];
@@ -548,7 +552,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <HomeScreen
             evening={evening}
-            greeting={greeting(now, HONORIFIC)}
+            greeting={`${elderText(displayLanguage).greeting}, ${HONORIFIC}`}
             dateLine={evening ? `${weekday(now)} · ${periodOfDay(now.getHours())}` : dateLine(now)}
             clock={timeLabel(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`)}
             items={items}

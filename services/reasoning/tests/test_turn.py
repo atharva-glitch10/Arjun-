@@ -9,6 +9,16 @@ def _reminders(core_http, uid):
     return core_http.get(f"/users/{uid}/reminders").json()
 
 
+def test_prisma_detected_language_reaches_turn_language(engine, uid):
+    result = engine.handle(uid, "hello there", "mr-IN")
+    assert result.language == "mr"
+
+
+def test_prisma_detected_language_allows_ten_language_reply_selection(engine, uid):
+    result = engine.handle(uid, "சரி", "ta-IN")
+    assert result.language == "ta"
+
+
 def test_relative_time_uses_configured_wake_time_then_confirm_then_save(engine, core_http, uid):
     res = engine.handle(uid, "udya sakali doctor la jaycha aahe, remind kar")
     assert res.intent == "CREATE_REMINDER" and res.awaiting_confirmation

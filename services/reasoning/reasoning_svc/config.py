@@ -24,8 +24,8 @@ SARVAM_MODEL = "sarvam-105b"
 class LlmSettings:
     """The one OpenAI-compatible LLM used for open conversation (and messy UNKNOWN phrasing).
 
-    Gnani = Prisma + Timbre. This LLM is a hosted, NON-Gnani provider when LLM_* is set; Evon (self-hosted
-    Gnani) is not used for the demo and is only kept working through the EVON_* alias names.
+    LLM_* and Sarvam settings take precedence; GNANI_REASONING_IMPL=evon makes configured EVON_* primary.
+    Evon must be served by a user-operated OpenAI-compatible endpoint.
     """
 
     base_url: str = ""
@@ -60,7 +60,11 @@ def llm_settings(env: Mapping[str, str] | None = None) -> LlmSettings:
             return default
         return value if value > 0 else default
 
-    if get("LLM_BASE_URL"):
+    if get("GNANI_REASONING_IMPL").lower() == "evon" and get("EVON_BASE_URL"):
+        base, key = get("EVON_BASE_URL"), get("EVON_API_KEY")
+        model = get("EVON_MODEL") or "gnani/gnani-evon-v3.3-30B-A3B"
+        provider = "evon"
+    elif get("LLM_BASE_URL"):
         base, model, key = get("LLM_BASE_URL"), get("LLM_MODEL"), get("LLM_API_KEY")
         provider = get("LLM_PROVIDER_NAME") or "hosted-llm"
     elif get("SARVAM_API_KEY"):

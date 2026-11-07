@@ -5,7 +5,7 @@ import json
 import pytest
 import voiceprovider
 from turnlog import TurnLog
-from voice import stt_options
+from voice import stt_options, tts_language_for, tts_voice_for
 
 
 class FakePlugin:
@@ -107,3 +107,21 @@ def test_invalid_sample_rate_fails_fast(monkeypatch):
     monkeypatch.setenv("GNANI_STT_SAMPLE_RATE", "12345")
     with pytest.raises(ValueError, match="GNANI_STT_SAMPLE_RATE"):
         stt_options()
+
+
+@pytest.mark.parametrize("code,expected", [("ta-IN", "ta-IN"), ("kn-IN", "kn-IN"), ("bn-IN", "bn-IN"),
+                                            ("hi-IN", "hi-IN"), ("hi-en", "hi-en"), ("unknown", "mr-IN")])
+def test_timbre_language_selection_uses_detected_locale(code, expected):
+    assert tts_language_for(code, "mr-IN") == expected
+
+
+def test_timbre_voice_switch_uses_documented_multilingual_voice():
+    import os
+    old = os.environ.get("GNANI_TTS_MULTILINGUAL_VOICE")
+    os.environ["GNANI_TTS_MULTILINGUAL_VOICE"] = "1"
+    assert tts_voice_for("en-IN", "en-IN", "Avinash") == "Esha"
+    if old is None:
+        os.environ.pop("GNANI_TTS_MULTILINGUAL_VOICE", None)
+    else:
+        os.environ["GNANI_TTS_MULTILINGUAL_VOICE"] = old
+    assert tts_voice_for("mr-IN", "mr-IN", "Avinash") == "Avinash"
