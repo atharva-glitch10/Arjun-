@@ -20,7 +20,7 @@ export default defineConfig({
     },
   ],
   server: {
-    allowedHosts: [".trycloudflare.com"],
+    allowedHosts: [".trycloudflare.com", ".ts.net"],
     proxy: {
       "/core": {
         target: coreTarget,

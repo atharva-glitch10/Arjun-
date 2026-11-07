@@ -37,6 +37,8 @@ ADDED_COLUMNS: list[tuple[str, str, str, str | None]] = [
     ("users", "snack_time", "VARCHAR(5)", "'17:00'"),
     ("users", "walk_time", "VARCHAR(5)", None),
     ("users", "bp_check_time", "VARCHAR(5)", None),
+    ("users", "sugar_check_time", "VARCHAR(5)", None),
+    ("users", "sugar_after_time", "VARCHAR(5)", None),
     ("users", "daily_checkins", "BOOLEAN", "FALSE"),
     ("users", "honorific", "VARCHAR(60)", "''"),
     ("users", "address_as", "VARCHAR(60)", "''"),

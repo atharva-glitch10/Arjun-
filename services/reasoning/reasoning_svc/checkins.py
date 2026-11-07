@@ -53,9 +53,11 @@ _TOPIC: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
 
 
 def topic_of(kind: str) -> str:
-    """'appt12' -> 'appt', 'rem3' -> 'appt' (same wording), 'breakfast' -> 'breakfast'."""
+    """'appt12' -> 'appt', 'rem3' -> 'appt' (same wording), 'water3' -> 'water', else the kind itself."""
     if kind.startswith("appt") or kind.startswith("rem"):
         return "appt"
+    if kind.startswith("water"):
+        return "water"
     return kind
 
 

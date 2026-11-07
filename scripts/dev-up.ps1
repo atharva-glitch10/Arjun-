@@ -180,7 +180,7 @@ $services = [ordered]@{
                        Vars = "DATABASE_URL", "CORE_API_KEY", "ARJUN_TZ", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "ARJUN_AGENT_NAME",
                        "CORE_RATE_LIMIT", "CORE_RATE_PER_S", "CORE_RATE_BURST", "UNDO_TTL_S", "FEED_RECHECK_S", "YOUTUBE_API_KEY",
                        "YOUTUBE_MAX_SEARCHES_PER_DAY", "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-                       "BASE_URL", "JOIN_SECRET", "ARJUN_CHECKINS_ENABLED", "ARJUN_CHECKIN_MAX_PER_DAY", "ARJUN_CHECKIN_DEMO" }
+                       "BASE_URL", "JOIN_SECRET", "ARJUN_CHECKINS_ENABLED", "ARJUN_CHECKIN_MAX_PER_DAY", "ARJUN_CHECKIN_MIN_GAP_MIN", "ARJUN_CHECKIN_DEMO" }
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
                        "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_PROVIDER_NAME", "LLM_SEND_TEMPLATE_KWARGS",
@@ -188,8 +188,10 @@ $services = [ordered]@{
                        "SARVAM_API_KEY", "SARVAM_MODEL", "SARVAM_BASE_URL", "LLM_REASONING", "LLM_MAX_CONCURRENT", "LLM_PER_MINUTE",
                        "ARJUN_ASK_BEFORE_ACTING", "UNDO_WINDOW_S", "TURN_RATE_PER_S", "TURN_RATE_BURST", "CONVERSATION_IDLE_S" }
     "scheduler"   = @{ Dir = "services\scheduler"; Cmd = "& '$py' scheduler.py"
-                       # queues due reminders / medicines for the voice session. No OPENER_/BRIEFING_USER_IDS: those are not T8.
-                       Vars = "CORE_API_URL", "CORE_API_KEY", "REASONING_URL", "ARJUN_TZ", "SCHEDULER_INTERVAL_SECONDS" }
+                       # queues due reminders / medicines for the voice session; empty opener/briefing lists fall back
+                       # to every user with daily_checkins=True.
+                       Vars = "CORE_API_URL", "CORE_API_KEY", "REASONING_URL", "ARJUN_TZ", "SCHEDULER_INTERVAL_SECONDS",
+                              "OPENER_USER_IDS", "BRIEFING_USER_IDS" }
     "voice-agent" = @{ Dir = "services\voice-agent"; Cmd = "& '$py' agent.py dev"
                        Vars = "REASONING_URL", "REASONING_TIMEOUT_S", "ARJUN_USER_ID", "ARJUN_TZ", "ARJUN_VOICE_PROVIDER",
                        "ARJUN_SARVAM_SPEAKER", "SARVAM_API_KEY" }

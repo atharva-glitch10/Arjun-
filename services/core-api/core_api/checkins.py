@@ -6,8 +6,9 @@ tick creates today's rows and QUEUES one spoken prompt for each when it comes du
 heard.
 
 Rules (all enforced here, in SQL-backed code, never by the LLM):
-- inside her opener window (opener_start-opener_end), except an appointment / reminder mention; never 22:00-07:00;
-- one question per tick, at least 45 minutes apart, at most ARJUN_CHECKIN_MAX_PER_DAY (8) a day;
+- inside her opener window (opener_start-opener_end), except an appointment / reminder mention; never 22:00-06:30;
+- one question per tick, at least ARJUN_CHECKIN_MIN_GAP_MIN (30) minutes apart; routine care prompts do not count
+  against ARJUN_CHECKIN_MAX_PER_DAY (14);
 - a topic she already told us today (`volunteer`) is never asked;
 - a check-in that waited more than ASK_WINDOW is `missed`: never asked late, never nagged about;
 - busy moments (media, a safety flow, a conversation, a reminder being spoken) postpone it 10 minutes, at most 3 times
@@ -16,6 +17,7 @@ Rules (all enforced here, in SQL-backed code, never by the LLM):
 - her answer (done / skipped) is self-reported and stored as such. No score, no streak, no advice.
 """
 
+import logging
 import os
 from datetime import datetime, time, timedelta
 
@@ -34,16 +36,22 @@ from .medicines import ensure_doses
 from .recurrence import occurrence_on
 
 router = APIRouter(dependencies=[Depends(require_key)])
+log = logging.getLogger("core_api.checkins")
 
 ASK_WINDOW = timedelta(minutes=90)  # after this a check-in is `missed`; it is never asked late
 FOLLOW_UP_AFTER = timedelta(minutes=20)  # exactly one follow-up per check-in
-MIN_GAP = timedelta(minutes=45)  # between two different check-in questions
 POSTPONE_BY = timedelta(minutes=10)
 MAX_POSTPONES = 3
 NO_ANSWER_AFTER = timedelta(seconds=90)  # a heard follow-up with this much silence = no answer
-QUIET_FROM, QUIET_TO = time(22, 0), time(7, 0)  # nothing is asked in the night, not even a medicine or appointment
+QUIET_FROM, QUIET_TO = time(22, 0), time(6, 30)  # nothing is asked in the night, not even a medicine or appointment
 HEARD = ("spoken", "shown_only")  # really reached the elder (or the screen), never just queued
 EXEMPT_PREFIXES = ("appt", "rem")  # an appointment / reminder mention may leave the opener window
+# Routine care prompts are never counted against the daily conversation cap. They still respect the quiet hours,
+# one question per tick, and the minimum gap between questions.
+ROUTINE_PREFIXES = (
+    "sleep", "breakfast", "lunch", "snack", "dinner", "walk", "bp", "sugar", "water", "wellbeing",
+    "reflection", "night",
+)
 
 
 def enabled() -> bool:
@@ -52,9 +60,16 @@ def enabled() -> bool:
 
 def max_per_day() -> int:
     try:
-        return max(0, int(os.environ.get("ARJUN_CHECKIN_MAX_PER_DAY", "8")))
+        return max(0, int(os.environ.get("ARJUN_CHECKIN_MAX_PER_DAY", "14")))
     except ValueError:
-        return 8
+        return 14
+
+
+def min_gap() -> timedelta:
+    try:
+        return timedelta(minutes=max(0, int(os.environ.get("ARJUN_CHECKIN_MIN_GAP_MIN", "30"))))
+    except ValueError:
+        return timedelta(minutes=30)
 
 
 def _user(db: Session, user_id: int) -> m.User:
@@ -66,6 +81,18 @@ def _user(db: Session, user_id: int) -> m.User:
 
 def is_exempt(kind: str) -> bool:
     return kind.startswith(EXEMPT_PREFIXES)
+
+
+def is_routine(kind: str) -> bool:
+    """Meals, medicines-adjacent checks, BP/sugar, water, walk and the day's wellbeing prompts.
+
+    They are part of her care routine, so they do not use up the daily conversation cap.
+    """
+    return kind.startswith(ROUTINE_PREFIXES)
+
+
+def _log_decision(kind: str, decision: str) -> None:
+    log.info("checkin %s %s", kind, decision)
 
 
 def in_quiet_hours(now: datetime) -> bool:
@@ -158,6 +185,12 @@ def _enqueue(db: Session, c: m.Checkin, ask_no: int, now: datetime) -> None:
 
 
 # ---- scheduler hook --------------------------------------------------------------------------
+@router.get("/internal/checkin-users")
+def checkin_users(db: Session = Depends(get_db)) -> list[int]:
+    """The scheduler's fallback when OPENER_USER_IDS / BRIEFING_USER_IDS are empty: everyone with check-ins on."""
+    return list(db.scalars(select(m.User.id).where(m.User.daily_checkins.is_(True)).order_by(m.User.id)))
+
+
 @router.post("/internal/checkins/tick")
 def tick(
     db: Session = Depends(get_db), now: datetime = Depends(get_now)
@@ -179,6 +212,7 @@ def tick(
             )
         )
         firsts = [c.asked_at for c in rows if c.asked_at is not None]
+        nonroutine = [c for c in rows if c.asked_at is not None and not is_routine(c.kind)]
         asked_one = False
         for c in rows:
             if c.status == "pending":
@@ -186,25 +220,31 @@ def tick(
                     continue
                 if now - c.due_at > ASK_WINDOW:  # hours late: record the truth, never ask it now
                     c.status = "missed"
+                    _log_decision(c.kind, "missed")
                     closed.append(_summary(c))
                     continue
                 if asked_one or in_quiet_hours(now) or (not is_exempt(c.kind) and not in_window(user, now)):
                     continue  # waits (and ages out) rather than being asked at a wrong moment
-                if len(firsts) >= max_per_day():
+                if not is_routine(c.kind) and len(nonroutine) >= max_per_day():
                     c.status = "missed"
+                    _log_decision(c.kind, "missed")
                     closed.append(_summary(c))
                     continue
-                if firsts and now - max(firsts) < MIN_GAP:
+                if firsts and now - max(firsts) < min_gap():
                     continue
                 if not _still_relevant(db, c, now):
                     c.status = "missed"
+                    _log_decision(c.kind, "missed")
                     closed.append(_summary(c))
                     continue
                 c.status = "asked"
                 c.asked_at = now
                 _enqueue(db, c, 1, now)
                 firsts.append(now)
+                if not is_routine(c.kind):
+                    nonroutine.append(c)
                 asked_one = True
+                _log_decision(c.kind, "asked")
                 asked.append(_summary(c))
                 continue
             if c.status != "asked":
@@ -212,12 +252,14 @@ def tick(
             # asked: close a stale one, otherwise at most one follow-up
             if now - c.due_at > ASK_WINDOW + FOLLOW_UP_AFTER:
                 c.status = "unanswered" if _heard(db, c.id) else "missed"
+                _log_decision(c.kind, c.status)
                 closed.append(_summary(c))
                 continue
             if c.followups >= 1:
                 last = _latest_delivery(db, c.id)
                 if last is not None and last.spoken_at is not None and now - last.spoken_at >= NO_ANSWER_AFTER:
                     c.status = "unanswered"  # asked twice, heard, silence: marked, never a third time
+                    _log_decision(c.kind, "missed")
                     closed.append(_summary(c))
                 continue
             if (
@@ -238,6 +280,7 @@ def tick(
                     d.status, d.outcome = "superseded", "followup"
                 c.followups = 1
                 _enqueue(db, c, 2, now)
+                _log_decision(c.kind, "asked")
                 followed_up.append(_summary(c))
     db.commit()
     return {"asked": asked, "followed_up": followed_up, "closed": closed}
@@ -310,6 +353,7 @@ def answer_checkin(
 def postpone_checkin(
     user_id: int,
     checkin_id: int,
+    reason: str = "",
     db: Session = Depends(get_db),
     now: datetime = Depends(get_now),
 ) -> s.CheckinOut:
@@ -330,13 +374,16 @@ def postpone_checkin(
         d.status, d.outcome = "superseded", "postponed"
     if c.followups >= 1:
         c.status = "unanswered" if _heard(db, c.id) else "missed"
+        _log_decision(c.kind, c.status)
     elif c.postponed >= MAX_POSTPONES:
         c.status = "missed"
+        _log_decision(c.kind, "missed")
     else:
         c.postponed += 1
         c.status = "pending"
-        c.asked_at = None  # it was not really asked: it counts neither for the daily cap nor the 45-minute gap
+        c.asked_at = None  # it was not really asked: it counts neither for the daily cap nor the minimum gap
         c.due_at = now + POSTPONE_BY
+        _log_decision(c.kind, f"postponed:{reason or 'busy'}")
     db.commit()
     return _out(db, c)
 
@@ -377,6 +424,10 @@ def _card_kind(kind: str) -> str:
         return "appointment"
     if kind.startswith("rem"):
         return "reminder"
+    if kind.startswith("water"):
+        return "water"
+    if kind == "sugar_after":
+        return "sugar"
     return kind
 
 
@@ -385,6 +436,8 @@ def _card_label(c: m.Checkin) -> str:
         return c.ref.split("|", 1)[-1]
     if c.kind == "home":
         return first_name(c.ref.split("|", 1)[0])
+    if c.kind in ("sugar", "sugar_after"):
+        return "fasting" if c.kind == "sugar" else "after_meal"
     return c.ref if c.kind == "interest" else ""
 
 
@@ -432,6 +485,7 @@ def day_card(
 # ---- live demo -------------------------------------------------------------------------------------------------
 class DemoFireIn(BaseModel):
     now: str = Field(pattern=r"^\d{2}:\d{2}$")  # the time of day the demo pretends it is
+    kind: str | None = None  # fire this kind ("bp", "sugar", "medicine" is not a check-in) instead of the next one
 
 
 def demo_enabled() -> bool:
@@ -448,7 +502,7 @@ def demo_fire(
     """For a live demo only (ARJUN_CHECKIN_DEMO=1, otherwise 404): ask the NEXT check-in of today's plan right now.
 
     `now` (HH:MM) is the time of day the demo pretends it is, and it is checked against her window and the quiet
-    hours exactly like a real tick. The daily cap and the 45-minute gap are not applied, so the demo can be repeated.
+    hours exactly like a real tick. The daily cap and the 30-minute gap are not applied, so the demo can be repeated.
     The prompt is queued at the real time, so a voice session speaks it at once. Nothing else is changed."""
     if not demo_enabled():
         raise HTTPException(404, "not found")
@@ -464,17 +518,22 @@ def demo_fire(
             .order_by(m.Checkin.due_at, m.Checkin.id)
         )
     )
-    if in_quiet_hours(sim):
+    if in_quiet_hours(sim) and body.kind is None:
         db.commit()
-        return {"fired": None, "reason": f"{body.now} is inside the quiet hours (22:00-07:00)"}
+        return {"fired": None, "reason": f"{body.now} is inside the quiet hours (22:00-06:30)"}
     for c in rows:
-        if not is_exempt(c.kind) and not in_window(user, sim):
+        if body.kind is not None and c.kind != body.kind:
+            continue
+        if body.kind is None and not is_exempt(c.kind) and not in_window(user, sim):
             continue
         if not _still_relevant(db, c, sim):
             continue
         c.status, c.asked_at, c.due_at = "asked", real_now, real_now
         _enqueue(db, c, 1, real_now)
+        _log_decision(c.kind, "asked")
         db.commit()
         return {"fired": c.kind, "checkin_id": c.id, "ref": c.ref}
     db.commit()
+    if body.kind is not None:
+        return {"fired": None, "reason": f"no pending {body.kind} check-in is left today"}
     return {"fired": None, "reason": f"nothing is left to ask at {body.now} (window {user.opener_start}-{user.opener_end})"}

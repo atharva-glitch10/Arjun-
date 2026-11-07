@@ -2,13 +2,16 @@
 
   kind        due                          asks
   sleep       wake_time + 30 min           how she slept
-  breakfast   wake_time + 1.5 h            breakfast
+  breakfast   breakfast_time + 30 min      breakfast
   lunch       lunch_time + 30 min          lunch (and what she had)
-  walk        walk_time, else 16:00        a short walk
+  snack       snack_time + 30 min          the evening snack
+  dinner      dinner_time + 30 min         dinner
+  walk        walk_time (if set)           a short walk
+  bp          bp_check_time (if set)       the BP check (numbers are read in the readings flow)
+  sugar       sugar_check_time (if set)    the fasting sugar check
+  sugar_after sugar_after_time (if set)    the after-lunch sugar check
   interest    1/4 into the opener window   "do you want to listen to <interest>?" (a listening interest only)
   home        4/5 into the opener window   whether she spoke to one family member today
-  dinner      dinner_time + 30 min         dinner and how the day went
-  bp          bp_check_time (if set)       the older BP prompt (readings stay frozen)
   appt<ID>    1 h before an appointment    "do you remember it?"
   rem<ID>     1 h before a reminder        "do you remember it?"
 
@@ -79,13 +82,19 @@ def build_plan(db: Session, user: m.User, now: datetime) -> list[PlanItem]:
     wake = at(day, user.wake_time)
     items = [
         PlanItem("sleep", wake + timedelta(minutes=30)),
-        PlanItem("breakfast", wake + timedelta(hours=1, minutes=30)),
+        PlanItem("breakfast", at(day, user.breakfast_time) + timedelta(minutes=30)),
         PlanItem("lunch", at(day, user.lunch_time) + timedelta(minutes=30)),
-        PlanItem("walk", at(day, user.walk_time or "16:00")),
+        PlanItem("snack", at(day, user.snack_time) + timedelta(minutes=30)),
         PlanItem("dinner", at(day, user.dinner_time) + timedelta(minutes=30)),
     ]
+    if user.walk_time:
+        items.append(PlanItem("walk", at(day, user.walk_time)))
     if user.bp_check_time:
         items.append(PlanItem("bp", at(day, user.bp_check_time)))
+    if user.sugar_check_time:
+        items.append(PlanItem("sugar", at(day, user.sugar_check_time), "fasting"))
+    if user.sugar_after_time:
+        items.append(PlanItem("sugar_after", at(day, user.sugar_after_time), "after_meal"))
     interest = listening_interest(user, day)
     if interest:
         items.append(PlanItem("interest", _window_point(user, day, 0.25), interest))

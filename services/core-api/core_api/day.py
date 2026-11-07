@@ -124,6 +124,10 @@ def day_view(
         items.append(s.DayItem(kind="walk", at=_at(start, user.walk_time), label="walk", status="scheduled"))
     if user.bp_check_time:
         items.append(s.DayItem(kind="bp", at=_at(start, user.bp_check_time), label="bp", status="scheduled"))
+    if user.sugar_check_time:
+        items.append(s.DayItem(kind="sugar", at=_at(start, user.sugar_check_time), label="sugar_fasting", status="scheduled"))
+    if user.sugar_after_time:
+        items.append(s.DayItem(kind="sugar", at=_at(start, user.sugar_after_time), label="sugar_after", status="scheduled"))
 
     items.sort(key=lambda i: (i.at, i.kind))
     open_now = [

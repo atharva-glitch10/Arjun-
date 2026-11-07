@@ -47,6 +47,15 @@ def today_local() -> str:
 
 
 def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
+    opener_ids = OPENER_USER_IDS
+    briefing_ids = BRIEFING_USER_IDS
+    if not opener_ids or not briefing_ids:
+        try:  # empty env lists mean "every user with daily check-ins on" (owner decision 2026-11-07)
+            ids = [int(x) for x in http.get(f"{CORE}/internal/checkin-users").json()]
+            opener_ids = opener_ids or ids
+            briefing_ids = briefing_ids or ids
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            log.warning("could not read the check-in users (opener/briefing stay empty): %s", exc)
     fired = http.post(f"{CORE}/internal/reminders/fire-due").json()
     for item in fired:
         log.info("reminder due, queued for delivery user=%s task=%s", item["user_id"], item["task"])
@@ -78,14 +87,14 @@ def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
             log.info("conversation summaries sent: %s", flushed.json()["sent"])
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("conversation flush failed (the rest of the tick still runs): %s", exc)
-    for uid in BRIEFING_USER_IDS:
+    for uid in briefing_ids:
         if _briefed_today.get(uid) == today:
             continue
         text = http.get(f"{REASONING}/briefing/{uid}").json().get("text")  # None before wake time
         if text:
             _briefed_today[uid] = today
             log.info("briefing user=%s: %s", uid, text)  # logged only; voice delivery is T8
-    for uid in OPENER_USER_IDS:
+    for uid in opener_ids:
         if _opened_today.get(uid) == today:
             continue
         text = http.post(f"{REASONING}/opener/{uid}").json().get("text")

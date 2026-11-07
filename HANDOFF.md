@@ -1,5 +1,37 @@
 # HANDOFF (2026-11-04, memory + smarter companion on top of LLM-first understanding)
 
+## Daily health check-ins for the demo user (2026-11-07)
+The demo user was silent because `daily_checkins=0` and no profile times were seeded; the engine and scheduler were
+running. `scripts/seed_heerabai.py --apply` now sets user 1 to check-ins ON with opener 07:30-21:00, wake 06:30,
+breakfast 08:30, lunch 13:00, snack 17:00, dinner 20:00, walk 18:00, BP 09:00, fasting sugar 08:00, after-lunch
+sugar 15:00, address "हीराबाई", and four medicine rows (बीपीची गोळी 09:00/21:00, शुगरची गोळी 08:30/20:30). It matches
+medicines by `(name, time)` and switches off medicines outside the plan, so re-running is safe. The stored user name
+cannot be changed through `PATCH /users/{id}`; only `address_as` is set.
+
+Engine changes: quiet hours are 22:00-06:30; `ARJUN_CHECKIN_MAX_PER_DAY=14` applies to conversation prompts while
+meals/snack/walk/BP/sugar are exempt; `ARJUN_CHECKIN_MIN_GAP_MIN=30`; every decision logs once as
+`checkin <kind> asked|postponed:<reason>|missed`; the scheduler falls back to `GET /internal/checkin-users` when
+`OPENER_USER_IDS` / `BRIEFING_USER_IDS` are empty. `walk_time`, `bp_check_time`, `sugar_check_time` and
+`sugar_after_time` are optional and absent from the plan when unset. The dashboard can edit all of them and shows a
+clear ON/OFF check-in toggle.
+
+Phone test after `seed_heerabai.py --apply` and a restart: open the elder page and keep it idle. Expect a spoken
+check-in inside the 07:30-21:00 window at the next due time (e.g. sugar 08:00, breakfast 08:30+30, BP 09:00), one
+question at a time, at least 30 minutes apart, and a plain answer recorded on the family "आजचा दिवस" card. Confirm
+nothing is asked 22:00-06:30 and that a busy/media/safety moment postpones it rather than interrupting. This is
+automated-path coverage; no live phone or Gnani run was performed.
+
+Runtime follow-up: the current core-api profile is ON and seeded as above. `logs/scheduler.log` proves a check-in was
+queued, and the live delivery list shows it still queued; recent voice logs do not show that delivery being spoken,
+so they cannot establish that a live elder session was open at its due time. During a family call the delivery loop
+used to bypass queue lookup, leaving a check-in without its busy/postpone decision. The voice agent now sends a
+separate call-active flag to reasoning: check-ins enter the normal 10-minute postponement policy and other deliveries
+are not claimed for speech until the call ends. Automated regression tests cover both paths; a live phone run is still
+required. `checkin_demo.py --plan-only` was not run because its check-in/card GET endpoints commit generated rows;
+the no-database-write rule takes precedence. Its stale 45-minute/22:00-07:00 descriptions are corrected to 30 minutes
+and 22:00-06:30.
+
+
 ## YouTube playback listening recovery (2026-11-07)
 Diagnosis from the newest media session in `logs/voice-agent.app.log`: the open-media action was followed by turns
 logged `ignored_media:true`; voice-agent wrote `ignored_media (54 characters; the words are not kept)`. At session end,

@@ -103,6 +103,7 @@ class DeliveryClaimIn(BaseModel):
     user_id: int
     session: str
     media_playing: bool = False  # a check-in question is not asked while a video / song plays
+    call_active: bool = False  # family participant is present; keep all delivery speech silent
 
 
 class DeliveryDoneIn(DeliveryClaimIn):
@@ -123,7 +124,7 @@ class DeliveryOut(BaseModel):
 def delivery_next(body: DeliveryClaimIn) -> DeliveryOut | None:
     """Claim + render the next waiting reminder / medicine prompt for this voice session, or null."""
     try:
-        item = get_engine().deliver_next(body.user_id, body.session, body.media_playing)
+        item = get_engine().deliver_next(body.user_id, body.session, body.media_playing, body.call_active)
     except CoreError as exc:
         raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
     return DeliveryOut(**item) if item else None

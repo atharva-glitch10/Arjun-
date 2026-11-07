@@ -40,3 +40,7 @@
 {"text": "नमस्कार", "intent": "GREETING"}
 {"text": "ऐकू येतंय का तुला", "intent": "HEARING_CHECK"}
 {"text": "उद्या काय आहे", "intent": "LIST_TODAY"}
+{"text": "हो, नाश्ता झाला", "intent": "CONFIRM_YES", "note": "check-in answer: breakfast done"}
+{"text": "नाही, जेवण झालं नाही", "intent": "CONFIRM_NO", "note": "check-in answer: lunch skipped"}
+{"text": "हो, फिरायला गेले", "intent": "CONFIRM_YES", "note": "check-in answer: walk done"}
+{"text": "झोप नीट लागली नाही", "intent": "CONFIRM_NO", "note": "check-in answer: sleep not good"}

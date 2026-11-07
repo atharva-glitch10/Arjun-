@@ -685,17 +685,20 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             <TimeField label="Dinner" value={user.dinner_time} onSave={(v) => run(() => api.patchUser(userId, { dinner_time: v }))} />
             <OptionalTimeField label="Walk" value={user.walk_time} onSave={(v) => run(() => api.patchUser(userId, { walk_time: v }))} />
             <OptionalTimeField label="BP check" value={user.bp_check_time} onSave={(v) => run(() => api.patchUser(userId, { bp_check_time: v }))} />
+            <OptionalTimeField label="Sugar (fasting)" value={user.sugar_check_time} onSave={(v) => run(() => api.patchUser(userId, { sugar_check_time: v }))} />
+            <OptionalTimeField label="Sugar (after lunch)" value={user.sugar_after_time} onSave={(v) => run(() => api.patchUser(userId, { sugar_after_time: v }))} />
             <TimeField label="Chat from" value={user.opener_start} onSave={(v) => run(() => api.patchUser(userId, { opener_start: v }))} />
             <TimeField label="Chat until" value={user.opener_end} onSave={(v) => run(() => api.patchUser(userId, { opener_end: v }))} />
           </div>
-          <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 16 }}>
+          <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 16, fontWeight: 700 }}>
             <input
               type="checkbox"
               style={{ width: 24, height: 24 }}
               checked={user.daily_checkins}
               onChange={(e) => run(() => api.patchUser(userId, { daily_checkins: e.target.checked }))}
             />
-            Ask about meals, the walk and the BP check at the times above (she answers; nothing is scored)
+            Daily health check-ins: {user.daily_checkins ? "ON" : "OFF"} — Arjun asks about meals, water, the walk,
+            BP and sugar at the times above (she answers; nothing is scored)
           </label>
           <div className="fam-form">
             <TextField

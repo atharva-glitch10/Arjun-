@@ -20,6 +20,7 @@ def _user(client, **over):
         "language": "mr",
         "daily_checkins": True,
         "wake_time": "08:30",
+        "breakfast_time": "10:00",  # due 10:30, so the 09:00 tests see the sleep question first
         "lunch_time": "13:30",
         "dinner_time": "20:00",
         "opener_start": "00:00",
@@ -65,22 +66,24 @@ def _at(h, mi=0):
 
 
 # ---- the plan comes from her data -------------------------------------------------------------------------------
-def test_the_plan_times_come_from_her_own_wake_lunch_and_dinner_times(client):
+def test_the_plan_times_come_from_her_own_meal_and_wake_times(client):
     box = _clock(_at(5, 0))
-    a = _user(client, wake_time="07:00", lunch_time="13:30", dinner_time="20:00")
-    b = _user(client, name="Other (synthetic)", wake_time="05:30", lunch_time="12:00", dinner_time="19:00")
+    a = _user(client, wake_time="07:00", breakfast_time="08:30", lunch_time="13:30", dinner_time="20:00")
+    b = _user(
+        client, name="Other (synthetic)", wake_time="05:30", breakfast_time="06:30", lunch_time="12:00", dinner_time="19:00"
+    )
     times_a = {k: c["due_at"][11:16] for k, c in _by_kind(client, a).items()}
     times_b = {k: c["due_at"][11:16] for k, c in _by_kind(client, b).items()}
-    assert (times_a["sleep"], times_a["breakfast"], times_a["lunch"], times_a["dinner"]) == ("07:30", "08:30", "14:00", "20:30")
+    assert (times_a["sleep"], times_a["breakfast"], times_a["lunch"], times_a["dinner"]) == ("07:30", "09:00", "14:00", "20:30")
     assert (times_b["sleep"], times_b["breakfast"], times_b["lunch"], times_b["dinner"]) == ("06:00", "07:00", "12:30", "19:30")
     assert box["now"] == _at(5, 0)
 
 
-def test_the_walk_uses_the_family_time_when_set_else_the_afternoon(client):
+def test_the_walk_exists_only_when_the_family_sets_a_time(client):
     _clock(NOW)
     a = _user(client)
     b = _user(client, name="W (synthetic)", walk_time="15:15")
-    assert _by_kind(client, a)["walk"]["due_at"].endswith("T16:00:00")
+    assert "walk" not in _by_kind(client, a)  # no time = not part of her day
     assert _by_kind(client, b)["walk"]["due_at"].endswith("T15:15:00")
 
 
@@ -135,18 +138,18 @@ def test_one_question_per_tick_and_never_the_same_one_twice(client):
     assert client.get(f"/users/{uid}/checkins/open").json()["kind"] == "sleep"
 
 
-def test_questions_are_at_least_45_minutes_apart(client):
-    uid = _user(client, wake_time="07:00")
+def test_questions_are_at_least_30_minutes_apart(client):
+    uid = _user(client, wake_time="07:00", breakfast_time="08:30")
     box = _clock(NOW)
     _tick(client, box, NOW)  # sleep (07:30) asked at 09:00
-    assert _tick(client, box, NOW + timedelta(minutes=44))["asked"] == []
-    out = _tick(client, box, NOW + timedelta(minutes=45))  # breakfast (08:30) is now 75 minutes old
+    assert _tick(client, box, NOW + timedelta(minutes=29))["asked"] == []
+    out = _tick(client, box, NOW + timedelta(minutes=30))  # breakfast (09:00) is now 30 minutes old
     assert [x["kind"] for x in out["asked"]] == ["breakfast"]
     assert _by_kind(client, uid)["breakfast"]["status"] == "asked"
 
 
 def test_nothing_outside_her_opener_window_but_a_late_one_waits_for_it(client):
-    uid = _user(client, wake_time="07:00", opener_start="10:00", opener_end="18:00")
+    uid = _user(client, wake_time="07:00", breakfast_time="08:00", opener_start="10:00", opener_end="18:00")
     box = _clock(NOW)
     assert _tick(client, box, NOW)["asked"] == []  # 09:00: before the window
     out = _tick(client, box, _at(10, 0))  # the window opens: breakfast (08:30) is exactly 90 min old
@@ -175,22 +178,36 @@ def test_an_appointment_mention_may_leave_the_window_but_never_the_night(client)
 
 
 def test_the_early_morning_is_quiet(client):
-    uid = _user(client, wake_time="05:30")  # sleep question due 06:00, breakfast 07:00
+    uid = _user(client, wake_time="05:30")  # sleep question due 06:00
     box = _clock(_at(5, 0))
-    assert _tick(client, box, _at(6, 30))["asked"] == []  # before 07:00
-    out = _tick(client, box, _at(7, 0))
-    assert [x["kind"] for x in out["asked"]] == ["sleep"]  # 07:00 is the first moment; it is 60 min old
+    assert _tick(client, box, _at(6, 29))["asked"] == []  # before 06:30
+    out = _tick(client, box, _at(6, 30))
+    assert [x["kind"] for x in out["asked"]] == ["sleep"]  # 06:30 is the first moment; it is 30 min old
     assert _by_kind(client, uid)["sleep"]["status"] == "asked"
 
 
-def test_a_day_has_at_most_the_configured_number_of_questions(client, monkeypatch):
-    monkeypatch.setenv("ARJUN_CHECKIN_MAX_PER_DAY", "1")
-    uid = _user(client, wake_time="07:00")  # sleep 07:30 and breakfast 08:30 are both due at 09:00
+def test_routine_care_prompts_are_exempt_from_the_daily_cap(client, monkeypatch):
+    monkeypatch.setenv("ARJUN_CHECKIN_MAX_PER_DAY", "0")
+    uid = _user(client, opener_start="09:00", opener_end="19:00", interests=["भजन"])
     box = _clock(NOW)
     assert [x["kind"] for x in _tick(client, box, NOW)["asked"]] == ["sleep"]
-    out = _tick(client, box, NOW + timedelta(minutes=50))  # the gap is over, but the day's limit is reached
-    assert out["asked"] == [] and "breakfast" in [x["kind"] for x in out["closed"]]
-    assert _by_kind(client, uid)["breakfast"]["status"] == "missed"
+    assert [x["kind"] for x in _tick(client, box, NOW + timedelta(minutes=90))["asked"]] == ["breakfast"]
+    out = _tick(client, box, _at(11, 30))  # interest is the first conversation prompt
+    assert out["asked"] == [] and "interest" in [x["kind"] for x in out["closed"]]
+    assert _by_kind(client, uid)["interest"]["status"] == "missed"
+
+
+def test_conversation_prompts_respect_the_daily_cap(client, monkeypatch):
+    monkeypatch.setenv("ARJUN_CHECKIN_MAX_PER_DAY", "1")
+    uid = _user(client, opener_start="09:00", opener_end="19:00", interests=["भजन"])
+    client.post(f"/users/{uid}/contacts", json={"name": "राहुल पाटील", "relation": "मुलगा", "phone": "0000000001"})
+    box = _clock(NOW)
+    _tick(client, box, NOW)  # sleep (routine)
+    _tick(client, box, NOW + timedelta(minutes=90))  # breakfast (routine)
+    assert [x["kind"] for x in _tick(client, box, _at(11, 30))["asked"]] == ["interest"]  # 1st conversation prompt
+    out = _tick(client, box, _at(17, 0))  # home is the 2nd: the cap is reached
+    assert "home" in [x["kind"] for x in out["closed"]]
+    assert _by_kind(client, uid)["home"]["status"] == "missed"
 
 
 # ---- busy moments: postpone 10 minutes, at most 3 times ----------------------------------------------------------
@@ -241,7 +258,7 @@ def test_a_topic_she_already_told_us_is_never_asked(client):
     box = _clock(NOW)
     r = client.post(f"/users/{uid}/checkins/volunteer", json={"topic": "sleep", "answer": "done"})
     assert r.status_code == 200 and r.json()["status"] == "done" and r.json()["source"] == "volunteered"
-    out = _tick(client, box, NOW)
+    out = _tick(client, box, _at(10, 30))
     assert [x["kind"] for x in out["asked"]] == ["breakfast"]  # sleep is skipped, the next one is asked
     assert client.post(f"/users/{uid}/checkins/volunteer", json={"topic": "sleep", "answer": "done"}).json() is None
 
@@ -375,9 +392,24 @@ def test_the_bp_check_is_asked_at_its_family_set_time(client):
     assert [d["label"] for d in _deliveries(client, uid)] == ["bp"]
 
 
+def test_the_sugar_checks_are_asked_at_their_family_set_times(client):
+    uid = _user(client, sugar_check_time="08:00", sugar_after_time="15:00")
+    rows = _by_kind(client, uid)
+    assert rows["sugar"]["due_at"].endswith("T08:00:00") and rows["sugar"]["ref"] == "fasting"
+    assert rows["sugar_after"]["due_at"].endswith("T15:00:00") and rows["sugar_after"]["ref"] == "after_meal"
+
+
+def test_checkin_users_lists_only_the_people_with_checkins_on(client):
+    _clock(NOW)
+    on = _user(client)
+    off = _user(client, name="Off (synthetic)", daily_checkins=False)
+    ids = client.get("/internal/checkin-users").json()
+    assert on in ids and off not in ids
+
+
 # ---- the family card ----------------------------------------------------------------------------------------------
 def test_the_day_card_shows_done_not_done_and_no_answer_with_times_and_never_her_words(client):
-    uid = _user(client)
+    uid = _user(client, breakfast_time="09:30")  # due 10:00
     client.post(f"/users/{uid}/medicines", json={"name": "Glimepiride", "dose": "1 mg", "time": "09:30", "anchor": "fixed"})
     box = _clock(NOW)
     _tick(client, box, NOW)  # sleep asked 09:00
@@ -440,3 +472,12 @@ def test_demo_fire_asks_the_next_check_in_now_and_respects_window_and_quiet_hour
     late = client.post(f"/users/{outside}/checkins/demo-fire", json={"now": "09:00"}).json()
     assert late["fired"] is None and "window" in late["reason"]
     assert client.post(f"/users/{uid}/checkins/demo-fire", json={"now": "9:5"}).status_code == 422
+
+
+def test_demo_fire_can_ask_a_named_check_in(client, monkeypatch):
+    monkeypatch.setenv("ARJUN_CHECKIN_DEMO", "1")
+    uid = _user(client, sugar_check_time="08:00", sugar_after_time="15:00")
+    _clock(NOW)
+    out = client.post(f"/users/{uid}/checkins/demo-fire", json={"now": "15:00", "kind": "sugar_after"}).json()
+    assert out["fired"] == "sugar_after"
+    assert [d["label"] for d in _deliveries(client, uid)] == ["sugar_after"]

@@ -2,21 +2,29 @@
 
 ## Prisma integration audit (2026-11-07)
 
-The voice-agent requirements pin `livekit-plugins-gnani==1.8.6`. Its installed `gnani.STT` constructor
-accepts `language`, `sample_rate`, `base_url`, `preferred_language`, `format`, `itn_native_numerals`,
-`use_streaming`, and `api_key`. It does not accept a model selector, Auto-LID, keyterms, named speakers,
-previous-context state, or the product brief's `codemix` and `transliterate` modes. The package therefore
-does not let this application explicitly select `prisma-v3.0`; its internal `/stt/v3` endpoint name alone
-does not establish that model. The plugin's extra keyword handling also does not provide a documented way
-to send the v3 product-page request fields.
+The voice-agent requirements pin `livekit-plugins-gnani==1.8.6` to preserve LiveKit Agents compatibility.
+The installed `gnani.STT` constructor accepts `language`, `sample_rate`, `base_url`, `preferred_language`,
+`format`, `itn_native_numerals`, `use_streaming`, and `api_key`. It does not accept a model selector,
+Auto-LID, keyterms, named speakers, previous-context state, or the product brief's `codemix` and
+`transliterate` modes. Its `model` property returns `vachana-stt-v3`; the internal `/stt/v3` route does not
+identify which Prisma model the account serves.
+
+Gnani's official Prisma v3.0 product page and `gnani-vachana` repository now document `model="prisma-v3.0"`,
+`language_code="indic-auto"`, language candidates, four output formats, keywords, topic, speaker names,
+previous text, and detected-language metadata. This supersedes the earlier statement that official
+documentation was unavailable. It establishes product/SDK documentation, not that this competition account
+has v3 enabled or that the installed LiveKit adapter sends those options. The official SDK describes streaming
+model and keywords, but the published streaming usage does not specify the wire mapping for every advertised
+context field. We have not changed the pinned plugin or hand-built undocumented headers. Account entitlement
+and actual model selection remain unverified.
 
 The application uses `format=transcribe` by default, `itn_native_numerals=true`, `mr-IN`, 16 kHz, and
-streaming enabled. Configuration validation now rejects unsupported format names and the `auto` language
-placeholder instead of silently implying those features work. Only `verbatim` and `transcribe` are exposed.
-No model upgrade or direct WebSocket implementation was made because the request/response event schema and
-authentication details for the v3 product API were not supplied by the pinned package. A compatible adapter
-needs official API wire documentation or an updated Gnani-supported SDK, then mocked protocol tests and live
-account validation.
+streaming enabled. Configuration validation rejects unsupported format names and the `auto` language
+placeholder. Only `verbatim` and `transcribe` are currently exposed in the app. No model upgrade or direct
+WebSocket implementation was made: the product guide and SDK overview document v3 parameters, but the
+streaming wire mapping for all context fields is not documented in the pinned adapter, and no account-level
+model access has been confirmed. A supported integration requires an updated Gnani-maintained LiveKit adapter
+or a Gnani-confirmed wire contract, followed by mocked protocol tests and live account validation.
 
 `scripts/check_gnani.py` reports whether `GNANI_API_KEY` is present/nonempty and whether it has surrounding
 whitespace, along with configured model/mode labels. It performs no API call, so it does not verify

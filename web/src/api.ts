@@ -17,7 +17,10 @@ export interface User {
   /** null = not part of her day. */
   walk_time: string | null;
   bp_check_time: string | null;
-  /** Meal / walk / BP check-ins are spoken only when the family switches this on. */
+  /** Optional fasting / after-lunch sugar checks. */
+  sugar_check_time: string | null;
+  sugar_after_time: string | null;
+  /** Meal / walk / BP / sugar check-ins are spoken only when the family switches this on. */
   daily_checkins: boolean;
   interests: string[];
   opener_start: string;

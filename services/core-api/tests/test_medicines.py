@@ -62,6 +62,30 @@ def test_delete_medicine_removes_doses(client, uid):
     assert client.delete(f"/users/{uid}/medicines/{mid}").status_code == 404
 
 
+def test_deactivating_withdraws_open_doses_and_stops_reminders(client, uid):
+    box = _clock(NOW - timedelta(hours=3))
+    mid = _add(client, uid, time="09:00").json()["id"]
+    box["now"] = NOW
+    assert len(client.post("/internal/medicines/tick").json()["reminded"]) == 1  # already reminded
+    r = client.patch(f"/users/{uid}/medicines/{mid}", json={"active": False})
+    assert r.status_code == 200 and r.json()["active"] is False
+    assert client.get(f"/users/{uid}/medicine-doses").json() == []
+    assert client.get(f"/users/{uid}/deliveries/open").json() == []
+    box["now"] = NOW + timedelta(minutes=15)
+    assert client.post("/internal/medicines/tick").json() == {"reminded": [], "unconfirmed": []}
+
+
+def test_deactivating_keeps_a_dose_already_taken(client, uid):
+    box = _clock(NOW - timedelta(hours=3))
+    mid = _add(client, uid, time="09:00").json()["id"]
+    box["now"] = NOW
+    dose_id = client.get(f"/users/{uid}/medicines/due").json()["current"][0]["id"]
+    client.post(f"/users/{uid}/medicine-doses/{dose_id}/taken")
+    assert client.patch(f"/users/{uid}/medicines/{mid}", json={"active": False}).status_code == 200
+    doses = client.get(f"/users/{uid}/medicine-doses").json()
+    assert [d["status"] for d in doses] == ["taken"]  # history is not rewritten
+
+
 def test_medicine_added_after_its_time_has_no_dose_today(client, uid):
     _add(client, uid, time="07:00")  # NOW is 09:00 -> already passed when created
     assert client.get(f"/users/{uid}/medicine-doses").json() == []

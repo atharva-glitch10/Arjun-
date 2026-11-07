@@ -14,30 +14,56 @@ USER_ID = 1
 USER_NAME = "हीराबाई पवार (synthetic)"
 USER_PROFILE = {
     "language": "mr",
-    "wake_time": "07:00",
-    "lunch_time": "13:30",
+    "wake_time": "06:30",
+    "breakfast_time": "08:30",
+    "lunch_time": "13:00",
+    "snack_time": "17:00",
     "dinner_time": "20:00",
+    "walk_time": "18:00",
+    "bp_check_time": "09:00",
+    "sugar_check_time": "08:00",
+    "sugar_after_time": "15:00",
+    "daily_checkins": True,
+    "address_as": "हीराबाई",
     "interests": ["गाणी", "भजन", "स्वयंपाक"],
-    "opener_start": "09:00",
-    "opener_end": "19:00",
+    "opener_start": "07:30",
+    "opener_end": "21:00",
     "consent_distress_alert": True,
 }
 CONTACT = {"name": "चंद्रकांत", "relation": "मुलगा", "phone": "00000 00003"}
 MEDICINES = (
     {
-        "name": "Glimepiride",
-        "dose": "1 mg",
+        "name": "बीपीची गोळी",
+        "dose": "1 गोळी",
         "anchor": "fixed",
-        "time": "10:30",
+        "time": "09:00",
         "max_reminders": 3,
         "repeat_minutes": 15,
         "window_min": 30,
     },
     {
-        "name": "Amlodipine",
-        "dose": "2.5 mg",
+        "name": "बीपीची गोळी",
+        "dose": "1 गोळी",
         "anchor": "fixed",
-        "time": "14:00",
+        "time": "21:00",
+        "max_reminders": 3,
+        "repeat_minutes": 15,
+        "window_min": 30,
+    },
+    {
+        "name": "शुगरची गोळी",
+        "dose": "1 गोळी",
+        "anchor": "fixed",
+        "time": "08:30",
+        "max_reminders": 3,
+        "repeat_minutes": 15,
+        "window_min": 30,
+    },
+    {
+        "name": "शुगरची गोळी",
+        "dose": "1 गोळी",
+        "anchor": "fixed",
+        "time": "20:30",
         "max_reminders": 3,
         "repeat_minutes": 15,
         "window_min": 30,
@@ -206,11 +232,18 @@ def plan_seed(
         add_action(actions, "Contact", "present", f"{CONTACT['name']} already exists; left unchanged.")
 
     for target in MEDICINES:
-        found = next((row for row in rows["medicines"] if row.get("name") == target["name"]), None)
+        found = next(
+            (
+                row
+                for row in rows["medicines"]
+                if row.get("name") == target["name"] and row.get("time") == target["time"]
+            ),
+            None,
+        )
         if found is None:
             add_action(
                 actions,
-                f"Medicine: {target['name']}",
+                f"Medicine: {target['name']} {target['time']}",
                 "create",
                 json.dumps(target, ensure_ascii=False, sort_keys=True),
                 "POST",
@@ -222,7 +255,7 @@ def plan_seed(
         if changes:
             add_action(
                 actions,
-                f"Medicine: {target['name']}",
+                f"Medicine: {target['name']} {target['time']}",
                 "update",
                 json.dumps(changes, ensure_ascii=False, sort_keys=True),
                 "PATCH",
@@ -230,7 +263,22 @@ def plan_seed(
                 changes,
             )
         else:
-            add_action(actions, f"Medicine: {target['name']}", "correct", "All requested fields match.")
+            add_action(
+                actions, f"Medicine: {target['name']} {target['time']}", "correct", "All requested fields match."
+            )
+
+    target_keys = {(str(item["name"]), str(item["time"])) for item in MEDICINES}
+    for row in rows["medicines"]:
+        if (row.get("name"), row.get("time")) not in target_keys and row.get("active"):
+            add_action(
+                actions,
+                f"Medicine: {row.get('name')}",
+                "update",
+                "not in the demo plan; switched off",
+                "PATCH",
+                f"/users/{USER_ID}/medicines/{row['id']}",
+                {"active": False},
+            )
 
     for day in appointment_dates(now.date()):
         starts_at = datetime.combine(day, time(18, 0))

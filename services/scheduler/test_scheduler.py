@@ -12,6 +12,8 @@ def _http(calls, briefing_text="सुप्रभात", opener_text="आज�
             return httpx.Response(200, json={"reminded": [], "unconfirmed": []})
         if path == "/internal/checkins/tick":
             return httpx.Response(200, json={"asked": [], "followed_up": [], "closed": []})
+        if path == "/internal/checkin-users":
+            return httpx.Response(200, json=[])
         if path == "/internal/deliveries/sweep":
             return httpx.Response(200, json={"released": 0, "superseded": 0, "shown_only": 0, "notified": 0})
         if path == "/conversations/flush-idle":
@@ -70,6 +72,7 @@ def test_each_tick_queues_then_sweeps_in_that_order(monkeypatch):
     scheduler.tick(_http(calls), "2026-10-24")
     order = [p for _, p in calls if p.startswith("/internal/")]
     assert order == [
+        "/internal/checkin-users",
         "/internal/reminders/fire-due",
         "/internal/medicines/tick",
         "/internal/checkins/tick",
@@ -92,6 +95,8 @@ def test_a_failing_sweep_does_not_stop_the_briefing_or_the_opener(monkeypatch):
             return httpx.Response(200, json={"reminded": [], "unconfirmed": []})
         if path == "/internal/checkins/tick":
             return httpx.Response(200, json={"asked": [], "followed_up": [], "closed": []})
+        if path == "/internal/checkin-users":
+            return httpx.Response(200, json=[])
         if path.startswith("/briefing/"):
             return httpx.Response(200, json={"text": "सुप्रभात"})
         return httpx.Response(200, json={"text": "आजी"})
@@ -120,8 +125,9 @@ def test_dev_up_starts_the_scheduler_without_giving_it_secrets_it_does_not_need(
     assert "scheduler.py" in entry
     for needed in ("CORE_API_URL", "CORE_API_KEY", "REASONING_URL", "ARJUN_TZ", "SCHEDULER_INTERVAL_SECONDS"):
         assert needed in entry
-    for forbidden in ("LLM_API_KEY", "GNANI_API_KEY", "LIVEKIT_API_SECRET", "OPENER_USER_IDS", "BRIEFING_USER_IDS"):
-        assert forbidden not in entry  # openers / briefings are not T8 and stay off
+    for forbidden in ("LLM_API_KEY", "GNANI_API_KEY", "LIVEKIT_API_SECRET"):
+        assert forbidden not in entry
+    assert "OPENER_USER_IDS" in entry and "BRIEFING_USER_IDS" in entry
     assert '"scheduler"' in script.split("ValidateSet(")[1].split(")")[0]
 
 

@@ -515,7 +515,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     # ---- T8: queued reminders / medicines are spoken here; an idle session closes itself -------------------
     async def claim_next():  # type: ignore[no-untyped-def]
-        return await asyncio.to_thread(claim_next_delivery, user_id, session_id, None, media.playing)
+        return await asyncio.to_thread(
+            claim_next_delivery, user_id, session_id, None, media.playing, family.present()
+        )
 
     async def mark_spoken(delivery_id: int) -> None:
         await asyncio.to_thread(mark_delivery_spoken, user_id, delivery_id, session_id)
@@ -546,7 +548,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     deliveries = DeliveryLoop(
         claim_next=claim_next, spoken=mark_spoken, release=release, speak=speak_checked, publish=publish_item,
-        can_speak=lambda: state.quiet(speech_lock.locked()) and not family.present(),
+        can_speak=lambda: state.quiet(speech_lock.locked()),
     )
     closer = IdleCloser(
         policy, quiet=lambda: state.quiet(speech_lock.locked()) and not family.present(), get_busy=get_busy,

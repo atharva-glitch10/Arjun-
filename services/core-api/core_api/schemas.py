@@ -26,6 +26,8 @@ class UserIn(BaseModel):
     snack_time: str = "17:00"
     walk_time: str | None = None  # optional: None = no daily walk in her day
     bp_check_time: str | None = None
+    sugar_check_time: str | None = None  # fasting sugar check (optional)
+    sugar_after_time: str | None = None  # after-lunch sugar check (optional)
     daily_checkins: bool = False  # meal / walk / BP check-ins are spoken only when the family switches this on
     honorific: str = Field(default="", max_length=60)
     address_as: str | None = Field(default=None, max_length=60)
@@ -38,6 +40,7 @@ class UserIn(BaseModel):
 
     _v = field_validator(
         "wake_time", "lunch_time", "dinner_time", "breakfast_time", "snack_time", "walk_time", "bp_check_time",
+        "sugar_check_time", "sugar_after_time",
         "opener_start", "opener_end",
     )(_check_hhmm)
 
@@ -51,6 +54,8 @@ class UserPatch(BaseModel):
     snack_time: str | None = None
     walk_time: str | None = None
     bp_check_time: str | None = None
+    sugar_check_time: str | None = None
+    sugar_after_time: str | None = None
     daily_checkins: bool | None = None
     honorific: str | None = Field(default=None, max_length=60)
     address_as: str | None = Field(default=None, max_length=60)
@@ -63,6 +68,7 @@ class UserPatch(BaseModel):
 
     _v = field_validator(
         "wake_time", "lunch_time", "dinner_time", "breakfast_time", "snack_time", "walk_time", "bp_check_time",
+        "sugar_check_time", "sugar_after_time",
         "opener_start", "opener_end",
     )(_check_hhmm)
 
@@ -294,7 +300,7 @@ class CheckinAnswer(BaseModel):
 class CheckinVolunteer(BaseModel):
     """She said it on her own ("जेवले"): the matching check-in is answered and will not be asked."""
 
-    topic: Literal["sleep", "breakfast", "lunch", "walk", "dinner", "home"]
+    topic: Literal["sleep", "breakfast", "lunch", "snack", "walk", "dinner", "home"]
     answer: Literal["done", "skipped"] = "done"
 
 
@@ -339,9 +345,9 @@ class WatchSampleOut(BaseModel):
 
 
 class DayItem(BaseModel):
-    kind: Literal["reminder", "appointment", "medicine", "meal", "wake", "walk", "bp"]
+    kind: Literal["reminder", "appointment", "medicine", "meal", "wake", "walk", "bp", "sugar"]
     at: datetime
-    label: str  # task / title / medicine name verbatim; meal: breakfast|lunch|snack|dinner; wake|walk|bp
+    label: str  # task / title / medicine name verbatim; meal: breakfast|lunch|snack|dinner; wake|walk|bp|sugar
     detail: str = ""  # medicine dose verbatim, or appointment place
     status: str  # pending|fired|done, scheduled, due|reminded|taken|unconfirmed
     ref_id: int | None = None

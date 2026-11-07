@@ -23,7 +23,7 @@ def test_claim_next_posts_user_and_session_and_returns_the_item():
     assert claim_next_delivery(1, "job-9", _client(handler)) == ITEM
     assert seen == {
         "path": "/delivery/next",
-        "body": {"user_id": 1, "session": "job-9", "media_playing": False},
+        "body": {"user_id": 1, "session": "job-9", "media_playing": False, "call_active": False},
     }
 
 
@@ -36,6 +36,17 @@ def test_claim_next_tells_reasoning_when_media_is_playing():
 
     assert claim_next_delivery(1, "s", _client(handler), media_playing=True) is None
     assert seen["body"]["media_playing"] is True  # a check-in question is then postponed, a reminder is not
+
+
+def test_claim_next_marks_family_call_active():
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json=None)
+
+    assert claim_next_delivery(1, "s", _client(handler), call_active=True) is None
+    assert seen["body"]["call_active"] is True
 
 
 def test_claim_next_with_nothing_waiting_is_none():

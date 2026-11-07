@@ -14,7 +14,7 @@ from reasoning_svc.turn import TurnEngine
 
 NOW = datetime(2026, 10, 6, 9, 0)
 MR = rp.R["mr"]
-VOLUNTEERABLE = ("sleep", "breakfast", "lunch", "walk", "dinner", "home")
+VOLUNTEERABLE = ("sleep", "breakfast", "lunch", "snack", "walk", "dinner", "home")
 
 
 class Clock:
@@ -48,6 +48,7 @@ def setup_user(core_http, uid, **over):
     body = {
         "daily_checkins": True,
         "wake_time": "07:00",
+        "walk_time": "16:00",
         "lunch_time": "13:00",
         "dinner_time": "20:00",
         "opener_start": "07:00",
@@ -130,6 +131,17 @@ def test_the_meal_and_walk_prompts_are_the_fixed_lines(core_http, uid, kind, exp
     ask(core_http, uid, kind)
     item = make_engine(core_http).deliver_next(uid, "s1")
     assert item["kind"] == "checkin" and item["text"] == expected
+
+
+def test_the_sugar_prompts_are_the_fixed_lines(core_http, uid):
+    setup_user(core_http, uid, sugar_check_time="08:00", sugar_after_time="15:00")
+    ask(core_http, uid, "sugar")
+    eng = make_engine(core_http)
+    first = eng.deliver_next(uid, "s1")
+    assert first["text"] == MR["checkin_prompt_sugar"]
+    eng.deliver_spoken(uid, first["delivery_id"], "s1")
+    ask(core_http, uid, "sugar_after")
+    assert make_engine(core_http).deliver_next(uid, "s2")["text"] == MR["checkin_prompt_sugar_after"]
 
 
 def test_the_interest_prompt_comes_from_her_interests(core_http, uid):
@@ -351,6 +363,27 @@ def test_media_playing_postpones_the_question_ten_minutes(core_http, uid):
     out = tick(core_http, datetime.fromisoformat(row["due_at"]))
     assert [x["kind"] for x in out["asked"]] == ["breakfast"]
     assert eng.deliver_next(uid, "s1")["text"] == "नाश्ता झाला का?"
+
+
+def test_family_call_postpones_a_checkin_until_the_room_is_clear(core_http, uid):
+    setup_user(core_http, uid)
+    eng = make_engine(core_http)
+    ask(core_http, uid, "breakfast")
+    assert eng.deliver_next(uid, "s1", call_active=True) is None
+    row = rows(core_http, uid)["breakfast"]
+    assert row["status"] == "pending" and row["postponed"] == 1
+
+
+def test_family_call_does_not_claim_other_spoken_deliveries(core_http, uid):
+    setup_user(core_http, uid)
+    set_core_now(at(8, 0))
+    core_http.post(f"/users/{uid}/reminders", json={"task": "चहा", "date": "2026-10-06", "time": "08:30"})
+    set_core_now(at(8, 30))
+    core_http.post("/internal/reminders/fire-due")
+    eng = make_engine(core_http)
+    assert eng.deliver_next(uid, "s1", call_active=True) is None
+    reminder = next(d for d in core_http.get(f"/users/{uid}/deliveries").json() if d["kind"] == "reminder")
+    assert reminder["status"] == "queued"
 
 
 def test_a_conversation_in_the_last_two_minutes_postpones_the_question(core_http, uid):

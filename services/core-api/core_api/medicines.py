@@ -167,6 +167,19 @@ def patch_medicine(
         raise HTTPException(422, str(exc)) from exc
     for key, value in valid.model_dump().items():
         setattr(med, key, value)
+    if not med.active:
+        # Deactivating withdraws today's still-open doses, including ones already reminded: the
+        # medicine is no longer part of the plan, so it must not be announced again. Doses already
+        # taken stay in the record (history is never rewritten).
+        for dose in db.scalars(
+            select(m.MedicineDose).where(
+                m.MedicineDose.medicine_id == med.id,
+                m.MedicineDose.for_date == now.date(),
+                m.MedicineDose.status.in_(OPEN),
+            )
+        ).all():
+            ack_item(db, "medicine", dose.id, "medicine_deactivated", now)
+            db.delete(dose)
     # An untouched dose for today follows the new schedule.
     stale = db.scalars(
         select(m.MedicineDose).where(
@@ -276,7 +289,11 @@ def tick(
     open_rows = db.execute(
         select(m.MedicineDose, m.Medicine)
         .join(m.Medicine, m.Medicine.id == m.MedicineDose.medicine_id)
-        .where(m.MedicineDose.status.in_(OPEN), m.MedicineDose.due_at <= now)
+        .where(
+            m.MedicineDose.status.in_(OPEN),
+            m.MedicineDose.due_at <= now,
+            m.Medicine.active.is_(True),  # a deactivated medicine is never announced
+        )
     ).all()
     for dose, med in open_rows:
         if dose.snoozed_until is not None and dose.snoozed_until > now:

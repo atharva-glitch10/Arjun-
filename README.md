@@ -34,10 +34,10 @@ Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Mar
 
 | Piece | State |
 |---|---|
-| `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 269 pytest tests (incl. API-key checks; core-api refuses to start without `CORE_API_KEY`). |
-| `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent -> dispatch. Rules handle care actions and the hosted LLM handles companion chat and requests rules cannot read. 969 pytest tests incl. distress and emergency behavior, core-api outage handling and medicine-path tests. |
-| `services/scheduler` | Polls core-api to mark due reminders, tick medicines, and fetch briefing/opener text. **Logs only: nothing is spoken on the elder device yet (T8).** 8 pytest tests. |
-| `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `design/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. 139 Vitest tests, TypeScript and production build pass; live phone/microphone speech is not verified. |
+| `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, proactive check-ins, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 280 pytest tests (incl. API-key checks; core-api refuses to start without `CORE_API_KEY`). |
+| `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent -> dispatch. Rules handle care actions and the hosted LLM handles companion chat and requests rules cannot read. 976 pytest tests incl. check-in answers, distress and emergency behavior, core-api outage handling and medicine paths. |
+| `services/scheduler` | Polls core-api to queue due reminders, medicine prompts, and daily check-ins for an open voice session; fetches briefings/openers. 8 pytest tests. |
+| `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `design/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. 144 Vitest tests, TypeScript and production build pass; live phone/microphone speech is not verified. |
 | `eval/` | `python eval/run_eval.py` - intent / slot / distress on 33 synthetic text cases. |
 | `services/voice-agent` | `livekit-plugins-gnani==1.8.6` exposes STT language, sample rate, `verbatim`/`transcribe`, numeral formatting and streaming. It does **not** expose explicit Prisma model selection, Auto-LID, keyterms, speaker names, previous context, `codemix`, or `transliterate`. Official Gnani docs now describe Prisma v3.0 and these features; the pinned LiveKit adapter does not pass them, and account access is not verified. Historical live evidence is a Timbre v2.5 response; a complete spoken turn and live STT on current code are unverified. The elder web app still uses **browser** speech, not Gnani. See [Prisma audit](docs/ENGINEERING.md#prisma-integration-audit-2026-11-07). |
 
@@ -233,16 +233,21 @@ the script reports that limitation while seeding the other requested data.
   "ask up to" count. "On time" = within the medicine's window (default 30 min), all self-reported.
 - Voice reminders that mention a medicine are refused on purpose (family sets medicine times); this also
   means a plain voice reminder like "tablet remind kar" now gets the "your family sets medicine times" reply.
-- **Proactive day check-ins (2026-11-03, built, NOT tried with a real voice session):** when the family switches
-  `daily_checkins` on, Arjun asks one short Marathi question at a time about her day (sleep, breakfast, lunch,
-  a walk, one listening interest, whether she spoke to one family member, dinner, and a mention one hour before
-  an appointment / reminder). Times and names come from her own data. She is never asked inside 22:00-07:00, or
-  (except the appointment / reminder mention) outside her opener window; at most `ARJUN_CHECKIN_MAX_PER_DAY` (8)
-  a day, 45 minutes apart; a busy moment (media playing, a safety reply, she spoke in the last 2 minutes, a
-  reminder being spoken) postpones a question 10 minutes, 3 times at most. Word lists for her answers are
+- **Proactive day check-ins (2026-11-07, enabled for the demo user; NOT tried with a real voice session):** when the
+  family switches `daily_checkins` on, Arjun asks one short Marathi question at a time about her day (sleep, breakfast,
+  lunch, the evening snack, a walk when the family sets a time, one listening interest, whether she spoke to one family
+  member, dinner, BP and fasting / after-lunch sugar when those times are set, and a mention one hour before an
+  appointment / reminder). Times and names come from her own data. She is never asked inside 22:00-06:30, or
+  (except the appointment / reminder mention) outside her opener window; routine care prompts (meals, walk, BP, sugar)
+  are exempt from `ARJUN_CHECKIN_MAX_PER_DAY` (14), which caps the other conversation prompts; questions are at least
+  `ARJUN_CHECKIN_MIN_GAP_MIN` (30) minutes apart. A busy moment (media playing, a safety reply, she spoke in the last
+  2 minutes, a reminder being spoken, or a family call) postpones a question 10 minutes, 3 times at most, then marks it missed; every
+  decision is logged once as `checkin <kind> asked|postponed:<reason>|missed`. Word lists for her answers are
   UNVERIFIED (no native speaker). Medicines are NOT a separate check-in: the medicine flow already asks at the
   due time and every 15 minutes, with name and dose verbatim, and the day card reads those doses.
   The family card "आजचा दिवस" shows done / not done / no answer with times and never her words.
+  `scripts/seed_heerabai.py --apply` sets the demo user's times and switches check-ins on; empty
+  `OPENER_USER_IDS` / `BRIEFING_USER_IDS` now mean every user with `daily_checkins=True`.
 - **Still not built:** BP / sugar readings, "Export for doctor", medicine-strip photo
   upload (the dashboard takes a link). The dashboard keeps "Not set up" for those; the BP screen exists in
   `web/src/ghar/Screens.tsx` (shown at `/?preview`) but is not wired.

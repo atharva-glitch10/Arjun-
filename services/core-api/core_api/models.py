@@ -47,6 +47,9 @@ class User(Base):
     snack_time: Mapped[str] = mapped_column(String(5), default="17:00")
     walk_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     bp_check_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    # Sugar checks are optional: fasting in the morning and after lunch. Raw numbers only.
+    sugar_check_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    sugar_after_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # Meal / walk / BP check-ins are spoken only when the family switched them on.
     daily_checkins: Mapped[bool] = mapped_column(Boolean, default=False)
     honorific: Mapped[str] = mapped_column(String(60), default="")  # how Arjun addresses her ("" = the name)

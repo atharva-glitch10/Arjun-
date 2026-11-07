@@ -6,8 +6,8 @@ Usage:
   python scripts/checkin_demo.py --user 1 --plan-only           only print the plan and the day card
 
 `--now HH:MM` is the time of day the demo pretends it is: it is checked against her opener window and the quiet
-hours (22:00-07:00) exactly like a real tick. The prompt itself is queued at the real time, so the open elder
-page (voice session) speaks it within a few seconds. The daily cap and the 45-minute gap are not applied, so the
+hours (22:00-06:30) exactly like a real tick. The prompt itself is queued at the real time, so the open elder
+page (voice session) speaks it within a few seconds. The daily cap and the 30-minute gap are not applied, so the
 demo can be repeated.
 
 Needs core-api running with ARJUN_CHECKIN_DEMO=1 (otherwise the fire step answers 404; the plan still prints).

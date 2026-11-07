@@ -1,5 +1,37 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Daily health check-ins enabled for the demo user (2026-11-07)
+- Root cause of "Arjun never asks": user 1 had `daily_checkins=0`, and the plan had no seeded profile times, so
+  `ensure_checkins` returned early and the tick loop skipped the user. The DB was correct; the seed/profile was not.
+- Demo seed (`scripts/seed_heerabai.py`) is now idempotent and sets user 1: check-ins ON, opener 07:30-21:00,
+  wake 06:30, breakfast 08:30, lunch 13:00, snack 17:00, dinner 20:00, walk 18:00, BP 09:00, fasting sugar 08:00,
+  after-lunch sugar 15:00, address "हीराबाई", and four medicine rows (बीपीची गोळी 09:00/21:00, शुगरची गोळी
+  08:30/20:30). Medicines not in that plan are switched off. `name` cannot be PATCHed, so the stored name stays
+  "Demo Aaji (synthetic)"; the spoken address is हीराबाई.
+- New optional `users.sugar_check_time` / `sugar_after_time` columns (added by `ensure_columns`), dashboard fields,
+  and `sugar` / `sugar_after` check-in kinds. `walk_time`, `bp_check_time` and both sugar times are omitted from the
+  plan when unset.
+- Engine defaults changed: quiet hours 22:00-06:30; `ARJUN_CHECKIN_MAX_PER_DAY=14` counts only non-routine prompts;
+  meals / snack / walk / BP / sugar are exempt; `ARJUN_CHECKIN_MIN_GAP_MIN=30`; each decision is logged once as
+  `checkin <kind> asked|postponed:<reason>|missed`. The scheduler now fills empty `OPENER_USER_IDS` /
+  `BRIEFING_USER_IDS` from `GET /internal/checkin-users` (every user with `daily_checkins=True`).
+- Dashboard: both sugar times are editable and the check-in switch is a clearly labelled ON/OFF toggle.
+- Deferred to Phase 2 (not in this change): the full deterministic routine (water / wellbeing / reflection / night /
+  company prompts), sugar-number reading, appointment/festival/loneliness planning, the elder "आजचा दिवस" timeline
+  and the family trends/adherence screen.
+- Phase 1 verification (2026-11-07): core-api 280, reasoning 976, voice-agent 322, scheduler 8, web 144; TypeScript,
+  production build, Ruff and `eval/run_eval.py` (46/46 intent, 12/12 slots, 5/5 distress, 87/87 emergency,
+  0/12 false alarms) all pass. Tests used a workspace-local pytest temp root because system temp enumeration is denied.
+- Follow-up runtime audit: live core-api confirms the seeded profile and check-in switch are active. Scheduler logs
+  contain repeated ticks and `check-in due, queued for delivery user=1 lunch`; the current delivery API still shows that
+  item queued, with no corresponding spoken entry in the newest voice-agent logs. The voice log therefore does not
+  prove an elder session was connected when it became due. During a family call, the voice loop previously skipped
+  delivery lookup entirely, leaving check-ins queued without the busy/postpone decision. It now reports call-active
+  separately: check-ins are postponed and no reminder/medicine is claimed for speech until the family leaves. Added
+  regression coverage for both; corrected the demo's 30-minute gap and quiet-hours descriptions. Phone verification is
+  still needed to prove actual audio delivery.
+
+
 ## YouTube playback no longer strands listening (2026-11-07)
 - Root cause evidence: newest media session logged `ignored_media (54 characters; the words are not kept)` on later turns after `OPEN_MEDIA`; then `stream closed ... SOURCE_MICROPHONE`, `input stream detached`, and `session closed {"reason":"participant_disconnected"}`. This confirms the media gate was discarding later recognized speech. The disconnect cause itself is not proven to be YouTube opening a new tab; YouTube was already handled by an in-page iframe.
 - Media mode now starts only after the embedded player reports `playing`, receives a changing 10-second heartbeat, and turns off for stop/end/error/unmount/page hidden or a 30-second heartbeat timeout. Mode transitions log once with a reason.

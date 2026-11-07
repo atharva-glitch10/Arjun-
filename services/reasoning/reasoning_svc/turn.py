@@ -1328,6 +1328,9 @@ class TurnEngine:
         elif topic == "appt":
             at, _, title = ref.partition("|")
             prompt = prompt.format(when=rp.say_time(at, lang) if at else "", title=title)
+        elif topic == "night":
+            tomorrow = (local_now() + timedelta(days=1)).date()
+            prompt = prompt.format(next=rp.say_weekday_date(tomorrow, lang)[0])
         if kind == "snack":
             event = self._evening_appointment(uid)
             if event is not None:
@@ -1531,7 +1534,9 @@ class TurnEngine:
             "queued": self.core.deliveries_waiting(uid),
         }
 
-    def deliver_next(self, uid: int, session: str, media_playing: bool = False) -> dict[str, Any] | None:
+    def deliver_next(
+        self, uid: int, session: str, media_playing: bool = False, call_active: bool = False
+    ) -> dict[str, Any] | None:
         """Claim the next waiting reminder / medicine prompt and render its fixed wording, or return None.
 
         Never while a yes/no is pending or just after a safety reply. The claim is atomic in core-api, so two open
@@ -1541,14 +1546,14 @@ class TurnEngine:
         b = self.busy(uid)
         d = self.core.delivery_next(uid) if b["queued"] else None
         if d is not None and d["kind"] == "checkin" and (
-            b["pending"] or b["safety_hold"] or self._check_in_is_busy(uid, media_playing)
+            b["pending"] or b["safety_hold"] or call_active or self._check_in_is_busy(uid, media_playing)
         ):
             try:  # a question can wait: core-api asks again in 10 minutes (3 times at most); reminders never wait here
                 self.core.postpone_checkin(uid, d["ref_id"])
             except (CoreError, httpx.HTTPError) as exc:
                 log.warning("could not postpone check-in %s: %s", d["ref_id"], exc)
             return None
-        if b["pending"] or b["safety_hold"]:
+        if b["pending"] or b["safety_hold"] or call_active:
             return None
         if d is None:
             return None
