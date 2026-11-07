@@ -64,7 +64,11 @@ export const FAMILY_ROUTES: Route[] = [
 ];
 
 /** Public on purpose: the join token is signed and checked by core-api. */
-export const PUBLIC_ROUTES: Route[] = [route("GET", "/family/join"), route("POST", "/family/calls/end")];
+export const PUBLIC_ROUTES: Route[] = [
+  route("GET", "/family/join"),
+  route("POST", "/family/calls/answer"),
+  route("POST", "/family/calls/end"),
+];
 
 export const routeAllowed = (routes: Route[], method: string, path: string): boolean =>
   routes.some((r) => r.method === method.toUpperCase() && r.path.test(path));

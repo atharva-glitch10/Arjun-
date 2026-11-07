@@ -185,6 +185,7 @@ describe("the /core proxy", () => {
   it("the signed family join link works without a cookie, and nothing else does", () => {
     const a = access();
     expect(run(a, viaTunnel({ url: "/core/family/join?t=1.99.sig" })).next).toHaveBeenCalledOnce();
+    expect(run(a, viaTunnel({ url: "/core/family/calls/answer", method: "POST" })).next).toHaveBeenCalledOnce();
     expect(run(a, viaTunnel({ url: "/core/livekit/token", method: "POST" })).res.statusCode).toBe(401);
     expect(run(a, viaTunnel({ url: "/core/users/1" })).res.statusCode).toBe(401);
     const page = run(a, viaTunnel({ url: "/?view=join&t=1.99.sig" }));

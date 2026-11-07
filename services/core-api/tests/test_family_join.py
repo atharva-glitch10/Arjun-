@@ -101,3 +101,11 @@ def test_join_url_points_at_the_web_join_view(client, uid, livekit, monkeypatch)
     assert url.startswith("https://arjun.example.test/?view=join&t=")
     token = url.split("t=", 1)[1]
     assert joins.verify(token) == uid
+
+
+def test_call_bound_join_links_keep_the_call_id_signed(client, uid, monkeypatch):
+    monkeypatch.setenv("BASE_URL", "https://arjun.example.test")
+    token = joins.issue(uid, call_id=37)
+    assert joins.claims(token) == (uid, 37)
+    assert joins.verify(token) == uid
+    assert "37." in token

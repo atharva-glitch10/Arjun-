@@ -40,7 +40,7 @@ def test_doctors_cannot_be_called(client, uid):
     assert client.post(f"/users/{uid}/calls", json={"contact_id": doctor["id"], "mode": "video"}).status_code == 422
 
 
-def test_family_join_answers_call_and_end_updates_status(client, uid, monkeypatch):
+def test_family_join_marks_answered_only_after_livekit_connects(client, uid, monkeypatch):
     _room(client, uid)
     contact = _contact(client, uid)
     monkeypatch.setenv("LIVEKIT_URL", "wss://example.test")
@@ -51,10 +51,15 @@ def test_family_join_answers_call_and_end_updates_status(client, uid, monkeypatc
     from core_api.main import app, get_now
     app.dependency_overrides[get_now] = lambda: local_now()
     call = client.post(f"/users/{uid}/calls", json={"contact_id": contact["id"]}).json()
-    result = client.get("/family/join", params={"t": joins.issue(uid)}).json()
+    link = joins.issue(uid, call_id=call["id"])
+    result = client.get("/family/join", params={"t": link}).json()
     assert result["mode"] == "video" and result["call_id"] == call["id"]
+    assert client.get(f"/users/{uid}/calls/{call['id']}").json()["status"] == "ringing"
+    assert client.post("/family/calls/answer", json={"t": link}).json()["status"] == "answered"
     assert client.get(f"/users/{uid}/calls/{call['id']}").json()["status"] == "answered"
+    assert client.get("/family/join", params={"t": link}).json()["mode"] == "video"
     assert client.post(f"/users/{uid}/calls/{call['id']}/end").json()["status"] == "ended"
+    assert client.get("/family/join", params={"t": link}).status_code == 410
 
 
 def test_ringing_call_times_out_and_notifies_feed(client, uid, monkeypatch):

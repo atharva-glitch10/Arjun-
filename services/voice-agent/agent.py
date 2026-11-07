@@ -417,6 +417,15 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     async def on_tapped_text(sess, ev) -> None:  # type: ignore[no-untyped-def]
         """A button tap on the elder screen arrives as text on "lk.chat": same path as a spoken turn.
         LiveKit's default would call an LLM we do not have."""
+        if is_system_marker(ev.text):
+            marker = ev.text.strip()
+            logger.info("video call event received: %s", marker.split("]", 1)[0][1:])
+            if marker == "[video_call_stopped]" or marker.startswith("[video_call_missed]"):
+                await asyncio.to_thread(notify_video_call_stopped, user_id)
+            if marker.startswith("[video_call_missed]"):
+                name = marker.partition("]")[2].strip()[:80] or "घरच्यांनी"
+                await say_locked(f"{name}नी उचलला नाही, मी निरोप ठेवला आहे.")
+            return
         if family.present():  # a family call is in progress: no third voice, even from a tap
             logger.info("family_in_room: tap ignored")
             return

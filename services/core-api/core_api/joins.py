@@ -26,31 +26,38 @@ def _sign(payload: str) -> str:
     return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
-def issue(user_id: int, now: float | None = None) -> str:
+def issue(user_id: int, now: float | None = None, call_id: int | None = None) -> str:
     expires = int(now if now is not None else time.time()) + TTL_S
-    payload = f"{user_id}.{expires}"
+    payload = f"{user_id}.{expires}" + (f".{call_id}" if call_id is not None else "")
     return f"{payload}.{_sign(payload)}"
 
 
-def verify(token: str, now: float | None = None) -> int | None:
-    """The user id this link belongs to, or None when it is malformed, forged or expired."""
+def claims(token: str, now: float | None = None) -> tuple[int, int | None] | None:
+    """Signed user/call identity, or None when malformed, forged or expired."""
     parts = (token or "").split(".")
-    if len(parts) != 3:
+    if len(parts) not in (3, 4):
         return None
-    uid_s, exp_s, sig = parts
-    if not uid_s.isdigit() or not exp_s.isdigit():
+    uid_s, exp_s = parts[:2]
+    call_s = parts[2] if len(parts) == 4 else None
+    sig = parts[-1]
+    if not uid_s.isdigit() or not exp_s.isdigit() or call_s is not None and not call_s.isdigit():
         return None
-    payload = f"{uid_s}.{exp_s}"
+    payload = ".".join(parts[:-1])
     if not hmac.compare_digest(sig, _sign(payload)):
         return None
     if int(exp_s) <= int(now if now is not None else time.time()):
         return None
-    return int(uid_s)
+    return int(uid_s), int(call_s) if call_s is not None else None
 
 
-def join_url(user_id: int, now: float | None = None) -> str:
+def verify(token: str, now: float | None = None) -> int | None:
+    result = claims(token, now)
+    return None if result is None else result[0]
+
+
+def join_url(user_id: int, now: float | None = None, call_id: int | None = None) -> str:
     """The web page the Telegram button opens, or "" when BASE_URL is not configured."""
     base = os.environ.get("BASE_URL", "").strip().rstrip("/")
     if not base:
         return ""
-    return f"{base}/?view=join&t={quote(issue(user_id, now))}"
+    return f"{base}/?view=join&t={quote(issue(user_id, now, call_id))}"

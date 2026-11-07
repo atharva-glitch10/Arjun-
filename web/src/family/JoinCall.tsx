@@ -86,6 +86,7 @@ export function JoinCall() {
       return;
     }
     let cancelled = false;
+    let reconnectTimer = 0;
 
     void (async () => {
       let info;
@@ -111,6 +112,42 @@ export function JoinCall() {
         audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       room.current = r;
+      let initialConnect = true;
+      let livekitConnected = false;
+      let tracksReady = false;
+      let reconnectAttempts = 0;
+      const reconnectFamily = () => {
+        if (cancelled || hungUp.current || reconnectTimer) return;
+        setStatus("connecting");
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = 0;
+          if (cancelled || hungUp.current) return;
+          void (async () => {
+            try {
+              await r.connect(info.url, info.token);
+              livekitConnected = true;
+              await r.startAudio().catch(() => undefined);
+              await r.localParticipant.setMicrophoneEnabled(!muted);
+              if (info.mode === "video") {
+                await r.localParticipant.setCameraEnabled(camera);
+                tracksReady = true;
+              }
+              if (info.mode === "video") await api.familyCallAnswer(token);
+              reconnectAttempts = 0;
+              setStatus("live");
+            } catch {
+              reconnectAttempts += 1;
+              if (reconnectAttempts < 5) reconnectFamily();
+              else {
+                hungUp.current = true;
+                void api.familyCallEnd(token).catch(() => {});
+                setProblem("The connection dropped. Retrying did not work.");
+                setStatus("error");
+              }
+            }
+          })();
+        }, 1000);
+      };
       r.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind === Track.Kind.Audio) {
           const el = track.attach();
@@ -120,27 +157,55 @@ export function JoinCall() {
       r.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => { el.srcObject = null; }));
       r.on(RoomEvent.AudioPlaybackStatusChanged, () => setBlocked(!r.canPlaybackAudio));
       r.on(RoomEvent.Disconnected, () => {
-        if (!cancelled && !hungUp.current) {
-          if (info.mode === "video") window.setTimeout(() => void api.familyCallEnd(token).catch(() => {}), 15_000);
-          setStatus("ended");
-        }
+        if (initialConnect || cancelled || hungUp.current) return;
+        console.warn("family LiveKit disconnected; retrying in the current call room");
+        if (info.mode === "video") reconnectFamily();
+        else setStatus("ended");
       });
 
       try {
         await r.connect(info.url, info.token);
+        initialConnect = false;
+        livekitConnected = true;
         await r.startAudio().catch(() => undefined);
         await r.localParticipant.setMicrophoneEnabled(true);
         if (info.mode === "video") {
           await r.localParticipant.setCameraEnabled(true);
+          tracksReady = true;
+          await api.familyCallAnswer(token);
         }
       } catch {
+        initialConnect = false;
         if (!cancelled) {
-          if (info.mode === "video") void api.familyCallEnd(token).catch(() => {});
-          void r.localParticipant.setMicrophoneEnabled(false);
-          void r.localParticipant.setCameraEnabled(false);
-          void r.disconnect();
-          setProblem("आवाजाची लिंक उघडता आली नाही. मायक्रोफोनची परवानगी द्या आणि पुन्हा प्रयत्न करा.");
-          setStatus("error");
+          if (info.mode === "video") {
+            if (!livekitConnected) reconnectFamily();
+            else if (!tracksReady) {
+              hungUp.current = true;
+              void api.familyCallEnd(token).catch(() => {});
+              void r.disconnect();
+              setProblem("Camera or microphone permission is required to join the video call.");
+              setStatus("error");
+            } else {
+              let acknowledged = false;
+              for (let i = 0; i < 4 && !acknowledged; i += 1) {
+                await new Promise((resolve) => window.setTimeout(resolve, 500 * (i + 1)));
+                try { await api.familyCallAnswer(token); acknowledged = true; } catch { /* retry */ }
+              }
+              if (acknowledged) setStatus("live");
+              else {
+                hungUp.current = true;
+                void api.familyCallEnd(token).catch(() => {});
+                setProblem("The family call could not be confirmed by the server.");
+                setStatus("error");
+              }
+            }
+          } else {
+            void r.localParticipant.setMicrophoneEnabled(false);
+            void r.localParticipant.setCameraEnabled(false);
+            void r.disconnect();
+            setProblem("आवाजाची लिंक उघडता आली नाही. मायक्रोफोनची परवानगी द्या आणि पुन्हा प्रयत्न करा.");
+            setStatus("error");
+          }
         }
         return;
       }
@@ -152,7 +217,7 @@ export function JoinCall() {
       const r = room.current;
       room.current = null;
       if (r) {
-        if (mode === "video" && !hungUp.current) void api.familyCallEnd(token).catch(() => {});
+        window.clearTimeout(reconnectTimer);
         void r.localParticipant.setCameraEnabled(false);
         void r.disconnect();
       }

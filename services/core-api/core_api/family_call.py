@@ -55,11 +55,16 @@ class JoinOut(BaseModel):
     call_id: int | None = None
 
 
+class CallEndIn(BaseModel):
+    t: str
+
+
 @router.get("/family/join", response_model=JoinOut)
 def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
-    user_id = joins.verify(t)
-    if user_id is None:
+    signed = joins.claims(t)
+    if signed is None:
         raise HTTPException(403, "join link is invalid or expired")
+    user_id, call_id = signed
     url = os.environ.get("LIVEKIT_URL")
     key = os.environ.get("LIVEKIT_API_KEY")
     secret = os.environ.get("LIVEKIT_API_SECRET")
@@ -76,24 +81,20 @@ def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
         db.scalars(select(m.Contact).where(m.Contact.user_id == user_id).order_by(m.Contact.id))
     )
     name = family_name(contacts)
-    call = db.scalar(select(m.VideoCall).where(
+    call = db.get(m.VideoCall, call_id) if call_id is not None else db.scalar(select(m.VideoCall).where(
         m.VideoCall.user_id == user_id,
         m.VideoCall.status.in_(("ringing", "answered")),
     ).order_by(m.VideoCall.id.desc()))
+    if call_id is not None and (call is None or call.user_id != user_id or call.mode != "video"):
+        raise HTTPException(404, "video call not found")
+    if call_id is not None and call.status in ("missed", "ended"):
+        raise HTTPException(410, "video call has ended")
     if call is not None and call.mode == "video" and call.status == "ringing":
         from .video_calls import expire_ringing_call
         if expire_ringing_call(call, db, local_now()):
-            call = None
-    if call is not None and call.mode == "video" and call.status == "answered":
-        raise HTTPException(409, "the video call has already been answered")
+            raise HTTPException(410, "video call has expired")
     call = call if call is not None and call.mode == "video" else None
     mode = "video" if call is not None else "voice"
-    if call is not None and call.status == "ringing":
-        call.status = "answered"
-        call.answered_at = local_now()
-        db.commit()
-        from .video_calls import cancel_missed_timer
-        cancel_missed_timer(call.id)
     token = (
         AccessToken(key, secret)
         .with_identity(FAMILY_IDENTITY)
@@ -123,21 +124,49 @@ def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
     )
 
 
-class CallEndIn(BaseModel):
-    t: str
+@router.post("/family/calls/answer")
+def family_call_answer(body: CallEndIn, db: Session = Depends(get_db)) -> dict[str, str]:
+    signed = joins.claims(body.t)
+    if signed is None:
+        raise HTTPException(403, "join link is invalid or expired")
+    user_id, call_id = signed
+    call = db.get(m.VideoCall, call_id) if call_id is not None else db.scalar(select(m.VideoCall).where(
+        m.VideoCall.user_id == user_id,
+        m.VideoCall.status.in_(("ringing", "answered")),
+    ).order_by(m.VideoCall.id.desc()))
+    if call is not None and call.status in ("missed", "ended"):
+        raise HTTPException(410, "video call has ended")
+    if call is None or call.mode != "video":
+        raise HTTPException(409, "there is no ringing video call")
+    if call.status == "ringing":
+        from .video_calls import cancel_missed_timer, expire_ringing_call
+        now = local_now()
+        if expire_ringing_call(call, db, now):
+            raise HTTPException(410, "video call has expired")
+        call.status = "answered"
+        call.answered_at = now
+        db.commit()
+        cancel_missed_timer(call.id)
+    return {"status": "answered"}
 
 
 @router.post("/family/calls/end")
 def family_call_end(body: CallEndIn, db: Session = Depends(get_db)) -> dict[str, str]:
-    user_id = joins.verify(body.t)
-    if user_id is None:
+    signed = joins.claims(body.t)
+    if signed is None:
         raise HTTPException(403, "join link is invalid or expired")
-    call = db.scalar(select(m.VideoCall).where(
+    user_id, call_id = signed
+    call = db.get(m.VideoCall, call_id) if call_id is not None else db.scalar(select(m.VideoCall).where(
         m.VideoCall.user_id == user_id,
         m.VideoCall.status.in_(("ringing", "answered")),
     ).order_by(m.VideoCall.id.desc()))
+    if call is not None and call.user_id != user_id:
+        raise HTTPException(404, "call not found")
     if call is not None:
         call.status = "ended"
         call.ended_at = local_now()
         db.commit()
+        if call.mode == "video":
+            from .video_calls import cancel_missed_timer
+            cancel_missed_timer(call.id)
     return {"status": "ended"}

@@ -352,6 +352,7 @@ export const api = {
   livekitToken: (userId: number) => core<LivekitToken>("/livekit/token", post({ user_id: userId })),
   // The family-call link from Telegram: checked by core-api, returns a token for the elder's current room.
   familyJoin: (token: string) => core<FamilyJoin>(`/family/join?t=${encodeURIComponent(token)}`),
+  familyCallAnswer: (token: string) => core<{ status: string }>("/family/calls/answer", post({ t: token })),
   startVideoCall: (userId: number, contactId: number) =>
     core<VideoCall>(`/users/${userId}/calls`, post({ contact_id: contactId, mode: "video" })),
   videoCallStatus: (userId: number, callId: number) => core<VideoCall>(`/users/${userId}/calls/${callId}`),

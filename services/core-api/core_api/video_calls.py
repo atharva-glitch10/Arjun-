@@ -68,7 +68,7 @@ def _mark_missed(db: Session, call: m.VideoCall, current: datetime) -> bool:
     db.add(m.Notification(user_id=call.user_id, kind="video_call_missed", body=body))
     db.commit()
     telegram.send_alert(
-        body, joins.join_url(call.user_id), user_id=call.user_id, kind="video_call_missed",
+        body, joins.join_url(call.user_id, call_id=call.id), user_id=call.user_id, kind="video_call_missed",
         button_text="परत करा", bind=db.get_bind(),
     )
     return True
@@ -154,7 +154,7 @@ def start_video_call(
     user = db.get(m.User, user_id)
     elder = (user.name if user else "आजी").split("(", 1)[0].strip()
     telegram.send_alert(
-        f"📹 {elder} व्हिडिओ कॉल करत आहेत", joins.join_url(user_id), user_id=user_id,
+        f"📹 {elder} व्हिडिओ कॉल करत आहेत", joins.join_url(user_id, call_id=call.id), user_id=user_id,
         kind=f"video_call:{call.id}", button_text="उचला", bind=db.get_bind(),
     )
     _schedule_missed(call.id, db.get_bind())
@@ -185,6 +185,7 @@ def end_video_call(user_id: int, call_id: int, db: Session = Depends(get_db), no
         call.status = "ended"
         call.ended_at = now
         db.commit()
+        cancel_missed_timer(call.id)
     contact = db.get(m.Contact, call.contact_id)
     assert contact is not None
     return _out(call, contact)
