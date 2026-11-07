@@ -29,7 +29,12 @@ from bridge import media_stopped as notify_media_stopped
 from bridge import video_call_stopped as notify_video_call_stopped
 from delivery import DeliveryLoop
 from dotenv import dotenv_values
-from endpointing import ConjunctionHold, EndpointingPolicy, turn_detection_from_env
+from endpointing import (
+    ConjunctionHold,
+    EndpointingPolicy,
+    turn_detection_from_env,
+    turn_handling_options,
+)
 from familyroom import FamilyPresence
 from idle import IdleCloser, IdlePolicy
 from livekit import agents
@@ -262,10 +267,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         logger.info("voice provider: gnani (stt prisma, tts %s)", active_model)
         logger.info("TTS %s via %s; STT %s", active_model, TTS["method"], STT_OPTIONS)
     endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's
-    handling: dict = {"endpointing": endpointing.options()}  # type: ignore[type-arg]
+    handling: dict = turn_handling_options()  # type: ignore[assignment]
     detection = turn_detection_from_env()  # "vad" by default; None = LiveKit's cloud detector (see endpointing.py)
-    if detection is not None:
-        handling["turn_detection"] = detection
     logger.info("turn detection %s, endpointing %s", detection or "auto (cloud)", endpointing.options())
     session = AgentSession(
         stt=stt_plugin,  # Prisma (GNANI_API_KEY) or, with the testing switch, Saaras (SARVAM_API_KEY)
@@ -457,6 +460,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
         state.on_user_state(ev.new_state)
         if ev.new_state == "speaking":
+            turns.user_started_speaking(ev.created_at)
             user_started.set()
             if media.playing:
                 asyncio.create_task(_set_media_duck(True))
@@ -482,6 +486,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     @session.on("agent_state_changed")
     def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
         state.on_agent_state(ev.new_state)
+        if ev.old_state == "speaking" and ev.new_state != "speaking":
+            turns.agent_stopped_speaking(ev.created_at)
         policy.touch()  # the 60 s idle clock starts when Arjun stops talking
         if ev.new_state == "speaking":
             turns.agent_speaking(ev.created_at)

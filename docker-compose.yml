@@ -17,6 +17,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://arjun:arjun@postgres:5432/arjun
       CORE_API_KEY: ${CORE_API_KEY:-dev-change-me}
+      ARJUN_VOICE_TURNLOG_PATH: /app/eval/results/turns.jsonl
+    volumes:
+      - ./eval/results:/app/eval/results:ro
     depends_on:
       postgres:
         condition: service_healthy

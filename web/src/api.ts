@@ -29,6 +29,25 @@ export interface User {
   speech_style: { rate: "normal" | "slow"; volume: "normal" | "loud"; simple: boolean };
 }
 
+export interface VoiceMetricStage {
+  count: number;
+  p50_ms: number | null;
+  p90_ms: number | null;
+  within_300_ms?: number;
+}
+
+export interface VoiceMetrics {
+  hours: number;
+  counts: { turns: number; complete: number; barge_ins: number };
+  stages: {
+    stt: VoiceMetricStage;
+    final_to_reasoning: VoiceMetricStage;
+    reasoning_to_first_audio: VoiceMetricStage;
+    eos_to_speaking: VoiceMetricStage;
+    barge_in_stop: VoiceMetricStage;
+  };
+}
+
 export interface Reminder {
   id: number;
   task: string;
@@ -294,6 +313,7 @@ export const api = {
   createUser: (name: string) =>
     core<User>("/users", post({ name, language: "mr", interests: ["cooking"] })),
   getUser: (id: number) => core<User>(`/users/${id}`),
+  voiceMetrics: (hours = 24) => core<VoiceMetrics>(`/metrics/voice?hours=${hours}`),
   patchUser: (id: number, body: Partial<Omit<User, "id" | "name">>) =>
     core<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   reminders: (id: number) => core<Reminder[]>(`/users/${id}/reminders`),

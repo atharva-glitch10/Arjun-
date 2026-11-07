@@ -6,7 +6,13 @@ import asyncio
 
 import pytest
 from bridge import BridgeReply
-from endpointing import ConjunctionHold, EndpointingPolicy, ends_with_conjunction, settings_from_env
+from endpointing import (
+    ConjunctionHold,
+    EndpointingPolicy,
+    ends_with_conjunction,
+    settings_from_env,
+    turn_handling_options,
+)
 from responder import Responder
 from turnlog import TurnLog
 
@@ -23,6 +29,15 @@ def test_defaults_are_care_08_and_companion_16_to_40():
     assert p.options() == {"min_delay": 1.6, "max_delay": 4.0}
     p.set_mode("care")
     assert p.options() == {"min_delay": 0.8, "max_delay": 2.5}
+
+
+def test_barge_in_vad_threshold_is_100ms_and_keeps_false_interruption_recovery():
+    options = turn_handling_options({"ARJUN_TURN_DETECTION": "vad"})
+    assert options["interruption"] == {
+        "enabled": True, "mode": "vad", "min_duration": 0.1, "min_words": 0,
+        "resume_false_interruption": True, "false_interruption_timeout": 2.0,
+    }
+    assert options["turn_detection"] == "vad"
 
 
 @pytest.mark.parametrize("mode", ["safety", "fallback", "", "anything-else"])

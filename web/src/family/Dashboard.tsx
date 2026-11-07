@@ -31,6 +31,7 @@ import type {
   Reminder,
   SharedStory,
   User,
+  VoiceMetrics,
   WatchSample,
 } from "../api";
 import { CheckIcon, ClockIcon, CrossIcon, Diya } from "../ghar/Motifs";
@@ -54,6 +55,7 @@ interface Data {
   today: WellbeingToday;
   bp: BpReading[];
   watch: WatchSample[];
+  voiceMetrics: VoiceMetrics | null;
 }
 
 const DAY = 86_400_000;
@@ -139,7 +141,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
   // user"); keep the last data and say so in a small banner.
   const load = useCallback(async (quiet = false) => {
     try {
-      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks, mediaStatus, dayCard] =
+      const [user, reminders, appointments, nextAppt, contacts, book, requests, notes, medicines, doses, deliveries, activity, today, bp, watch, appLinks, mediaStatus, dayCard, voiceMetrics] =
         await Promise.all([
         api.getUser(userId),
         api.reminders(userId),
@@ -161,8 +163,9 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         api.appLinks(userId).catch((): AppLink[] => []), // older core-api
         api.mediaStatus().catch((): MediaStatus | null => null), // older core-api
         api.checkinCard(userId).catch((): CheckinCardItem[] => []), // older core-api
+        api.voiceMetrics(24).catch((): VoiceMetrics | null => null),
       ]);
-      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, mediaStatus, book, requests, notes, medicines, doses, deliveries, dayCard, activity, today, bp, watch });
+      setData({ user, reminders, appointments, nextAppt, contacts, appLinks, mediaStatus, book, requests, notes, medicines, doses, deliveries, dayCard, activity, today, bp, watch, voiceMetrics });
       setUpdated(new Date());
       setError("");
     } catch (e) {
@@ -542,6 +545,11 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </p>
           </section>
 
+          <section className="fam-card" style={{ flex: "1 1 480px" }} aria-label="Voice performance">
+            <h2>Voice performance</h2>
+            <VoicePerformance metrics={data.voiceMetrics} />
+          </section>
+
           <section className="fam-card" style={{ flex: "1 1 480px" }} aria-label="आजचा दिवस">
             <h2>आजचा दिवस</h2>
             <p className="fam-note" style={{ marginTop: 0 }}>
@@ -864,6 +872,41 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+function VoicePerformance({ metrics }: { metrics: VoiceMetrics | null }) {
+  const rows = metrics
+    ? [
+        ["STT", metrics.stages.stt],
+        ["Final → reasoning", metrics.stages.final_to_reasoning],
+        ["Reasoning → audio", metrics.stages.reasoning_to_first_audio],
+        ["EOS → speaking", metrics.stages.eos_to_speaking],
+        ["Barge-in stop", metrics.stages.barge_in_stop],
+      ] as const
+    : [];
+  const maximum = Math.max(1, ...rows.flatMap(([, stage]) => [stage.p50_ms ?? 0, stage.p90_ms ?? 0]));
+  const width = (value: number | null) => `${Math.max(value === null ? 0 : 3, Math.min(100, ((value ?? 0) / maximum) * 100))}%`;
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <div className="fam-note">Last 24 h · {metrics?.counts.turns ?? 0} turns · {metrics?.counts.barge_ins ?? 0} interruptions</div>
+      {rows.map(([label, stage]) => (
+        <div key={label} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) 2fr auto", gap: 12, alignItems: "center" }}>
+          <strong>{label}</strong>
+          <div style={{ display: "grid", gap: 4 }} aria-hidden="true">
+            <span style={{ display: "block", height: 7, width: width(stage.p50_ms), background: "#437a58", borderRadius: 8 }} />
+            <span style={{ display: "block", height: 7, width: width(stage.p90_ms), background: "#b5c9b9", borderRadius: 8 }} />
+          </div>
+          <span className="label" style={{ whiteSpace: "nowrap" }}>
+            {stage.p50_ms ?? "—"} / {stage.p90_ms ?? "—"} ms
+          </span>
+          <span className="fam-note" style={{ gridColumn: "2 / 4", marginTop: -8 }}>p50 / p90 · n={stage.count}</span>
+        </div>
+      ))}
+      {metrics?.counts.barge_ins ? (
+        <div className="fam-note">≤300 ms: {metrics.stages.barge_in_stop.within_300_ms ?? 0}/{metrics.counts.barge_ins}</div>
+      ) : null}
     </div>
   );
 }

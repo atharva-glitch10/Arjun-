@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ from .ratelimit import RateLimitMiddleware
 from .readings import router as readings_router
 from .recurrence import next_occurrence
 from .video_calls import router as video_calls_router
+from .voice_metrics import load_voice_metrics
 from .wellbeing import router as wellbeing_router
 
 
@@ -45,6 +46,12 @@ async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
 app = FastAPI(title="Arjun core-api", lifespan=lifespan)
 app.add_middleware(RateLimitMiddleware)
 router = APIRouter(dependencies=[Depends(require_key)])
+
+
+@router.get("/metrics/voice")
+def voice_metrics(hours: int = Query(default=24, ge=1, le=168)) -> dict[str, object]:
+    """Return timing percentiles and counts only; never expose the source turnlog's text fields."""
+    return load_voice_metrics(hours)
 
 
 @app.get("/health")

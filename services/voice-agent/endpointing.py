@@ -123,3 +123,22 @@ def turn_detection_from_env(env: Mapping[str, str] | None = None) -> str | None:
     e = os.environ if env is None else env
     v = (e.get("ARJUN_TURN_DETECTION") or "vad").strip().lower()
     return None if v in ("auto", "cloud", "default") else (v if v in ("vad", "stt") else "vad")
+
+
+def turn_handling_options(env: Mapping[str, str] | None = None) -> dict[str, object]:
+    """Set a 100 ms VAD interruption threshold (LiveKit's pinned default is 500 ms)."""
+    detection = turn_detection_from_env(env)
+    options: dict[str, object] = {
+        "endpointing": EndpointingPolicy(settings_from_env(env)).options(),
+        "interruption": {
+            "enabled": True,
+            "mode": "vad",
+            "min_duration": 0.1,
+            "min_words": 0,
+            "resume_false_interruption": True,
+            "false_interruption_timeout": 2.0,
+        },
+    }
+    if detection is not None:
+        options["turn_detection"] = detection
+    return options

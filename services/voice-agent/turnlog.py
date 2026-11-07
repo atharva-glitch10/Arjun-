@@ -50,6 +50,8 @@ class TurnLog:
         self._taken: set[int] = set()  # handed to reasoning (no longer collecting finals)
         self._last_eos: float | None = None
         self._speaking: int | None = None  # the turn whose reply is being spoken now
+        self._active_speech_turn: int | None = None
+        self._barge_in_started_at: float | None = None
 
     # ---- helpers -----------------------------------------------------------------------------
     def _new(self) -> dict:
@@ -143,6 +145,7 @@ class TurnLog:
         """The reply for turn `idx` never played (she spoke again, or TTS failed): write the line now, with the reason."""
         if self._speaking == idx:
             self._speaking = None
+        self.speech_finished(idx)
         if idx in self._open:
             self._open[idx]["outcome"] = reason
             self.flush(idx)
@@ -151,8 +154,32 @@ class TurnLog:
         idx, self._speaking = self._speaking, None
         if idx is None or idx not in self._open:
             return  # speech that is not a reply to a user turn
+        self._active_speech_turn = idx
         self._open[idx]["t_agent_speaking"] = t
         self.flush(idx)
+
+    def user_started_speaking(self, t: float) -> None:
+        """Start a barge-in timer only while a reply's audio is active."""
+        if self._active_speech_turn is not None:
+            self._barge_in_started_at = t
+
+    def agent_stopped_speaking(self, t: float) -> None:
+        idx, started = self._active_speech_turn, self._barge_in_started_at
+        self._barge_in_started_at = None
+        if idx is None or started is None:
+            return
+        event = {
+            "metric_event": "barge_in", "turn": idx, "t_event": t,
+            "barge_in_stop_ms": max(0, round((t - started) * 1000)),
+        }
+        if self.session:
+            event["session"] = self.session
+        self._append(event)
+
+    def speech_finished(self, idx: int) -> None:
+        if self._active_speech_turn == idx:
+            self._active_speech_turn = None
+            self._barge_in_started_at = None
 
     def is_stale(self, idx: int) -> bool:
         """True when the user has said something newer than turn `idx` (a later final transcript)."""
@@ -204,10 +231,13 @@ class TurnLog:
         elif "outcome" not in turn:
             turn["outcome"] = "not_spoken" if "reply" in turn else "no_reply"
         turn["complete"] = start is not None and "t_agent_speaking" in turn
+        self._append(turn)
+        return turn
+
+    def _append(self, turn: dict) -> None:
         line = json.dumps(turn, ensure_ascii=False)
         logger.info("turn %s", line)
         print("TURN " + line, flush=True)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
-        return turn

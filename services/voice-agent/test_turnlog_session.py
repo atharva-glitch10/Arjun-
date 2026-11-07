@@ -63,6 +63,21 @@ def test_a_spoken_turn_has_every_field_the_brief_asks_for(tmp_path):
     assert t["outcome"] == "spoken" and t["complete"] is True
 
 
+def test_barge_in_logs_vad_start_to_agent_stop_in_milliseconds_without_text(tmp_path):
+    log = make(tmp_path, session="synthetic-session")
+    log.final_transcript(10.0, "synthetic", "mr-IN")
+    idx = log.reasoning_started("synthetic", t=10.1)
+    log.reasoning_done(idx, 10.2, "synthetic reply", "care", 100)
+    log.speaking_for(idx, t=10.21)
+    log.agent_speaking(10.3)
+    log.user_started_speaking(10.5)
+    log.agent_stopped_speaking(10.75)
+    rows_ = rows(tmp_path / "t.jsonl")
+    (event,) = [row for row in rows_ if row.get("metric_event") == "barge_in"]
+    assert event["barge_in_stop_ms"] == 250
+    assert "transcript" not in event and "reply" not in event
+
+
 def test_a_line_never_contains_a_secret_or_audio(tmp_path):
     log = make(tmp_path, session="AJ_test")
     log.final_transcript(1.0, "हो", None)

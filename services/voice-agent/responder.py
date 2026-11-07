@@ -66,6 +66,8 @@ class Responder:
             played = await self.say(self.speakable(reply))
             if played is False:  # cut off before any audio (she spoke again): the log says so instead of going silent
                 self.turns.not_spoken(idx, "interrupted")
+            else:
+                self.turns.speech_finished(idx)
         except Exception:  # noqa: BLE001 - TTS failure must be logged, not crash the session
             logger.exception("TTS failed for reply (mode=%s)", reply.mode)
             self.turns.not_spoken(idx, "tts_failed")
