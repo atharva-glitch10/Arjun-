@@ -352,11 +352,11 @@ def _system_prompt(
             '"confirm": "yes"|"no"|null, "choice": integer|string|null, "checkin_answer": '
             '"done|skipped"|null, "bp": {"systolic": integer, "diastolic": integer}|null}, '
             '"reply": string, "confidence": number 0-1}\n'
-            "Intent meanings: chat = ordinary talk or a question you can answer; video_call = start a live video call with a family contact; reminder_add = set a reminder; "
+            "Intent meanings: chat = ordinary talk or a question you can answer; video_call = start a live video call with a family contact, including direct commands like 'Rahul la call kar'; reminder_add = set a reminder; "
             "reminder_done = she finished a task/reminder; medicine_taken = she says she took her medicine; "
             "medicine_query = a question or worry about medicines/doses/side effects; media = play/open music, "
             "bhajan, a video, a recipe, a family link or WhatsApp; news = read or play news; call_family = she "
-            "wants to call/remember to call family; message_family = send a message or ask family for help; "
+            "wants to talk about calling or remember to call family; a direct command to call a named contact is video_call; message_family = send a message or ask family for help; "
             "today_query = ask what is on today/tomorrow, the time, the date or the next appointment; undo = "
             "cancel or undo what was just done; stop = stop the current media/topic; health_complaint = she "
             "reports a symptom or feeling unwell; unclear = you truly cannot tell. "

@@ -557,6 +557,12 @@ Known gaps: no quiet hours, no "repeat last line", an emergency alert is dashboa
 - Verification after the fix: core-api 274, reasoning 973, voice-agent 321, scheduler 8; Vitest 144, TypeScript, production build, Ruff, and dialogue eval pass. Phone verification is still required for camera permission, network handoff, and same-room STT recovery.
 - A further connection trace showed the marker used LiveKit's `lk.chat` tap callback, so filtering only speech turns still let `[video_call_stopped]` reach reasoning. It also showed `/family/join` setting `answered` before LiveKit connected, followed by a family-client disconnect ending the call. System events are now handled on both callbacks, status changes to answered only after LiveKit and camera publish succeed, and the family client retries the same room before ending.
 
+## Named-contact call intent regression (2026-11-07)
+- Live STT/turn logs show `ठीक आहे राहुलला कॉल करणारे` -> `CHAT` at 15:18:34, then the direct command `राहुलला कॉल कर` -> `CHAT`, `action_type=none` at 15:22:11. No call action reached core-api, so no call row or Telegram notification was expected.
+- Explicit named-contact call commands now resolve to `VIDEO_CALL` before short affirmative handling; that rule is deterministic against an LLM `chat` result. “Tell Rahul to call me” remains a caregiver request, and a non-imperative mention remains chat.
+- Tests cover the exact command and `राहुल ला कॉल कर`, `राहुलला कॉल कर ना`, `राहुल ला call kar`; all select the named contact and return the LiveKit video-call action. The preceding `ठीक आहे राहुलला कॉल करणारे` transcript is covered as ordinary chat.
+- Full verification: core-api 280, reasoning 982, voice-agent 322, scheduler 8, web 144; TypeScript/build, Ruff and eval pass (50/50 intent, 12/12 slots, 5/5 distress, 87/87 emergency, 0/12 false alarms). Physical Telegram/phone connection still needs a live check.
+
 ## Open questions (CLAUDE.md has the full list)
 5. Is a non-Gnani LLM allowed in the entry? (We use one for open talk once configured; say which model does what in
    the posts; ask on Discord.) 6. Does noise cancellation help Prisma (it is not installed). 7. Endpointing 1.0 s /

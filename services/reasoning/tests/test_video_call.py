@@ -1,3 +1,4 @@
+import pytest
 from reasoning_svc import main as reasoning_main
 
 
@@ -18,6 +19,61 @@ def test_video_call_named_contact_and_family_fallback_skip_doctor(auto, core_htt
     assert "थांबा" in named.reply and "लागला" not in named.reply
     assert auto.handle(uid, "मुलाला फोन लाव").intent == "CALL_FAMILY_REMINDER"
     assert other["id"] != son["id"]
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    (
+        "राहुलला कॉल कर",       # exact logged STT transcript
+        "राहुल ला कॉल कर",
+        "राहुलला कॉल कर ना",
+        "राहुल ला call kar",
+    ),
+)
+def test_named_contact_call_transcripts_start_the_live_call_action(auto, core_http, uid, transcript):
+    contact = _add_contact(core_http, uid, "राहुल", "मित्र")
+
+    result = auto.handle(uid, transcript)
+
+    assert result.intent == "VIDEO_CALL"
+    assert result.action == {
+        "type": "call", "kind": "video", "value": str(contact["id"]),
+        "contact_id": str(contact["id"]), "title": "राहुल",
+    }
+
+
+def test_named_contact_call_rule_wins_over_llm_chat(auto, core_http, uid):
+    _add_contact(core_http, uid, "राहुल", "मित्र")
+
+    class ChatOnly:
+        def understand_turn(self, *args, **kwargs):
+            return {"intent": "chat", "confidence": 0.99, "slots": {}, "reply": "चला नंतर बोलूया."}
+
+        def companion_reply(self, *args, **kwargs):
+            return "ठीक आहे."
+
+    auto.evon = ChatOnly()
+    result = auto.handle(uid, "राहुलला कॉल कर")
+
+    assert result.intent == "VIDEO_CALL"
+    assert result.action["value"] == "1"
+
+
+def test_non_imperative_call_mention_stays_chat(auto, core_http, uid):
+    _add_contact(core_http, uid, "राहुल", "मित्र")
+
+    class ChatOnly:
+        def understand_turn(self, *args, **kwargs):
+            return {"intent": "chat", "confidence": 0.99, "slots": {}, "reply": "ठीक आहे."}
+
+        def companion_reply(self, *args, **kwargs):
+            return "ठीक आहे."
+
+    auto.evon = ChatOnly()
+    result = auto.handle(uid, "ठीक आहे राहुलला कॉल करणारे")
+
+    assert result.intent == "CHAT"
+    assert result.action["type"] == "none"
 
 
 def test_video_call_safety_wins_and_stop_clears_media_choice(auto, core_http, uid, monkeypatch):

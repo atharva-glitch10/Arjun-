@@ -29,6 +29,8 @@ CAREGIVER = ("caregiver", "madat", "मदत", "madad", "मदद", "help", "s
              "kalji", "काळजीवाहक", "dekhbhal", "देखभाल")
 CALL = ("phone", "fone", "fon", "फोन", "call", "कॉल", "bolaycha", "बोलायचं", "bolna", "बोलना",
         "phon")
+CALL_ACTION = ("call kar", "call karo", "phone kar", "phone karo", "कॉल कर", "कॉल करा", "कॉल लाव", "कॉल लावा",
+               "फोन कर", "फोन करा", "फोन लाव", "फोन लावा")
 VIDEO = ("video", "व्हिडिओ", "वीडिओ", "व्हिडिओवर", "व्हिडिओ वर", "वीडिओवर", "व्हिडिओ कॉल", "व्हिडिओ कॉलवर")
 FAMILY_REL = FAMILY + ("mulga", "मुलगा", "mulgi", "मुलगी", "mulala", "मुलाला", "mulila", "मुलीला",
                        "beta", "बेटा", "beti", "बेटी", "nat", "नात", "natu", "नातू", "son",
@@ -451,6 +453,10 @@ def parse(
     if has_any(norm, MINUTE_WORDS) and not has_any(norm, REMIND):
         return done("MED_SNOOZE", 0.6)  # "१५ मिनिटांनी सांग"; dispatch checks a dose is due
 
+    # "Tell Rahul to call me" asks family to call her, not Arjun to call Rahul.
+    if has_any(norm, SHARE_VERB) and has_any(norm, CALL):
+        return done("REQUEST_CAREGIVER", 0.85)
+
     # Apps by voice (YouTube, news, WhatsApp, a family link, stop / next / volume). After safety and medicines, before the
     # bare yes/no rules ("बंद कर" would otherwise read as a yes because "कर" is one).
     video_call_words = has_any(norm, VIDEO) and (has_any(norm, CALL) or has_any(norm, FAMILY_REL) or "बोलव" in norm)
@@ -468,6 +474,13 @@ def parse(
 
     # Explicit video-call phrases must be read before the short "कर" confirmation token.
     if has_any(norm, VIDEO) and (has_any(norm, CALL) or has_any(norm, FAMILY_REL) or "बोलव" in norm):
+        return done("VIDEO_CALL", 0.9)
+
+    # Call commands must precede the bare yes/no rules because "कर" is also a Marathi yes token.
+    if has_any(norm, CALL) and has_any(norm, FAMILY_REL):
+        hint = next((t for t in toks if t not in STOP and t not in CALL and len(t) > 2), None)
+        return done("CALL_FAMILY_REMINDER", 0.75, hint=hint)
+    if has_any(norm, CALL) and has_any(norm, CALL_ACTION):
         return done("VIDEO_CALL", 0.9)
 
     if not has_any(norm, REMIND):
@@ -516,10 +529,6 @@ def parse(
     if has_any(norm, SHARE_VERB) and has_any(norm, FAMILY) and not has_any(norm, REMIND):
         if not has_any(norm, CALL):
             return done("SHARE_STORY_WITH_FAMILY", 0.8)
-
-    if has_any(norm, CALL) and has_any(norm, FAMILY_REL):
-        hint = next((t for t in toks if t not in STOP and t not in CALL and len(t) > 2), None)
-        return done("CALL_FAMILY_REMINDER", 0.75, hint=hint)
 
     if has_any(norm, APPOINTMENT) and has_any(norm, QUESTION) and not has_any(norm, REMIND):
         return done("GET_APPOINTMENT", 0.8)

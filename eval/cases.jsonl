@@ -13,6 +13,10 @@
 {"text": "tablet ghetli", "intent": "MED_TAKEN"}
 {"text": "mulila phone karaycha aahe", "intent": "CALL_FAMILY_REMINDER"}
 {"text": "beta ko phone karna hai", "intent": "CALL_FAMILY_REMINDER"}
+{"text": "राहुलला कॉल कर", "intent": "VIDEO_CALL"}
+{"text": "राहुल ला कॉल कर", "intent": "VIDEO_CALL"}
+{"text": "राहुलला कॉल कर ना", "intent": "VIDEO_CALL"}
+{"text": "राहुल ला call kar", "intent": "VIDEO_CALL"}
 {"text": "mala madat pahije", "intent": "REQUEST_CAREGIVER"}
 {"text": "ho", "intent": "CONFIRM_YES"}
 {"text": "होय", "intent": "CONFIRM_YES"}

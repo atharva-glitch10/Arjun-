@@ -202,6 +202,13 @@ the LLM and core-api down. Everything is committed locally, nothing is pushed.
 - The elder calling screen shows local preview and a ringing tone, then family video plus self preview; end, page hidden, safety, missed, or error paths release media tracks. Family join view publishes mic/camera and offers mute, camera, and hang-up controls. Arjun suppresses ordinary turns while family is present; safety phrases still reach reasoning.
 - Verified: core-api 273, reasoning 973, voice-agent 320, scheduler 8; Vitest 144, TypeScript, production build, Ruff, and dialogue eval 42/42 intent, 12/12 slots, 5/5 distress, 87/87 emergency with 0/12 false positives. Browser/device camera behavior and Telegram delivery still need the phone test below.
 
+### Named-contact call recognition
+Logs show exact STT transcripts `ठीक आहे राहुलला कॉल करणारे` (CHAT) and `राहुलला कॉल कर` (CHAT, no action). The latter
+was parsed too late, after “कर” could be treated as a short affirmative, and LLM-first understanding was allowed to
+replace call parsing with `CHAT`. Direct named-contact call commands now emit the existing LiveKit video-call action;
+the rule takes precedence over LLM chat. “Tell Rahul to call me” remains a caregiver request, while a non-imperative
+mention remains chat. Regression tests cover the exact command and the three Marathi / Romanized variants.
+
 ### Video-call phone test
 1. Start the local phone stack with `scripts\dev-up.ps1 -Phone`; open the elder link and allow microphone/camera access.
 2. Say “व्हिडिओ कॉल कर”. Confirm Arjun says “{name}ला व्हिडिओ कॉल लावतो, थांबा.” and shows the preview/ringing screen. Check the family Telegram receives “📹 {elder} व्हिडिओ कॉल करत आहेत” with “उचला”.

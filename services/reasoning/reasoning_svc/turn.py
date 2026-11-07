@@ -1687,7 +1687,7 @@ class TurnEngine:
         # state, not language understanding; the LLM call still happened and its slots were used above.
         deterministic = (
             "CONFIRM_YES", "CONFIRM_NO", "DECLINE_TOPIC", "FORGET_MEMORY", "MED_TAKEN", "MED_SNOOZE",
-            "TIME_QUERY", "NEXT_UP", "GREETING", "HEARING_CHECK",
+            "TIME_QUERY", "NEXT_UP", "GREETING", "HEARING_CHECK", "VIDEO_CALL", "CALL_FAMILY_REMINDER",
         )
         if llm is not None and rules.intent not in deterministic:
             parsed = self._parsed_from_llm(llm, rules, lang)
