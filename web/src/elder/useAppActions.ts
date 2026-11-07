@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Contact } from "../api";
+import { api } from "../api";
+import type { Contact, VideoCall } from "../api";
 import { isFreshAction } from "../voice/state";
 import type { ArjunAction } from "../voice/action";
 import type { ArjunVoice } from "../voice/useArjunVoice";
 import type { MediaControlEvent } from "./MediaScreen";
 import { planAction } from "./media";
+import { isVideoCallStopCommand } from "./videoCall";
 
 /** Performs the agent's "arjun.action" on the elder page, each action exactly once:
  *  - a YouTube video / playlist / live channel -> the full-screen MediaScreen,
@@ -13,11 +15,15 @@ import { planAction } from "./media";
  *  - a control (stop / pause / resume / next / volume) -> the screen that is open.
  *  A pop-up blocker is not hidden: if the window cannot open, one big tap button does it instead.
  *  Emergencies win: a safety screen closes the video. The voice session keeps running underneath all of this. */
-export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: boolean, resume: () => void) {
+export function useAppActions(voice: ArjunVoice, userId: number, contacts: Contact[], safety: boolean, resume: () => void) {
   const [media, setMedia] = useState<ArjunAction | null>(null);
   const [control, setControl] = useState<MediaControlEvent | null>(null);
   const [blocked, setBlocked] = useState<{ url: string; title: string } | null>(null);
   const [link, setLink] = useState<{ title: string } | null>(null);
+  const [videoCall, setVideoCall] = useState<VideoCall | null>(null);
+  const [videoCallStarting, setVideoCallStarting] = useState<{ name: string } | null>(null);
+  const stopHeard = useRef("");
+  const callAttempt = useRef(0);
   const performed = useRef(0);
   const seq = useRef(0);
   const win = useRef<Window | null>(null);
@@ -53,9 +59,64 @@ export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: bo
   }, []);
 
   const action = voice.action;
+  const finishVideoCall = useCallback(async () => {
+    const stoppingCall = Boolean(videoCall || videoCallStarting || callAttempt.current > 0);
+    callAttempt.current += 1;
+    const current = videoCall;
+    setVideoCall(null);
+    setVideoCallStarting(null);
+    if (stoppingCall && voice.snapshot.phase === "live") {
+      void voice.sendText("[video_call_stopped]");
+    }
+    const room = voice.room;
+    if (room) {
+      void room.localParticipant.setCameraEnabled(false);
+      if (!document.hidden) {
+        void room.localParticipant.setMicrophoneEnabled(false).then(() => room.localParticipant.setMicrophoneEnabled(true));
+      } else {
+        void room.localParticipant.setMicrophoneEnabled(false);
+      }
+    }
+    if (current) {
+      try {
+        await api.endVideoCall(userId, current.id);
+      } catch {
+        // the camera is still released by the screen cleanup if the API is offline
+      }
+    }
+  }, [userId, videoCall, videoCallStarting, voice.room, voice.snapshot.phase, voice.sendText]);
+
   useEffect(() => {
     if (!action || !isFreshAction(action, performed.current)) return;
     performed.current = action.turn;
+    if (action.type === "call" && action.kind === "video") {
+      const contactId = Number(action.value);
+      if (!Number.isInteger(contactId) || contactId <= 0) return;
+      closeWindow();
+      setMedia(null);
+      setBlocked(null);
+      setVideoCall(null);
+      const name = action.title || "कुटुंब";
+      if (voice.snapshot.phase === "live") void voice.sendText("[video_call_stopped]");
+      setVideoCallStarting({ name });
+      const attempt = ++callAttempt.current;
+      void api.startVideoCall(userId, contactId)
+        .then((started) => {
+          if (attempt !== callAttempt.current) {
+            void api.endVideoCall(userId, started.id).catch(() => {});
+            return;
+          }
+          stopHeard.current = voice.heard;
+          setVideoCall(started);
+          setVideoCallStarting(null);
+        })
+        .catch(() => {
+          if (attempt !== callAttempt.current) return;
+          setVideoCallStarting(null);
+          if (voice.snapshot.phase === "live") void voice.sendText("कॉल जोडता आला नाही. पुन्हा प्रयत्न करा.");
+        });
+      return;
+    }
     const plan = planAction(action, contacts, window.location.origin);
     if (plan.do === "none") return;
     if (plan.do === "control") {
@@ -85,14 +146,28 @@ export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: bo
     closeWindow();
     setBlocked(null);
     setMedia({ type: "open", kind: plan.kind, value: plan.value, title: plan.title, turn: action.turn });
-  }, [action, contacts, closeWindow, openWindow]);
+  }, [action, contacts, closeWindow, openWindow, userId, voice.heard]);
 
   useEffect(() => {
     if (safety) {
       setMedia(null);
       setBlocked(null);
+      void finishVideoCall();
     }
-  }, [safety]);
+  }, [safety, finishVideoCall]);
+
+  useEffect(() => {
+    if (!videoCall || !voice.family || !isVideoCallStopCommand(voice.heard) || voice.heard === stopHeard.current) return;
+    stopHeard.current = voice.heard;
+    void finishVideoCall();
+  }, [finishVideoCall, videoCall, voice.family, voice.heard]);
+
+  const missedVideoCall = useCallback((name: string) => {
+    if (voice.snapshot.phase === "live") void voice.sendText("[video_call_stopped]");
+    if (voice.snapshot.phase === "live") void voice.sendText(`[video_call_missed] ${name}`);
+    setVideoCall(null);
+    setVideoCallStarting(null);
+  }, [voice]);
 
   // when the person closes the WhatsApp / link window herself, come back to Arjun and make sure he is still listening
   useEffect(() => {
@@ -113,6 +188,10 @@ export function useAppActions(voice: ArjunVoice, contacts: Contact[], safety: bo
     control,
     blocked,
     link,
+    videoCall,
+    videoCallStarting,
+    finishVideoCall,
+    missedVideoCall,
     reportMedia: voice.reportMedia,
     onMediaClosed: useCallback(() => setMedia(null), []),
     closeLink: closeWindow,

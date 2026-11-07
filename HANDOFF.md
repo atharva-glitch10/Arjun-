@@ -39,6 +39,16 @@ implement and mock-test its documented wire contract before a live key check. Do
 without compatibility testing. Timbre remains configured to v3.0/Avinash with a v2.5/Omkar fallback; only
 the v2.5 response has historical live evidence, and the complete voice turn remains unverified.
 
+### Documentation follow-up (2026-11-07)
+The official Gnani Prisma v3 product page and `gnani-vachana` repository now document `prisma-v3.0`,
+`indic-auto`, language candidates, all four modes, keywords, topic, speaker names, previous text, and
+detected-language results. This updates the prior statement that official protocol documentation was missing.
+The pinned LiveKit plugin remains unchanged; its constructor still cannot select the model or expose those
+controls. The published SDK examples confirm streaming model/language candidates/keywords, but do not show
+the streaming wire format for every context option. No account-level entitlement or API authentication has
+been checked, and no feature is marked live verified based on marketing/docs alone. See
+`docs/ENGINEERING.md` for the current boundary and the Gnani sources linked from README.
+
 ## Where we are
 Understanding is now LLM-first: one Sarvam call per non-safety turn gets the full sentence, the last turns and a
 USER CONTEXT block, and returns strict JSON `{intent, slots, reply, confidence}`. The rule parser is a fallback
@@ -153,3 +163,15 @@ the LLM and core-api down. Everything is committed locally, nothing is pushed.
   no longer controls the memory (use `ARJUN_SESSION_EXCHANGES`).
 - **Decide:** the prompt answers festival / meaning / how-to questions from model knowledge, which is wider than
   boundary 10 as written (see STATUS.md); recipes and health are still refused.
+
+## Elder started video calls (2026-11-07)
+- Voice intent `VIDEO_CALL` is deterministic for explicit Marathi/English video-call wording and also offered to the LLM-first intent schema. A named contact wins; otherwise the son, then first non-doctor family contact. Existing “मुलाला फोन लाव” still uses the voice-only reminder intent. Safety is checked first.
+- Core API creates `video_calls` rows, sends one Telegram ring message with a signed 30-minute join URL, dedupes the same ringing contact for two minutes, changes to answered on family join, and marks missed after 60 seconds with a return button and `video_call_missed` feed notification. Camera publishing is enabled in the elder LiveKit token, but the camera activates only after a video-call action.
+- The elder calling screen shows local preview and a ringing tone, then family video plus self preview; end, page hidden, safety, missed, or error paths release media tracks. Family join view publishes mic/camera and offers mute, camera, and hang-up controls. Arjun suppresses ordinary turns while family is present; safety phrases still reach reasoning.
+- Verified: core-api 273, reasoning 973, voice-agent 320, scheduler 8; Vitest 144, TypeScript, production build, Ruff, and dialogue eval 42/42 intent, 12/12 slots, 5/5 distress, 87/87 emergency with 0/12 false positives. Browser/device camera behavior and Telegram delivery still need the phone test below.
+
+### Video-call phone test
+1. Start the local phone stack with `scripts\dev-up.ps1 -Phone`; open the elder link and allow microphone/camera access.
+2. Say “व्हिडिओ कॉल कर”. Confirm Arjun says “{name}ला व्हिडिओ कॉल लावतो, थांबा.” and shows the preview/ringing screen. Check the family Telegram receives “📹 {elder} व्हिडिओ कॉल करत आहेत” with “उचला”.
+3. Tap “उचला” on a second phone. Confirm the family sees the elder and self preview, while the elder sees family video and a small self preview. Say “बंद कर”; confirm both sides disconnect and the elder page listens to a fresh normal question without reload.
+4. Repeat without answering. After 60 seconds confirm the elder gets the missed-call reply and Telegram gets the “परत करा” button. Also test the red end button, page hidden/return, and “छातीत दुखतंय” during a call.

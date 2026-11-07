@@ -247,7 +247,7 @@ def split_voice_tags(text: str, allowed: tuple[str, ...] = config.VOICE_TAGS, ma
 
 
 UNDERSTAND_INTENTS = (
-    "chat", "reminder_add", "reminder_done", "medicine_taken", "medicine_query", "media", "news",
+    "chat", "reminder_add", "reminder_done", "medicine_taken", "medicine_query", "media", "news", "video_call",
     "call_family", "message_family", "today_query", "undo", "stop", "health_complaint", "unclear",
 )
 _OLD_TO_NEW = {
@@ -352,7 +352,7 @@ def _system_prompt(
             '"confirm": "yes"|"no"|null, "choice": integer|string|null, "checkin_answer": '
             '"done|skipped"|null, "bp": {"systolic": integer, "diastolic": integer}|null}, '
             '"reply": string, "confidence": number 0-1}\n'
-            "Intent meanings: chat = ordinary talk or a question you can answer; reminder_add = set a reminder; "
+            "Intent meanings: chat = ordinary talk or a question you can answer; video_call = start a live video call with a family contact; reminder_add = set a reminder; "
             "reminder_done = she finished a task/reminder; medicine_taken = she says she took her medicine; "
             "medicine_query = a question or worry about medicines/doses/side effects; media = play/open music, "
             "bhajan, a video, a recipe, a family link or WhatsApp; news = read or play news; call_family = she "

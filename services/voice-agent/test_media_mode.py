@@ -62,6 +62,12 @@ def test_media_controls_from_requested_short_phrases_work_without_wake_word():
         assert should_send(phrase, playing=True), phrase
 
 
+def test_video_call_action_is_filtered_out_of_media_app_commands():
+    from reasoning_svc.appcmd import parse_app_command
+
+    assert parse_app_command("व्हिडिओ कॉल लाव") is None
+
+
 def test_playing_never_ignores_a_safety_phrase():
     for phrase in ("छातीत दुखतंय", "श्वास घेता येत नाही", "मी पडले", "मला मरायचं आहे", "chest pain"):
         assert should_send(phrase, playing=True), phrase

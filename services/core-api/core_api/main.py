@@ -29,6 +29,7 @@ from .medicines import router as medicines_router
 from .ratelimit import RateLimitMiddleware
 from .readings import router as readings_router
 from .recurrence import next_occurrence
+from .video_calls import router as video_calls_router
 from .wellbeing import router as wellbeing_router
 
 
@@ -769,5 +770,6 @@ app.include_router(wellbeing_router)
 app.include_router(applinks_router)
 app.include_router(media_router)
 app.include_router(facts_router)
+app.include_router(video_calls_router)
 app.include_router(feed_router)
 app.include_router(feed_ws_router)

@@ -35,7 +35,7 @@ def action_json(reply: BridgeReply, turn: int) -> str:
     """The action as one JSON attribute, tagged with the turn number so the page performs it exactly once. Never on a
     safety reply: nothing opens in the middle of an emergency. "" clears the previous action."""
     action = reply.action or {}
-    if reply.mode == "safety" or action.get("type") not in ("open", "control", "choice"):
+    if reply.mode == "safety" or action.get("type") not in ("open", "control", "choice", "call"):
         return ""
     payload: dict[str, object] = {}
     for k in _ACTION_KEYS:

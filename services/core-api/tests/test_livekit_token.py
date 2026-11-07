@@ -37,7 +37,7 @@ def test_token_joins_a_fresh_room_and_dispatches_arjun(client, uid, lk_env):
     video = claims["video"]
     assert video["room"] == body["room"] and video["roomJoin"] is True
     assert video["canPublish"] is True and video["canSubscribe"] is True
-    assert video["canPublishSources"] == ["microphone"]  # the elder can publish the mic, nothing else
+    assert video["canPublishSources"] == ["microphone", "camera"]  # video calls start only after the elder asks
     assert not video.get("roomAdmin") and not video.get("canUpdateOwnMetadata")
     agents = claims["roomConfig"]["agents"]
     assert [a["agentName"] for a in agents] == ["arjun"]  # explicit dispatch

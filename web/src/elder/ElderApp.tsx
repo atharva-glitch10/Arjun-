@@ -22,6 +22,7 @@ import { FAILURE_TEXT, shownFor } from "../voice/state";
 import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
 import { LinkPrompt, MediaScreen } from "./MediaScreen";
+import { VideoCallScreen } from "./VideoCallScreen";
 import { useAppActions } from "./useAppActions";
 import {
   dateLine,
@@ -104,7 +105,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const shown = restingScreen(shownFor(snapshot), voice.snapshot.turn, restedTurn, HANDS_FREE);
   const { phase } = voice.snapshot;
   // Apps by voice: a video, WhatsApp or a family link opens on this page (agent attribute "arjun.action").
-  const apps = useAppActions(voice, contacts, shown === "safety", () => {
+  const apps = useAppActions(voice, userId, contacts, shown === "safety", () => {
     if (voice.snapshot.phase !== "live") void voice.start();
   });
 
@@ -595,6 +596,16 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         </div>
       )}
       {body()}
+      {(apps.videoCall || apps.videoCallStarting) && (
+        <VideoCallScreen
+          call={apps.videoCall}
+          starting={apps.videoCallStarting}
+          room={voice.room}
+          userId={userId}
+          onEnd={() => void apps.finishVideoCall()}
+          onMissed={apps.missedVideoCall}
+        />
+      )}
       {apps.media && shown !== "safety" && (
         <MediaScreen
           key={apps.media.turn}

@@ -34,12 +34,29 @@ Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Mar
 
 | Piece | State |
 |---|---|
-| `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 38 pytest tests (incl. API-key checks; core-api refuses to start without `CORE_API_KEY`). |
-| `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent (rule-based parser; the hosted LLM only for chat and for turns the rules cannot read) -> dispatch. 281 pytest tests incl. distress and physical-emergency test sets (both lexicons unverified by a native speaker), core-api-outage handling, and dedicated medicine-path tests (intake with spoken yes, deflected medicine questions, no voice-created medicines). |
-| `services/scheduler` | Polls core-api to mark due reminders, tick medicines, and fetch briefing/opener text. **Logs only: nothing is spoken on the elder device yet (T8).** 3 pytest tests. |
-| `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `design/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. `npm run build` passes; the screens were rendered in headless Edge (`/?preview` gallery, dashboard, elder home) but not tested on a real device or with real speech. |
+| `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 269 pytest tests (incl. API-key checks; core-api refuses to start without `CORE_API_KEY`). |
+| `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent -> dispatch. Rules handle care actions and the hosted LLM handles companion chat and requests rules cannot read. 969 pytest tests incl. distress and emergency behavior, core-api outage handling and medicine-path tests. |
+| `services/scheduler` | Polls core-api to mark due reminders, tick medicines, and fetch briefing/opener text. **Logs only: nothing is spoken on the elder device yet (T8).** 8 pytest tests. |
+| `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `design/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. 139 Vitest tests, TypeScript and production build pass; live phone/microphone speech is not verified. |
 | `eval/` | `python eval/run_eval.py` - intent / slot / distress on 33 synthetic text cases. |
-| `services/voice-agent` | `livekit-plugins-gnani==1.8.6` exposes STT language, sample rate, `verbatim`/`transcribe`, numeral formatting and streaming selection. It does **not** expose explicit Prisma model selection, Auto-LID, keyterms, speaker names, previous context, `codemix`, or `transliterate`; do not describe the integration as Prisma v3.0 until a supported adapter is implemented. Worker registration and a Timbre REST response were verified 2026-10-21, but a complete spoken turn and live STT have not been verified. The elder web app still uses **browser** speech, not Gnani. |
+| `services/voice-agent` | `livekit-plugins-gnani==1.8.6` exposes STT language, sample rate, `verbatim`/`transcribe`, numeral formatting and streaming. It does **not** expose explicit Prisma model selection, Auto-LID, keyterms, speaker names, previous context, `codemix`, or `transliterate`. Official Gnani docs now describe Prisma v3.0 and these features; the pinned LiveKit adapter does not pass them, and account access is not verified. Historical live evidence is a Timbre v2.5 response; a complete spoken turn and live STT on current code are unverified. The elder web app still uses **browser** speech, not Gnani. See [Prisma audit](docs/ENGINEERING.md#prisma-integration-audit-2026-11-07). |
+
+## Gnani capability status
+
+| Capability | Current status |
+|---|---|
+| Pinned LiveKit adapter | Implemented: streaming, configured `mr-IN`, `transcribe` or `verbatim`, native numerals. Model selection is not exposed by `livekit-plugins-gnani==1.8.6`. |
+| Prisma v3.0 | Official product/SDK documentation exists, but not verified in this competition account and not selected explicitly by the installed adapter. Do not report the app as running Prisma v3.0. |
+| Four output modes | App supports `verbatim` and `transcribe`; `codemix` and `transliterate` are unavailable through the pinned adapter. |
+| Auto-LID, keyterms, topic, speaker names | Documented by Gnani for Prisma v3.0; not wired into this app. Speaker names are recognition hints, not identity verification or diarization. |
+| Previous speech context | Reasoning has bounded conversation history/context for its LLM. The app does not send `previous_text` to Prisma. |
+| Timbre | Current config probes `timbre-v3.0` / `Avinash` and falls back to `timbre-v2.5` / `Omkar`; historical live evidence is v2.5 only. Current full STT-to-TTS conversation is not live-verified. |
+
+Gnani references: [Prisma v3.0 product page](https://www.gnani.ai/resources/prisma-v3),
+[official Gnani SDK](https://github.com/Gnani-AI-Mintlify/Gnani-Vachana), and
+[pinned LiveKit plugin documentation](https://github.com/Gnani-AI-Mintlify/livekit-plugins-gnani).
+The official Prisma v3.0 documentation is evidence of product features, not proof of account entitlement or
+working app integration. See [engineering audit](docs/ENGINEERING.md#prisma-integration-audit-2026-11-07).
 
 ## Run
 ```
@@ -114,12 +131,10 @@ the script reports that limitation while seeding the other requested data.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
-- **Apps by voice (2026-11-02) is tested, not hand-tested**: no real voice session, and the elder page was never opened in a browser with the new
-  MediaScreen (the Chrome extension was not connected). Word lists are UNVERIFIED (no native speaker, no real Prisma output).
+- **Apps by voice (2026-11-02) is automated-test verified, not phone-verified**: no complete live voice session on current code. Word lists are UNVERIFIED (no native speaker, no real current Prisma output).
 - **WhatsApp needs one tap**: Arjun only opens her chat with the contact; she presses the green call / send button. A pop-up blocker turns the open
   into one big tap button. Numbers are made up in the demo.
-- **Media mode needs the wake word**: while a video plays, a new request must start with "अर्जुन" (or be a bare stop / next / volume phrase). The page's
-  own report (`arjun.media`) and the agent's guess can disagree for a few seconds. Arjun's voice plays OVER the video (no ducking yet).
+- **Media mode lifecycle and recovery are implemented and automated-test verified, not phone-verified**: embedded playback reports state and sends a heartbeat; stop/end/error/hidden/unmount and heartbeat expiry clear media mode. Bare media controls work without the wake word, speech ducks the video, and the elder page attempts room/microphone/audio recovery on return. A live device test is still required.
 - **YouTube quota**: search.list costs 100 of 10,000 daily units; results are cached 24 h and uncached searches are capped at 80/day
   (`YOUTUBE_MAX_SEARCHES_PER_DAY`). No key or no quota = the results page opens. Embeds can be refused by a video's owner (the page shows an error).
 - **Kiosk autoplay**: sound autoplay works in the kiosk profile (`scripts/elder-kiosk.ps1`); in a normal browser the first video shows one big
@@ -305,6 +320,9 @@ the script reports that limitation while seeding the other requested data.
 pgvector RAG over stories and past-story recall, RSS topic news, S3 TTS cache, MongoDB trace logging
 (per-stage timings are only logged to stdout), nginx 2-replica load balancing, noise-cancellation A/B,
 WER and latency measurement.
+
+## Elder initiated video calls
+The elder can say “व्हिडिओ कॉल कर” or name a family contact. Arjun opens an in-page LiveKit video call, while Telegram sends the family a signed “उचला” join button. A 60-second unanswered call becomes missed and offers a return button. Family video calls require browser camera and microphone permission; ordinary voice calls remain voice-only. Arjun stays quiet while family is connected, while emergency and distress phrases remain active. This feature is covered by service and web tests, but its physical phone and Telegram path still needs the steps in [HANDOFF.md](HANDOFF.md).
 
 ## Open questions (need a human / credentials - not guessed)
 Prisma streaming support for the target language; credit cost per Gnani call; whether noise

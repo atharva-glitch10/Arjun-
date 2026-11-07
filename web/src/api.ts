@@ -256,6 +256,18 @@ export interface FamilyJoin {
   /** Who the elder's page names: the son, else another family member, else "कुटुंब". */
   name: string;
   expires_in: number;
+  mode: "voice" | "video";
+  call_id: number | null;
+}
+
+export interface VideoCall {
+  id: number;
+  user_id: number;
+  contact_id: number;
+  contact_name: string;
+  mode: "video";
+  status: "ringing" | "answered" | "ended" | "missed";
+  created_at: string;
 }
 
 async function call<T>(base: string, path: string, init?: RequestInit): Promise<T> {
@@ -340,4 +352,10 @@ export const api = {
   livekitToken: (userId: number) => core<LivekitToken>("/livekit/token", post({ user_id: userId })),
   // The family-call link from Telegram: checked by core-api, returns a token for the elder's current room.
   familyJoin: (token: string) => core<FamilyJoin>(`/family/join?t=${encodeURIComponent(token)}`),
+  startVideoCall: (userId: number, contactId: number) =>
+    core<VideoCall>(`/users/${userId}/calls`, post({ contact_id: contactId, mode: "video" })),
+  videoCallStatus: (userId: number, callId: number) => core<VideoCall>(`/users/${userId}/calls/${callId}`),
+  endVideoCall: (userId: number, callId: number) =>
+    core<VideoCall>(`/users/${userId}/calls/${callId}/end`, post({})),
+  familyCallEnd: (token: string) => core<{ status: string }>("/family/calls/end", post({ t: token })),
 };

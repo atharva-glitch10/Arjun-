@@ -82,7 +82,7 @@ def livekit_token(body: TokenIn, db: Session = Depends(get_db)) -> TokenOut:
                 can_publish=True,
                 can_subscribe=True,
                 can_publish_data=True,  # taps travel to the agent as text on the "lk.chat" topic
-                can_publish_sources=["microphone"],
+                can_publish_sources=["microphone", "camera"],
             )
         )
         .with_room_config(RoomConfiguration(

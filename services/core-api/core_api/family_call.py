@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from . import joins
 from . import models as m
 from .db import get_db
-from .deps import require_key
+from .deps import local_now, require_key
 from .livekit_token import active_room
 
 router = APIRouter(dependencies=[Depends(require_key)])
@@ -51,6 +51,8 @@ class JoinOut(BaseModel):
     identity: str
     name: str
     expires_in: int
+    mode: str = "voice"
+    call_id: int | None = None
 
 
 @router.get("/family/join", response_model=JoinOut)
@@ -74,11 +76,27 @@ def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
         db.scalars(select(m.Contact).where(m.Contact.user_id == user_id).order_by(m.Contact.id))
     )
     name = family_name(contacts)
+    call = db.scalar(select(m.VideoCall).where(
+        m.VideoCall.user_id == user_id,
+        m.VideoCall.status.in_(("ringing", "answered")),
+    ).order_by(m.VideoCall.id.desc()))
+    if call is not None and call.mode == "video" and call.status == "ringing":
+        from .video_calls import expire_ringing_call
+        if expire_ringing_call(call, db, local_now()):
+            call = None
+    if call is not None and call.mode == "video" and call.status == "answered":
+        raise HTTPException(409, "the video call has already been answered")
+    call = call if call is not None and call.mode == "video" else None
+    mode = "video" if call is not None else "voice"
+    if call is not None and call.status == "ringing":
+        call.status = "answered"
+        call.answered_at = local_now()
+        db.commit()
     token = (
         AccessToken(key, secret)
         .with_identity(FAMILY_IDENTITY)
         .with_name(name)
-        .with_ttl(timedelta(seconds=TOKEN_TTL_S))
+        .with_ttl(timedelta(seconds=min(TOKEN_TTL_S, joins.TTL_S)))
         .with_grants(
             VideoGrants(
                 room_join=True,
@@ -86,7 +104,7 @@ def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
                 can_publish=True,
                 can_subscribe=True,
                 can_publish_data=True,
-                can_publish_sources=["microphone"],
+                can_publish_sources=["microphone", "camera"] if mode == "video" else ["microphone"],
             )
         )
         .to_jwt()
@@ -97,5 +115,27 @@ def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
         room=room,
         identity=FAMILY_IDENTITY,
         name=name,
-        expires_in=TOKEN_TTL_S,
+        expires_in=min(TOKEN_TTL_S, joins.TTL_S),
+        mode=mode,
+        call_id=call.id if call is not None else None,
     )
+
+
+class CallEndIn(BaseModel):
+    t: str
+
+
+@router.post("/family/calls/end")
+def family_call_end(body: CallEndIn, db: Session = Depends(get_db)) -> dict[str, str]:
+    user_id = joins.verify(body.t)
+    if user_id is None:
+        raise HTTPException(403, "join link is invalid or expired")
+    call = db.scalar(select(m.VideoCall).where(
+        m.VideoCall.user_id == user_id,
+        m.VideoCall.status.in_(("ringing", "answered")),
+    ).order_by(m.VideoCall.id.desc()))
+    if call is not None:
+        call.status = "ended"
+        call.ended_at = local_now()
+        db.commit()
+    return {"status": "ended"}

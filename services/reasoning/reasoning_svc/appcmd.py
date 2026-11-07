@@ -252,6 +252,12 @@ def parse_app_command(text: str, *, remind: bool = False, links: bool = False) -
         return None
     toks = tokens(norm)
 
+    # A video-call request is handled as a family-call intent by turn.py, never as a YouTube video.
+    if any(t.startswith(("व्हिडिओ", "वीडिओ")) or t == "video" for t in toks) and any(
+        t in ("कॉल", "call", "मुलाला", "मुलगा", "son", "bolav", "बोलव") for t in toks
+    ):
+        return None
+
     control = _control(toks)
     if control is not None:
         return AppCmd(MEDIA_CONTROL, control=control)

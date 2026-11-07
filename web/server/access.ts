@@ -38,6 +38,9 @@ export const ELDER_ROUTES: Route[] = [
   route("POST", `/users/${ID}/medicine-doses/${ID}/(?:taken|snooze)`),
   route("POST", `/users/${ID}/deliveries/${ID}/ack`),
   route("POST", "/livekit/token"),
+  route("POST", `/users/${ID}/calls`),
+  route("GET", `/users/${ID}/calls/${ID}`),
+  route("POST", `/users/${ID}/calls/${ID}/end`),
 ];
 
 /** What the family dashboard calls (web/src/family/*, api.ts) including the live feed REST fallback and WebSocket. */
@@ -61,7 +64,7 @@ export const FAMILY_ROUTES: Route[] = [
 ];
 
 /** Public on purpose: the join token is signed and checked by core-api. */
-export const PUBLIC_ROUTES: Route[] = [route("GET", "/family/join")];
+export const PUBLIC_ROUTES: Route[] = [route("GET", "/family/join"), route("POST", "/family/calls/end")];
 
 export const routeAllowed = (routes: Route[], method: string, path: string): boolean =>
   routes.some((r) => r.method === method.toUpperCase() && r.path.test(path));

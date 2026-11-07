@@ -10,6 +10,8 @@ travel here: the identity is the one stable marker.
 
 from __future__ import annotations
 
+from safety_words import is_safety_phrase
+
 FAMILY_IDENTITY = "family"
 
 
@@ -30,3 +32,8 @@ class FamilyPresence:
     def quiet(self, speech_locked: bool) -> bool:
         """Same meaning as SessionState.quiet: may a proactive line be spoken right now?"""
         return speech_locked or self.present()
+
+    @staticmethod
+    def should_process(text: str) -> bool:
+        """While family is present, only safety utterances reach reasoning."""
+        return is_safety_phrase(text)

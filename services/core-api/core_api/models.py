@@ -70,6 +70,18 @@ class Contact(Base):
     phone: Mapped[str] = mapped_column(String(20), default="")  # synthetic numbers only
 
 
+class VideoCall(Base):
+    __tablename__ = "video_calls"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id"), index=True)
+    mode: Mapped[str] = mapped_column(String(10), default="video")
+    status: Mapped[str] = mapped_column(String(10), default="ringing", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class Reminder(Base):
     __tablename__ = "reminders"
     id: Mapped[int] = mapped_column(primary_key=True)

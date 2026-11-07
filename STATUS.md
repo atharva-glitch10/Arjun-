@@ -13,8 +13,15 @@
 - Added fail-fast validation for supported format, language hint, and sample rate; unsupported Auto-LID and modes are rejected. No protocol adapter was attempted because the pinned SDK does not document the v3-specific request/response messages.
 - `scripts/check_gnani.py` now safely checks key presence/whitespace and configured model labels without making a request or printing secrets. It does not test authentication.
 - Timbre config remains `timbre-v3.0` / `Avinash` with fallback `timbre-v2.5` / `Omkar`. v3.0 is not live-verified; historical live evidence is v2.5 only. No live Prisma or complete spoken-turn verification.
-- Focused voice-agent configuration tests: 23 passed; Ruff passed for edited Python files. Safe diagnostic reported key present and no surrounding whitespace, but made no request, so this does not resolve the historical 401.
-- See `docs/ENGINEERING.md` for the limits and next integration requirement. Full regression suites and live Gnani checks were not run in this change.
+
+### Documentation follow-up
+Official Gnani Prisma v3.0 product and SDK docs now describe model selection, `indic-auto`, language candidates,
+all four modes, keywords, topic, speaker names, previous text, and detected-language metadata. This corrects the
+earlier note that official docs were unavailable. It does not confirm this competition account has access, nor
+does it make these options available through the pinned LiveKit plugin. Streaming wire mappings for all context
+fields remain unclear from published examples. No code or package pin was changed pending a Gnani-supported
+LiveKit adapter or confirmed protocol and account check. See `docs/ENGINEERING.md` and `HANDOFF.md`.
+- Focused voice-agent configuration tests previously passed (23). Full regression suites on 2026-11-07: voice-agent 318, reasoning 969, core-api 269, scheduler 8, web 139; TypeScript, production build, Ruff, and eval passed. These are local automated checks, not live account, microphone, or spoken-turn verification. The safe Gnani diagnostic checks key presence/whitespace only; it does not resolve the historical 401. See `docs/ENGINEERING.md` for current integration limits.
 
 ## Verification for latest work (2026-11-04)
 - core-api: 269 passed; reasoning: 950 passed; voice-agent: 310 passed; scheduler: 8 passed.
@@ -506,6 +513,11 @@ Known gaps: no quiet hours, no "repeat last line", an emergency alert is dashboa
 - Not delivered, by design: reminders / medicine prompts / openers are NOT spoken yet (T8); an emergency alert is a
   dashboard banner only.
 - Emergency and distress lexicons are unverified by a native speaker (T12).
+
+## 2026-11-07 — Elder initiated LiveKit video calls
+- Implemented `VIDEO_CALL` voice intent, family-only contact selection, Telegram ringing/join link, answer/missed lifecycle, elder preview/ringing/full-call screen, and family video join controls. Arjun is quiet while family is in-room except for safety phrases.
+- Verification: core-api 273, reasoning 973, voice-agent 320, scheduler 8, Vitest 144; `npx tsc --noEmit`, `npm run build`, `ruff check .`, and `eval/run_eval.py` all pass. The build reports the existing >500 kB JS chunk warning.
+- Not yet verified on physical phones: browser permission prompts, actual Telegram delivery, LiveKit camera tracks, and end-to-end listening recovery after the call. Phone steps are in HANDOFF.md.
 
 ## Open questions (CLAUDE.md has the full list)
 5. Is a non-Gnani LLM allowed in the entry? (We use one for open talk once configured; say which model does what in

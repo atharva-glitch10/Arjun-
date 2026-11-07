@@ -26,6 +26,7 @@ from bridge import (
     session_busy,
 )
 from bridge import media_stopped as notify_media_stopped
+from bridge import video_call_stopped as notify_video_call_stopped
 from delivery import DeliveryLoop
 from dotenv import dotenv_values
 from endpointing import ConjunctionHold, EndpointingPolicy, turn_detection_from_env
@@ -164,11 +165,12 @@ async def working_tts():  # type: ignore[no-untyped-def]
 class Arjun(Agent):
     def __init__(
         self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy, hold: ConjunctionHold,
-        media: MediaState, family: FamilyPresence,
+        media: MediaState, family: FamilyPresence, user_id: int,
     ) -> None:
         self.turns = turns
         self.media = media
         self.family = family
+        self.user_id = user_id
         self.hold = hold
         self.responder = responder
         self.state = state
@@ -179,8 +181,15 @@ class Arjun(Agent):
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:  # type: ignore[no-untyped-def]
         """Send the transcript to reasoning and speak its templated reply (no built-in LLM)."""
         transcript = new_message.text_content or ""
+        if transcript.strip() == "[video_call_stopped]":
+            await asyncio.to_thread(notify_video_call_stopped, self.user_id)
+            logger.info("video call transient state cleared")
+            raise StopResponse()
         # A family member is in the room: the mic hears them too, so Arjun says nothing at all.
-        if self.family.present():
+        if self.family.present() and self.family.should_process(transcript):
+            # Safety is evaluated locally in reasoning and remains audible during a family call.
+            pass
+        elif self.family.present():
             logger.info("family_in_room: Arjun stays quiet")
             self.turns.ignore_collected("family_in_room")
             raise StopResponse()
@@ -190,7 +199,7 @@ class Arjun(Agent):
             logger.info("ignored_media (%d characters; the words are not kept)", len(transcript))
             self.turns.ignore_collected("ignored_media")
             raise StopResponse()
-        if self.media.playing:  # "अर्जुन, थांबव" -> reasoning gets "थांबव"
+        if self.media.playing and not self.family.present():  # "अर्जुन, थांबव" -> reasoning gets "थांबव"
             transcript = strip_wake_word(transcript)
         self.policy.touch()
         # A sentence that ends in "आणि / पण / म्हणजे / की" is not finished: wait for the rest (endpointing.py).
@@ -344,16 +353,22 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     def _on_family_joined(participant) -> None:  # type: ignore[no-untyped-def]
         family.joined(participant.identity)
         logger.info("participant joined (%s)", "family" if family.present() else "not family")
+        if participant.identity == "family":
+            asyncio.create_task(asyncio.to_thread(notify_video_call_stopped, user_id))
 
     @ctx.room.on("participant_disconnected")
     def _on_page_left(participant) -> None:  # type: ignore[no-untyped-def]
         family.left(participant.identity)
+        if participant.identity == "family":
+            asyncio.create_task(asyncio.to_thread(notify_video_call_stopped, user_id))
         if participant.identity != "family":
             clear_media_timer()
             set_media("stopped", "participant left")
 
     for _p in ctx.room.remote_participants.values():  # a family member may already be waiting
         family.joined(_p.identity)
+        if _p.identity == "family":
+            asyncio.create_task(asyncio.to_thread(notify_video_call_stopped, user_id))
 
     responder = Responder(
         turns,
@@ -456,7 +471,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Arjun(turns, responder, state, policy, hold, media, family),
+        agent=Arjun(turns, responder, state, policy, hold, media, family, user_id),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
 

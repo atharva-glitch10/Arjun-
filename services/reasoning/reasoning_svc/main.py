@@ -207,6 +207,12 @@ def media_stopped(body: MediaStoppedIn) -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.post("/media/call-stopped")
+def media_call_stopped(body: MediaStoppedIn) -> dict[str, bool]:
+    get_engine().video_call_stopped(body.user_id)
+    return {"ok": True}
+
+
 @app.post("/conversations/flush-idle")
 def flush_idle() -> dict[str, int]:
     """Called by the scheduler every tick: send the summary of every conversation that went quiet."""

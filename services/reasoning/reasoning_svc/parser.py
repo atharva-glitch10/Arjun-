@@ -29,6 +29,7 @@ CAREGIVER = ("caregiver", "madat", "मदत", "madad", "मदद", "help", "s
              "kalji", "काळजीवाहक", "dekhbhal", "देखभाल")
 CALL = ("phone", "fone", "fon", "फोन", "call", "कॉल", "bolaycha", "बोलायचं", "bolna", "बोलना",
         "phon")
+VIDEO = ("video", "व्हिडिओ", "वीडिओ", "व्हिडिओवर", "व्हिडिओ वर", "वीडिओवर", "व्हिडिओ कॉल", "व्हिडिओ कॉलवर")
 FAMILY_REL = FAMILY + ("mulga", "मुलगा", "mulgi", "मुलगी", "mulala", "मुलाला", "mulila", "मुलीला",
                        "beta", "बेटा", "beti", "बेटी", "nat", "नात", "natu", "नातू", "son",
                        "daughter", "bhau", "भाऊ", "bahin", "बहीण", "sun", "सून", "jawai", "जावई")
@@ -452,7 +453,8 @@ def parse(
 
     # Apps by voice (YouTube, news, WhatsApp, a family link, stop / next / volume). After safety and medicines, before the
     # bare yes/no rules ("बंद कर" would otherwise read as a yes because "कर" is one).
-    app = parse_app_command(text, remind=has_any(norm, REMIND))
+    video_call_words = has_any(norm, VIDEO) and (has_any(norm, CALL) or has_any(norm, FAMILY_REL) or "बोलव" in norm)
+    app = None if video_call_words else parse_app_command(text, remind=has_any(norm, REMIND))
     if app is not None:
         p = done(app.intent, 0.85)
         # topic = the kind to open ("youtube" | "news_video") or the control word; query / contact_hint = the words
@@ -463,6 +465,10 @@ def parse(
             p.media_kind = media_kind(text)
             p.media_specific = media_specific(text, p.media_kind, media_topic(text))
         return p
+
+    # Explicit video-call phrases must be read before the short "कर" confirmation token.
+    if has_any(norm, VIDEO) and (has_any(norm, CALL) or has_any(norm, FAMILY_REL) or "बोलव" in norm):
+        return done("VIDEO_CALL", 0.9)
 
     if not has_any(norm, REMIND):
         if _HEARING.search(norm):

@@ -40,3 +40,11 @@ def test_an_unknown_identity_leaving_does_not_clear_the_family():
     family.joined("family")
     family.left("elder-1")
     assert family.present()
+
+
+def test_family_presence_allows_safety_words_only():
+    family = FamilyPresence()
+    family.joined("family")
+    assert family.should_process("छातीत दुखतंय")
+    assert not family.should_process("आज काय आहे")
+    assert not family.should_process("बंद कर")

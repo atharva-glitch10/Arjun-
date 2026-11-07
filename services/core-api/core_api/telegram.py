@@ -115,6 +115,7 @@ def send_alert(
     user_id: int | None = None,
     kind: str = "alert",
     bind: Any = None,
+    button_text: str | None = None,
 ) -> bool:
     """Queue one Telegram message on a daemon thread. False when Telegram is off (nothing is sent).
 
@@ -125,7 +126,7 @@ def send_alert(
         return False
     t = threading.Thread(
         target=_deliver,
-        args=(text, join_url, user_id, kind, bind),
+        args=(text, join_url, user_id, kind, bind, button_text),
         name="telegram-alert",
         daemon=True,
     )
@@ -135,10 +136,13 @@ def send_alert(
     return True
 
 
-def _deliver(text: str, join_url: str | None, user_id: int | None, kind: str, bind: Any) -> None:
+def _deliver(
+    text: str, join_url: str | None, user_id: int | None, kind: str, bind: Any,
+    button_text: str | None = None,
+) -> None:
     ok = False
     try:
-        ok = _post(text, join_url)
+        ok = _post(text, join_url, button_text)
     except Exception as exc:  # noqa: BLE001 - a network failure must never reach the elder's turn
         # Type only: the exception text can contain the request URL, and that URL contains the bot token.
         log.warning("telegram alert failed: %s", type(exc).__name__)
@@ -157,12 +161,12 @@ def _deliver(text: str, join_url: str | None, user_id: int | None, kind: str, bi
         _threads.discard(threading.current_thread())
 
 
-def _post(text: str, join_url: str | None) -> bool:
+def _post(text: str, join_url: str | None, button_text: str | None = None) -> bool:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     payload: dict[str, Any] = {"chat_id": chat, "text": text}
     if join_url:
-        payload["reply_markup"] = {"inline_keyboard": [[{"text": BUTTON, "url": join_url}]]}
+        payload["reply_markup"] = {"inline_keyboard": [[{"text": button_text or BUTTON, "url": join_url}]]}
     res = httpx.post(f"{API}/bot{token}/sendMessage", json=payload, timeout=10)
     if res.status_code != 200:
         return False

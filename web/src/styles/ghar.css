@@ -235,4 +235,23 @@ h1, h2, p { margin: 0; }
   background: var(--ghar-haldi, #f2b632); color: #1d1b3a; font-size: 30px; font-weight: 700; }
 .join-retry { min-height: 88px; padding: 0 32px; border: 0; border-radius: 20px; cursor: pointer;
   background: var(--ghar-haldi, #f2b632); color: #1d1b3a; font-size: 30px; font-weight: 700; }
+.elder-video-call { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 18px; padding: 16px; background: #10131a; color: white; }
+.elder-call-wait { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+.elder-call-wait video { width: min(58vw, 360px); aspect-ratio: 3 / 4; object-fit: cover; border-radius: 24px; background: #292d36; }
+.elder-call-wait h1 { margin: 0; font-size: clamp(32px, 7vw, 56px); }
+.elder-family-video { width: 100%; height: 100%; object-fit: contain; background: #080a0d; }
+.elder-self-video { position: absolute; right: 20px; top: 20px; width: min(28vw, 190px); aspect-ratio: 3 / 4; object-fit: cover;
+  border: 3px solid white; border-radius: 18px; background: #292d36; }
+.elder-call-name { position: absolute; left: 20px; top: 16px; margin: 0; padding: 8px 16px; border-radius: 99px;
+  background: #0009; font-size: 24px; }
+.elder-call-end { position: absolute; bottom: max(20px, env(safe-area-inset-bottom)); min-height: 82px; min-width: 230px;
+  border: 0; border-radius: 45px; background: #c62828; color: white; font-size: 32px; font-weight: 800; }
+.join-video-grid { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; background: #10131a; }
+.join-elder-video { grid-row: 1; width: 100%; height: 100%; object-fit: contain; background: #080a0d; }
+.join-self-video { position: absolute; top: 16px; right: 16px; width: min(30vw, 180px); aspect-ratio: 3 / 4; object-fit: cover;
+  border: 3px solid white; border-radius: 16px; background: #292d36; }
+.join-video-controls { position: absolute; left: 50%; bottom: max(115px, calc(env(safe-area-inset-bottom) + 100px));
+  display: flex; transform: translateX(-50%); gap: 12px; }
+.join-video-controls button { min-height: 58px; padding: 8px 18px; border: 0; border-radius: 18px; background: #fff; font-size: 18px; }
 @media (prefers-reduced-motion: reduce) { .family-call-dot { animation: none; } }

@@ -87,7 +87,7 @@ _ACTION_CONFIDENCE_FLOOR = 0.4  # below this an LLM action intent is ignored and
 # What the LLM may SUGGEST for a turn the rules could not read. Medicines, confirmations, forgetting and
 # sharing are deliberately absent: those come only from the deterministic parser.
 _LLM_INTENTS = frozenset(
-    {"CREATE_REMINDER", "LIST_TODAY", "GET_APPOINTMENT", "CALL_FAMILY_REMINDER", "REQUEST_CAREGIVER", "CHAT",
+    {"CREATE_REMINDER", "LIST_TODAY", "GET_APPOINTMENT", "CALL_FAMILY_REMINDER", "VIDEO_CALL", "REQUEST_CAREGIVER", "CHAT",
      "DISTRESS"} | APP_INTENTS
 )
 _YT_MUSIC = ("youtube_playlist", "youtube_video", "youtube_query")  # what a song request may open (family favourites)
@@ -271,6 +271,11 @@ class TurnEngine:
         self._media_choice.pop(user_id, None)
         self.memory.event(user_id, self.clock(), "[media stopped]")
 
+    def video_call_stopped(self, user_id: int) -> None:
+        """Clear media-related pending state when a call takes over the voice session."""
+        self._media_ask.pop(user_id, None)
+        self._media_choice.pop(user_id, None)
+
     def handle(self, user_id: int, text: str) -> TurnResult:
         """One turn. Whatever path answers (safety, rules, a tool, the LLM), the exchange is recorded ONCE in the session
         memory afterwards, so no spoken line is ever missing from the history the LLM sees."""
@@ -325,6 +330,9 @@ class TurnEngine:
         lang = detect_language(text, user["language"])
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
+        if text.strip().casefold().startswith("[video_call_missed]"):
+            name = text.partition("]")[2].strip()[:80] or "घरच्यांनी"
+            return TurnResult(f"{name}नी उचलला नाही, मी निरोप ठेवला आहे.", "VIDEO_CALL_MISSED", "care", lang)
         if self._is_greeting(text):
             self.facts.invalidate(user_id)  # the idle flush may just have saved yesterday's fact
 
@@ -1744,7 +1752,7 @@ class TurnEngine:
         confirm = str(slots.get("confirm") or "").lower()
         if confirm in ("yes", "no"):
             return Parsed("CONFIRM_YES" if confirm == "yes" else "CONFIRM_NO", confidence, lang, rules.draft)
-        query = str(slots.get("query") or "")
+        query = str(slots.get("query") or slots.get("contact") or "")
         if "http" in query.lower():
             query = ""
         kind = str(slots.get("media_kind") or "")
@@ -1793,6 +1801,8 @@ class TurnEngine:
             return Parsed(NEWS_READ, confidence, lang, rules.draft)
         if intent == "call_family":
             return Parsed("CALL_FAMILY_REMINDER", confidence, lang, rules.draft, contact_hint=query or rules.contact_hint)
+        if intent == "video_call":
+            return Parsed("VIDEO_CALL", confidence, lang, contact_hint=query or rules.contact_hint)
         if intent == "message_family":
             return Parsed("REQUEST_CAREGIVER", confidence, lang, rules.draft, contact_hint=query or rules.contact_hint)
         if intent == "today_query":
@@ -1963,6 +1973,25 @@ class TurnEngine:
             )
             place = f", {appt['location']}" if appt.get("location") else ""
             return out(r["appt_next"].format(title=appt["title"], when=when, place=place))
+
+        if intent == "VIDEO_CALL":
+            contacts = self.core.contacts(uid)
+            eligible = [c for c in contacts if not any(w in (c.get("relation") or "").casefold()
+                                                         for w in ("doctor", "dr.", "डॉक", "वैद्य"))]
+            named = [c for c in eligible if name_matches(c["name"], text)
+                     or (p.contact_hint and name_matches(c["name"], p.contact_hint))]
+            chosen = named[0] if named else next(
+                (c for c in eligible if "son" in (c.get("relation") or "").casefold()
+                 or "मुलग" in (c.get("relation") or "")),
+                eligible[0] if eligible else None,
+            )
+            if chosen is None:
+                return out(r["no_contacts"])
+            return TurnResult(
+                f"{chosen['name']}ला व्हिडिओ कॉल लावतो, थांबा.", "VIDEO_CALL", "care", lang,
+                action={"type": "call", "kind": "video", "value": str(chosen["id"]),
+                        "contact_id": str(chosen["id"]), "title": chosen["name"]},
+            )
 
         if intent == "CALL_FAMILY_REMINDER":
             contacts = self.core.contacts(uid)

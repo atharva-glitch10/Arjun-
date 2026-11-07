@@ -12,6 +12,7 @@ export type ControlKind = "stop" | "pause" | "resume" | "next" | "previous" | "v
 
 export type ArjunAction =
   | { type: "open"; kind: OpenKind; value: string; title: string; turn: number }
+  | { type: "call"; kind: "video"; value: string; title: string; turn: number }
   | { type: "control"; kind: ControlKind; value: string; title: string; turn: number };
 
 const CONTROLS: readonly ControlKind[] = ["stop", "pause", "resume", "next", "previous", "volume_up", "volume_down"];
@@ -51,6 +52,11 @@ export function parseAction(raw: string | undefined): ArjunAction | null {
     return null;
   }
   const name = typeof title === "string" ? title.slice(0, 120) : "";
+  if (type === "call") {
+    return kind === "video" && /^\d{1,9}$/.test(value)
+      ? { type, kind, value, title: name, turn }
+      : null;
+  }
   if (type === "control") {
     return (CONTROLS as readonly string[]).includes(kind) ? { type, kind: kind as ControlKind, value: "", title: name, turn } : null;
   }

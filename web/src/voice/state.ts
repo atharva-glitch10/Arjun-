@@ -61,7 +61,7 @@ const STATES: readonly AgentState[] = ["initializing", "listening", "thinking", 
  *  reasoning had them (a search result's video id, a WhatsApp contact, a control command). */
 export interface ActionAttribute {
   turn: number;
-  type: "open" | "control";
+  type: "open" | "control" | "call";
   kind: string;
   video_id?: string;
   value?: string;
@@ -88,7 +88,7 @@ export function parseActionAttribute(raw: string | undefined): ActionAttribute |
   const a = o as Record<string, unknown>;
   const turn = typeof a.turn === "number" ? a.turn : Number.parseInt(String(a.turn ?? ""), 10);
   if (!Number.isInteger(turn) || turn <= 0) return null;
-  if (a.type !== "open" && a.type !== "control") return null;
+  if (a.type !== "open" && a.type !== "control" && a.type !== "call") return null;
   if (typeof a.kind !== "string" || !a.kind.trim()) return null;
   const action: ActionAttribute = { turn, type: a.type, kind: a.kind.trim().slice(0, 40) };
   const video = text(a.video_id, 64);

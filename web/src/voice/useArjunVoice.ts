@@ -13,6 +13,8 @@ export const RECONNECT_GIVE_UP_MS = 8_000;
 
 export interface ArjunVoice {
   snapshot: VoiceSnapshot;
+  /** The shared room used for the live family call, when connected. */
+  room: Room | null;
   /** The exact line Arjun is speaking ("arjun.reply"). */
   reply: string;
   /** What Arjun heard the elder say (live transcription), best effort. */
@@ -61,6 +63,7 @@ function savedVolume(): number {
 const isAgent = (p: Participant): p is RemoteParticipant => p.kind === ParticipantKind.AGENT;
 
 export function useArjunVoice(userId: number): ArjunVoice {
+  const [roomView, setRoomView] = useState<Room | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [failure, setFailure] = useState<Failure | undefined>();
   const [agentState, setAgentState] = useState<AgentState | undefined>();
@@ -107,6 +110,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     clearTimers();
     const r = room.current;
     room.current = null;
+    setRoomView(null);
     warm.current = false;
     if (r) {
       stopping.current = true;
@@ -193,6 +197,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
         audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       room.current = r;
+      setRoomView(r);
       stopping.current = false;
 
       r.on(RoomEvent.TrackSubscribed, (track) => {
@@ -262,6 +267,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
         await r.connect(tok.url, tok.token);
       } catch {
         room.current = null;
+        setRoomView(null);
         return null;
       }
       void r.localParticipant.setAttributes({
@@ -479,6 +485,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     audioBlocked,
   };
   return {
+    room: roomView,
     snapshot, reply, heard, readyMs, item, family, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
     thinking, volume, setVolume, action, mediaDuck, reportMedia,
   };
