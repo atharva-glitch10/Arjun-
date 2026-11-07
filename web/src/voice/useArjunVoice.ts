@@ -3,6 +3,7 @@ import type { Participant, RemoteParticipant } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
+import { playbackVolume } from "./speechStyle";
 import { isFreshAction, microphoneNeedsRepublish, parseActionAttribute, parseAttributes } from "./state";
 import type { ActionAttribute, AgentScreen, AgentState, Failure, Phase, VoiceSnapshot } from "./state";
 
@@ -148,6 +149,18 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const applyAgent = useCallback(
     (p: Participant, t0: number) => {
       const a = parseAttributes(p.attributes);
+      const styleRaw = p.attributes["arjun.speech_style"];
+      if (typeof styleRaw === "string") {
+        try {
+          const style = JSON.parse(styleRaw) as { volume?: string };
+          const nextVolume = playbackVolume({ volume: style.volume === "loud" ? "loud" : "normal" }, savedVolume());
+          volumeRef.current = nextVolume;
+          setVolumeState(nextVolume);
+          audioEls.current.forEach((el) => { el.volume = nextVolume; });
+        } catch {
+          // Ignore malformed optional profile state.
+        }
+      }
       if (a.screen === "closed") {
         // Arjun ended an idle session on purpose: a normal end, never the "connection dropped" screen.
         teardown();

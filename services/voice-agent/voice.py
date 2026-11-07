@@ -35,6 +35,11 @@ def tts_text(reply: str, speech: str, model: str) -> str:
     return strip_tags(speech) if speech.strip() else reply
 
 
+def slower_text(text: str) -> str:
+    """Add light spoken pauses when no verified Timbre speed control is available."""
+    return re.sub(r"([,;])\s*", r"\1 … ", text.strip())
+
+
 def stt_options() -> dict[str, object]:
     """Options supported by the pinned LiveKit Gnani plugin (not Prisma v3-only options)."""
     fmt = os.environ.get("GNANI_STT_FORMAT", "transcribe").strip().lower()

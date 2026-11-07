@@ -694,6 +694,19 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
         <section className="fam-card">
           <h2>Her day (family-set times)</h2>
+          <div className="fam-form" aria-label="Speech preferences">
+            <label>Speaking pace
+              <select value={user.speech_style?.rate ?? "normal"} onChange={(e) => run(() => api.patchUser(userId, { speech_style: { ...user.speech_style, rate: e.target.value as "normal" | "slow" } }))}>
+                <option value="normal">Normal</option><option value="slow">Slow</option>
+              </select>
+            </label>
+            <label>Arjun volume
+              <select value={user.speech_style?.volume ?? "normal"} onChange={(e) => run(() => api.patchUser(userId, { speech_style: { ...user.speech_style, volume: e.target.value as "normal" | "loud" } }))}>
+                <option value="normal">Normal</option><option value="loud">Loud</option>
+              </select>
+            </label>
+            <label><input type="checkbox" checked={user.speech_style?.simple ?? false} onChange={(e) => run(() => api.patchUser(userId, { speech_style: { ...user.speech_style, simple: e.target.checked } }))} /> Use simpler wording</label>
+          </div>
           <div className="fam-form">
             <TimeField label="Wake" value={user.wake_time} onSave={(v) => run(() => api.patchUser(userId, { wake_time: v }))} />
             <TimeField label="Breakfast" value={user.breakfast_time} onSave={(v) => run(() => api.patchUser(userId, { breakfast_time: v }))} />

@@ -65,7 +65,7 @@ from sessionstate import SessionState
 from ttsgate import TtsGate
 from turnlog import TurnLog
 from usermeta import user_id_from_metadata
-from voice import stt_options, tts_choice, tts_text
+from voice import slower_text, stt_options, tts_choice, tts_text
 
 logger = logging.getLogger("arjun.agent")
 
@@ -400,6 +400,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if _p.identity == "family":
             asyncio.create_task(asyncio.to_thread(notify_video_call_stopped, user_id))
 
+    def speakable_text(reply) -> str:  # type: ignore[no-untyped-def]
+        spoken = tts_text(reply.text, reply.speech, active_model)
+        return slower_text(spoken) if (reply.speech_style or {}).get("rate") == "slow" else spoken
+
     responder = Responder(
         turns,
         ask,
@@ -407,10 +411,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         publish,
         lambda: fallback_text(STT_LANGUAGE),
         thinking=lambda on: publish_thinking(ctx.room.local_participant, on),  # "विचार करतोय…"
-        speakable=lambda reply: (  # tags only for Timbre v3; Bulbul gets neither <tags> nor [tags]
-            voiceprovider.sarvam_text(tts_text(reply.text, reply.speech, active_model))
-            if use_sarvam else tts_text(reply.text, reply.speech, active_model)
-        ),
+        speakable=lambda reply: voiceprovider.sarvam_text(speakable_text(reply)) if use_sarvam else speakable_text(reply),
         on_mode=apply_mode,
     )
 

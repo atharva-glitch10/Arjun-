@@ -46,6 +46,7 @@ class BridgeReply:
     speech: str = ""  # what to say, may carry Timbre v3 tags; empty = say `text`
     source: str = ""  # rules | llm: who wrote the answer (for the turn log)
     action: dict | None = None  # type: ignore[type-arg]  # what the elder screen opens / does: {type, kind, value, title}
+    speech_style: dict | None = None  # type: ignore[type-arg]
 
 
 def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = None) -> BridgeReply:
@@ -65,6 +66,7 @@ def ask_reasoning(user_id: int, transcript: str, http: httpx.Client | None = Non
         speech=data.get("speech", "") or "",
         source=data.get("source", "") or "",
         action=data.get("action") or None,
+        speech_style=data.get("speech_style") or None,
     )
 
 

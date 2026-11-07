@@ -599,3 +599,9 @@ Known gaps: no quiet hours, no "repeat last line", an emergency alert is dashboa
 
 - 2026-11-04: phone apps by voice (Spotify, JioSaavn, YouTube Music, Google Maps): OPEN_APP rule wins over LLM media guess; family-approved app_links kind "app"; elder page builds intent:// link from its own table, one tap ("उघडा"); web fallback if app not installed. Tests: reasoning 900, core-api 245, vitest 137.
 - 2026-11-04: MCP server tools/arjun_mcp (stdio, FastMCP, mcp<2): health, logs, try_turn (test user), run_tests, today/feed/medicines/reminders_today, add_reminder (ARJUN_MCP_WRITE=1). Redacted outputs, no transcripts. 6 tests.
+
+## 2026-11-07 — Hearing-friendly speech
+- Added validated `speech_style` profile state (`rate`, `volume`, `simple`) with a safe JSON default and backward-compatible DB column initialization. Family dashboard controls update this profile.
+- Reasoning handles repeat and explicit slow/loud/reset requests before LLM intent understanding. Two repeats in a rolling ten-minute window set slow + simple. Repeat uses only the previous Arjun reply, asks the LLM for a strict same-meaning rewrite, and falls back unchanged if unavailable or numeric/time tokens differ. Last reply remains in-process memory only.
+- The style travels to the elder client via LiveKit participant attributes. The page boosts/restores Arjun playback gain for loud/normal. Timbre speed/volume request parameters were not verified for the pinned Gnani plugin/key, so slow speech uses punctuation pauses and shorter simplified wording rather than unsupported provider options.
+- Verification: core-api 287, reasoning 985, voice-agent 326, scheduler 7, Vitest 146, TypeScript/build, Ruff, eval 50/50 intents, 12/12 slots, 5/5 distress, 87/87 emergency, 0/12 false alarms. Physical-device audio loudness and simplified Marathi still need native-speaker phone checking.

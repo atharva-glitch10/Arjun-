@@ -13,6 +13,7 @@ import logging
 import re
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -219,6 +220,7 @@ class TurnResult:
     # Decided here from the family's app_links / core-api search (never from the LLM); the voice agent publishes it
     # as "arjun.action", the page performs it.
     action: dict[str, Any] = field(default_factory=lambda: dict(NO_ACTION))
+    speech_style: dict[str, Any] = field(default_factory=lambda: {"rate": "normal", "volume": "normal", "simple": False})
 
 
 class TurnEngine:
@@ -259,6 +261,9 @@ class TurnEngine:
         self._local = threading.local()  # nested handle() calls (a check-in "yes" opens media) record only once
         # USER CONTEXT for the LLM: built from core-api, cached per user for five minutes, never persisted.
         self._context_cache: dict[int, tuple[float, str]] = {}
+        self._last_arjun_reply: dict[int, str] = {}
+        self._last_reply_simplifiable: dict[int, bool] = {}
+        self._repeat_times: dict[int, deque[float]] = {}
 
     # ------------------------------------------------------------------ public
     def _llm_remaining(self) -> float:
@@ -290,6 +295,9 @@ class TurnEngine:
                 self._record_turn(user_id, text, res)
             except Exception as exc:  # noqa: BLE001 - memory must never break the turn
                 log.warning("could not record the turn in session memory: %s", type(exc).__name__)
+            if res.intent not in ("REPEAT", "SPEAK_SLOWER", "SPEAK_LOUDER", "SPEAK_NORMAL") and res.reply:
+                self._last_arjun_reply[user_id] = res.reply
+                self._last_reply_simplifiable[user_id] = res.intent == "CHAT" and res.mode == "companion"
         return res
 
     def _handle(self, user_id: int, text: str) -> TurnResult:
@@ -330,6 +338,42 @@ class TurnEngine:
         lang = detect_language(text, user["language"])
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
+        style = user.get("speech_style") or {"rate": "normal", "volume": "normal", "simple": False}
+        norm_text = normalize(text)
+        if any(x in norm_text for x in ("नेहमीसारखं बोल", "नेहमी सारखं बोल", "normal bol")):
+            style = {"rate": "normal", "volume": "normal", "simple": False}
+            self._save_speech_style(user_id, style)
+            return TurnResult("ठीक आहे, नेहमीसारखं बोलतो.", "SPEAK_NORMAL", "care", lang, speech_style=style)
+        if any(x in norm_text for x in ("हळू बोल", "हळू बोला", "slow bol", "मोठ्याने बोल", "मोठ्याने बोला", "नीट ऐकू येत नाही")):
+            style = dict(style)
+            slow_request = "हळू" in norm_text or "slow" in norm_text
+            if slow_request:
+                style["rate"] = "slow"
+            else:
+                style["volume"] = "loud"
+            self._save_speech_style(user_id, style)
+            answer = "ठीक आहे. आता हळू बोलतो." if slow_request else "ठीक आहे. आवाज वाढवतो."
+            return TurnResult(answer, "SPEAK_SLOWER" if slow_request else "SPEAK_LOUDER", "care", lang, speech_style=style)
+        if self._is_repeat_request(norm_text):
+            times = self._repeat_times.setdefault(user_id, deque())
+            now_mono = self._mono()
+            while times and now_mono - times[0] > 600:
+                times.popleft()
+            times.append(now_mono)
+            if len(times) >= 2 and (not style.get("simple") or style.get("rate") != "slow"):
+                style = {**style, "rate": "slow", "simple": True}
+                self._save_speech_style(user_id, style)
+            original = self._last_arjun_reply.get(user_id, "")
+            repeated = original
+            simplify = getattr(self.evon, "simplify_reply", None)
+            if original and self._last_reply_simplifiable.get(user_id, False) and callable(simplify) and self._llm_remaining() > 0:
+                try:
+                    candidate = simplify(original, lang, timeout=self._llm_remaining())
+                    if candidate and self._same_numbers(original, candidate):
+                        repeated = candidate
+                except Exception:  # noqa: BLE001 - repeat falls back to exact same line
+                    pass
+            return TurnResult(repeated or "काय पुन्हा सांगू?", "REPEAT", "care", lang, speech_style=style)
         if text.strip().casefold().startswith("[video_call_missed]"):
             name = text.partition("]")[2].strip()[:80] or "घरच्यांनी"
             return TurnResult(f"{name}नी उचलला नाही, मी निरोप ठेवला आहे.", "VIDEO_CALL_MISSED", "care", lang)
@@ -442,7 +486,23 @@ class TurnEngine:
             if guarded is not None:
                 return guarded
         log.info(json.dumps({"user": user_id, "intent": parsed.intent, **result.trace}))
+        result.speech_style = style
         return result
+
+    @staticmethod
+    def _is_repeat_request(text: str) -> bool:
+        return text.strip() == "काय" or any(x in text for x in ("पुन्हा सांग", "परत सांग", "समजलं नाही", "समजले नाही"))
+
+    @staticmethod
+    def _same_numbers(before: str, after: str) -> bool:
+        pattern = r"(?<!\w)(?:\d{1,2}:\d{2}|\d+(?:[.,]\d+)?)(?!\w)"
+        return re.findall(pattern, before) == re.findall(pattern, after)
+
+    def _save_speech_style(self, uid: int, style: dict[str, Any]) -> None:
+        try:
+            self.core.patch_user(uid, {"speech_style": style})
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not save speech preference (%s)", type(exc).__name__)
 
     # ------------------------------------------------------------------ LLM-first understanding
     def _understand(
@@ -2296,6 +2356,12 @@ class TurnEngine:
         view = self.memory.view(uid, now)
         user = self.core.user(uid)
         context = self._user_context(uid, now, user, text)
+        style = user.get("speech_style") or {}
+        if style.get("simple"):
+            context += (
+                "\nSPEECH STYLE: Use short sentences and familiar everyday words. Keep the same meaning and all exact "
+                "numbers and times."
+            )
         if opener_followup:
             context += (
                 "\nFIRST GREETING FOLLOW-UP: Refer naturally to this one most recent unresolved item from yesterday, "

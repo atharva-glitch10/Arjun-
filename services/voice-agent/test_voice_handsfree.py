@@ -8,7 +8,7 @@ from bridge import BridgeReply, ask_reasoning
 from idle import IdleCloser, IdlePolicy
 from responder import Responder
 from turnlog import TurnLog
-from voice import strip_tags, stt_options, tts_choice, tts_text
+from voice import slower_text, strip_tags, stt_options, tts_choice, tts_text
 
 
 def test_tags_go_to_timbre_v3_only():
@@ -16,6 +16,10 @@ def test_tags_go_to_timbre_v3_only():
     assert tts_text("वा, छान!", "<laugh> वा, छान!", "timbre-v2.5") == "वा, छान!"
     assert tts_text("ठीक आहे.", "", "timbre-v3.0") == "ठीक आहे."
     assert strip_tags("<slow> हळू <pauses> बोला") == "हळू बोला"
+
+
+def test_slow_style_adds_pauses_without_unverified_tts_parameters():
+    assert slower_text("पहिले वाचा, मग सांगा.") == "पहिले वाचा, … मग सांगा."
 
 
 def test_defaults_follow_the_brief(monkeypatch):

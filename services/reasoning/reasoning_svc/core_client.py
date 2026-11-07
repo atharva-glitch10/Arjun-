@@ -32,6 +32,9 @@ class CoreClient:
     def user(self, uid: int) -> dict[str, Any]:
         return self._req("GET", f"/users/{uid}")  # type: ignore[no-any-return]
 
+    def patch_user(self, uid: int, values: dict[str, Any]) -> dict[str, Any]:
+        return self._req("PATCH", f"/users/{uid}", json=values)  # type: ignore[no-any-return]
+
     def contacts(self, uid: int) -> list[dict[str, Any]]:
         return self._req("GET", f"/users/{uid}/contacts")  # type: ignore[no-any-return]
 

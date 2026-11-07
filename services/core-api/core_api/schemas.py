@@ -10,6 +10,12 @@ HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 Lang = Literal["mr", "hi", "en"]
 
 
+class SpeechStyle(BaseModel):
+    rate: Literal["normal", "slow"] = "normal"
+    volume: Literal["normal", "loud"] = "normal"
+    simple: bool = False
+
+
 def _check_hhmm(v: str | None) -> str | None:
     if v is not None and not HHMM.match(v):
         raise ValueError("must be HH:MM (24h)")
@@ -37,6 +43,7 @@ class UserIn(BaseModel):
     opener_start: str = "10:00"
     opener_end: str = "18:00"
     consent_distress_alert: bool = False
+    speech_style: "SpeechStyle" = Field(default_factory=lambda: SpeechStyle())
 
     _v = field_validator(
         "wake_time", "lunch_time", "dinner_time", "breakfast_time", "snack_time", "walk_time", "bp_check_time",
@@ -65,6 +72,7 @@ class UserPatch(BaseModel):
     opener_start: str | None = None
     opener_end: str | None = None
     consent_distress_alert: bool | None = None
+    speech_style: "SpeechStyle | None" = None
 
     _v = field_validator(
         "wake_time", "lunch_time", "dinner_time", "breakfast_time", "snack_time", "walk_time", "bp_check_time",

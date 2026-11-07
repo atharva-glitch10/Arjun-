@@ -827,6 +827,25 @@ class EvonClient:
             out = trim_to_sentence(out)
         return out.strip() or None
 
+    def simplify_reply(self, reply: str, language: str, timeout: float | None = None) -> str | None:
+        """Simplify only Arjun's prior reply. The caller validates all numeric/time tokens and falls back exactly."""
+        lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
+        system = (
+            f"Rewrite the supplied Arjun reply in simpler, shorter spoken {lang_name} ({script}) for an older listener. "
+            "Preserve exactly the same meaning and every fact. Do not add advice, a question, or a greeting. "
+            "Keep all digits, decimal values, and HH:MM time strings exactly unchanged. Use short familiar words. "
+            "Return only the rewritten reply."
+        )
+        try:
+            value = self._chat(
+                [{"role": "system", "content": system}, {"role": "user", "content": reply}],
+                config.COMPANION_TEMPERATURE, purpose="companion", timeout=timeout, max_tokens=160,
+                top_p=config.COMPANION_TOP_P,
+            )
+            return value.strip() or None
+        except (httpx.HTTPError, ValueError, KeyError):
+            return None
+
 
     def summarize_conversation(
         self, turns: list[tuple[str, str]], language: str, timeout: float | None = 10.0

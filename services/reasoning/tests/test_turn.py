@@ -295,3 +295,43 @@ def test_other_llm_options_key_header_and_no_vllm_only_field():
     keyed = EvonClient("http://llm.test/v1", "m", schema=load_intent_schema(), api_key="k123")
     assert keyed.http.headers["authorization"] == "Bearer k123"
     assert "authorization" not in EvonClient("http://llm.test/v1", "m", schema=load_intent_schema()).http.headers
+
+
+def test_repeat_reuses_simplified_reply_and_keeps_exact_numbers(engine, core_http, uid):
+    class Simplifier:
+        value = "उद्या 11:30 वाजता या."
+
+        def simplify_reply(self, reply, language, timeout=None):
+            return self.value
+
+    simplifier = Simplifier()
+    engine.evon = simplifier
+    engine._last_arjun_reply[uid] = "कृपया उद्या 10:30 वाजता येथे या."
+    engine._last_reply_simplifiable[uid] = True
+    result = engine.handle(uid, "पुन्हा सांग")
+    assert result.intent == "REPEAT"
+    assert result.reply == "कृपया उद्या 10:30 वाजता येथे या."
+    simplifier.value = "उद्या 10:30 वाजता या."
+    result = engine.handle(uid, "परत सांग")
+    assert result.reply == "उद्या 10:30 वाजता या."
+    assert engine.handle(uid, "काय?").intent == "REPEAT"
+    assert TurnEngine._same_numbers("वेळ 10:30 आणि 25 आहे", "वेळ 10:30 आणि 25 आहे")
+    assert not TurnEngine._same_numbers("वेळ 10:30", "वेळ 11:30")
+
+
+def test_repeat_auto_switch_and_voice_style_reset(engine, core_http, uid):
+    engine._last_arjun_reply[uid] = "आजचा दिवस छान जावो."
+    assert engine.handle(uid, "समजलं नाही").intent == "REPEAT"
+    assert engine.handle(uid, "परत सांग").intent == "REPEAT"
+    profile = core_http.get(f"/users/{uid}").json()["speech_style"]
+    assert profile == {"rate": "slow", "volume": "normal", "simple": True}
+    result = engine.handle(uid, "नेहमीसारखं बोल")
+    assert result.intent == "SPEAK_NORMAL"
+    assert core_http.get(f"/users/{uid}").json()["speech_style"] == {"rate": "normal", "volume": "normal", "simple": False}
+
+
+def test_explicit_speech_style_controls(engine, core_http, uid):
+    assert engine.handle(uid, "हळू बोल").intent == "SPEAK_SLOWER"
+    assert core_http.get(f"/users/{uid}").json()["speech_style"]["rate"] == "slow"
+    assert engine.handle(uid, "मोठ्याने बोल").intent == "SPEAK_LOUDER"
+    assert core_http.get(f"/users/{uid}").json()["speech_style"]["volume"] == "loud"

@@ -44,6 +44,7 @@ ADDED_COLUMNS: list[tuple[str, str, str, str | None]] = [
     ("users", "address_as", "VARCHAR(60)", "''"),
     ("users", "age", "INTEGER", None),
     ("users", "conditions", "JSON", "'[]'"),
+    ("users", "speech_style", "JSON", "'{\"rate\":\"normal\",\"volume\":\"normal\",\"simple\"\\:false}'"),
     ("appointments", "weekdays", "JSON", None),
     ("appointments", "start_time", "VARCHAR(5)", None),
     ("appointments", "end_time", "VARCHAR(5)", None),

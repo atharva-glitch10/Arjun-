@@ -62,6 +62,7 @@ class User(Base):
     opener_end: Mapped[str] = mapped_column(String(5), default="18:00")
     # Consent: caregiver is alerted on distress only if this is True.
     consent_distress_alert: Mapped[bool] = mapped_column(Boolean, default=False)
+    speech_style: Mapped[dict] = mapped_column(JSON, default=lambda: {"rate": "normal", "volume": "normal", "simple": False})
 
 
 class Contact(Base):

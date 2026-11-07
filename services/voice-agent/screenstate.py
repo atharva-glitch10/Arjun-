@@ -28,6 +28,7 @@ def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
     return {
         SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS], ITEM: "", THINKING: "0",
         ACTION: action_json(reply, turn),
+        "arjun.speech_style": json.dumps(reply.speech_style or {"rate": "normal", "volume": "normal", "simple": False}),
     }
 
 

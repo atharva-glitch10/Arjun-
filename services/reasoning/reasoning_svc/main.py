@@ -84,6 +84,7 @@ class TurnOut(BaseModel):
     action: dict[str, Any] = {"type": "none", "kind": "", "value": "", "title": ""}  # what the elder screen opens / does
     source: str  # rules | llm
     trace: dict[str, object]
+    speech_style: dict[str, object] = {"rate": "normal", "volume": "normal", "simple": False}
 
 
 @app.get("/health")
