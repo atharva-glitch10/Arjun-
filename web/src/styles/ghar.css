@@ -236,3 +236,17 @@ h1, h2, p { margin: 0; }
 .join-retry { min-height: 88px; padding: 0 32px; border: 0; border-radius: 20px; cursor: pointer;
   background: var(--ghar-haldi, #f2b632); color: #1d1b3a; font-size: 30px; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .family-call-dot { animation: none; } }
+
+/* ---- Family dashboard tabs + "Before you call" (2026-11-07) ---- */
+.fam-tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 8px; overflow-x: auto; padding: 8px 0;
+  background: var(--ghar-ground); scrollbar-width: none; }
+.fam-tabs button { flex: 0 0 auto; min-height: 48px; padding: 0 18px; border-radius: 999px; font-size: 17px; font-weight: 700;
+  border: 2px solid var(--ghar-indigo); background: var(--ghar-surface); color: var(--ghar-indigo); }
+.fam-tabs button.on { background: var(--ghar-indigo); color: #fff; }
+.call-card { border-left: 10px solid var(--ghar-haldi); }
+.call-points { margin: 8px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 19px; line-height: 1.5; }
+
+/* ---- Elder: keep the fixed volume control from covering the bottom buttons ---- */
+.elder-shell:has(.volume) .screen { padding-bottom: 96px; }
+.volume { left: 16px; right: 16px; justify-content: center; max-width: 488px; margin: 0 auto; }
+.volume input[type="range"] { flex: 1; width: auto; }
