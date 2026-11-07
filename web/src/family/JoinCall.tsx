@@ -121,7 +121,7 @@ export function JoinCall() {
       r.on(RoomEvent.AudioPlaybackStatusChanged, () => setBlocked(!r.canPlaybackAudio));
       r.on(RoomEvent.Disconnected, () => {
         if (!cancelled && !hungUp.current) {
-          if (info.mode === "video") void api.familyCallEnd(token).catch(() => {});
+          if (info.mode === "video") window.setTimeout(() => void api.familyCallEnd(token).catch(() => {}), 15_000);
           setStatus("ended");
         }
       });

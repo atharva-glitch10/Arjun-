@@ -3,7 +3,10 @@ import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("livekit-client", () => ({
-  RoomEvent: { TrackSubscribed: "trackSubscribed", TrackUnsubscribed: "trackUnsubscribed" },
+  RoomEvent: {
+    TrackSubscribed: "trackSubscribed", TrackUnsubscribed: "trackUnsubscribed",
+    ParticipantDisconnected: "participantDisconnected", ParticipantConnected: "participantConnected",
+  },
   Track: { Source: { Camera: "camera" }, Kind: { Video: "video" } },
 }));
 

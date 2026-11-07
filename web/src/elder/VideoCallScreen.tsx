@@ -12,7 +12,7 @@ export function VideoCallScreen({
   starting: { name: string } | null;
   room: Room | null;
   userId: number;
-  onEnd: () => void;
+  onEnd: (reason?: string) => void;
   onMissed: (name: string) => void;
 }) {
   const local = useRef<HTMLVideoElement>(null);
@@ -35,21 +35,19 @@ export function VideoCallScreen({
           el.muted = true;
           void el.play().catch(() => {});
         }
-      }).catch(() => {
-        setProblem(true);
-        endRef.current();
+      }).catch((error: unknown) => {
+        console.warn("video call camera setup failed", error instanceof Error ? error.name : "unknown");
+        endRef.current("camera error");
       });
     }
     return () => {
-      if (room) {
-        void room.localParticipant.setCameraEnabled(false);
-        if (!document.hidden) void room.localParticipant.setMicrophoneEnabled(true);
-      }
+      if (room) void room.localParticipant.setCameraEnabled(false);
     };
   }, [call?.id, room]);
 
   useEffect(() => {
     if (!call || !room) return;
+    void room.localParticipant.setAttributes({ "arjun.video_call": status });
     void room.localParticipant.setMicrophoneEnabled(status !== "ringing");
   }, [call?.id, room, status]);
 
@@ -91,30 +89,50 @@ export function VideoCallScreen({
         if (!alive) return;
         setStatus(result.status);
         if (result.status === "missed") missedRef.current(callRef.current?.contact_name ?? "घरच्यांनी");
-        else if (result.status === "ended") endRef.current();
-      }).catch(() => {
-        setProblem(true);
-        endRef.current();
+        else if (result.status === "ended") endRef.current("family ended");
+      }).catch((error: unknown) => {
+        // Keep the call alive during brief mobile network handoffs.
+        console.warn("video call status poll failed", error instanceof Error ? error.name : "unknown");
       });
     }, 1000);
+    let familyLeftTimer = 0;
+    const familyLeft = (participant: { identity: string }) => {
+      if (participant.identity !== "family" || status !== "answered") return;
+      familyLeftTimer = window.setTimeout(() => {
+        if (!room.remoteParticipants.has("family")) {
+          console.info("video call stopped", "family left for 15 seconds");
+          endRef.current("family left for 15 seconds");
+        }
+      }, 15_000);
+    };
+    const familyReturned = (participant: { identity: string }) => {
+      if (participant.identity === "family") window.clearTimeout(familyLeftTimer);
+    };
+    room.on(RoomEvent.ParticipantDisconnected, familyLeft as never);
+    room.on(RoomEvent.ParticipantConnected, familyReturned as never);
     const hidden = () => {
       if (document.hidden) {
         void room.localParticipant.setCameraEnabled(false);
         void room.localParticipant.setMicrophoneEnabled(false);
-        endRef.current();
+      } else {
+        void room.localParticipant.setCameraEnabled(true);
+        void room.localParticipant.setMicrophoneEnabled(status !== "ringing");
       }
     };
     document.addEventListener("visibilitychange", hidden);
     return () => {
       alive = false;
       window.clearInterval(poll);
+      window.clearTimeout(familyLeftTimer);
       document.removeEventListener("visibilitychange", hidden);
       room.off(RoomEvent.TrackSubscribed, attachRemote as never);
       room.off(RoomEvent.TrackUnsubscribed, detachRemote as never);
+      room.off(RoomEvent.ParticipantDisconnected, familyLeft as never);
+      room.off(RoomEvent.ParticipantConnected, familyReturned as never);
       if (local.current) local.current.srcObject = null;
       if (remote.current) remote.current.srcObject = null;
     };
-  }, [call?.id, call?.contact_name, room, userId]);
+  }, [call?.id, call?.contact_name, room, userId, status]);
 
   useEffect(() => {
     if (!call || status !== "ringing") return;
@@ -134,7 +152,7 @@ export function VideoCallScreen({
       ring(); timer = window.setInterval(ring, 1800);
     } catch { /* device audio may be unavailable */ }
     return () => { window.clearInterval(timer); void ctx?.close(); };
-  }, [call, status]);
+  }, [call?.id, status]);
 
   if (!call && !starting) return null;
   const name = call?.contact_name ?? starting?.name ?? "कुटुंब";
@@ -147,7 +165,7 @@ export function VideoCallScreen({
         <video ref={local} className="elder-self-video" autoPlay muted playsInline />
         <p className="elder-call-name">{name}</p>
       </>}
-      <button className="elder-call-end" type="button" onClick={onEnd}>🔴 बंद करा</button>
+      <button className="elder-call-end" type="button" onClick={() => onEnd("elder button")}>🔴 बंद करा</button>
     </main>
   );
 }

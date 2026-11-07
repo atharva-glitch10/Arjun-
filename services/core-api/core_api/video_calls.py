@@ -103,6 +103,13 @@ def _schedule_missed(call_id: int, bind) -> None:  # type: ignore[no-untyped-def
     timer.start()
 
 
+def cancel_missed_timer(call_id: int) -> None:
+    with _timer_lock:
+        timer = _timers.pop(call_id, None)
+    if timer is not None:
+        timer.cancel()
+
+
 def expire_ringing_call(call: m.VideoCall, db: Session, now: datetime) -> bool:
     if call.status == "ringing" and now - call.created_at >= RING_TIMEOUT:
         return _mark_missed(db, call, now)

@@ -92,6 +92,8 @@ def family_join(t: str = "", db: Session = Depends(get_db)) -> JoinOut:
         call.status = "answered"
         call.answered_at = local_now()
         db.commit()
+        from .video_calls import cancel_missed_timer
+        cancel_missed_timer(call.id)
     token = (
         AccessToken(key, secret)
         .with_identity(FAMILY_IDENTITY)

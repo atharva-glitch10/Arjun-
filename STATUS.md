@@ -519,6 +519,11 @@ Known gaps: no quiet hours, no "repeat last line", an emergency alert is dashboa
 - Verification: core-api 273, reasoning 973, voice-agent 320, scheduler 8, Vitest 144; `npx tsc --noEmit`, `npm run build`, `ruff check .`, and `eval/run_eval.py` all pass. The build reports the existing >500 kB JS chunk warning.
 - Not yet verified on physical phones: browser permission prompts, actual Telegram delivery, LiveKit camera tracks, and end-to-end listening recovery after the call. Phone steps are in HANDOFF.md.
 
+## 2026-11-07 — Video call drops and STT idle recovery
+- Root causes from calls 3 and 4: the elder call screen treated a transient status-poll failure / hidden tab as an end, then sent `[video_call_stopped]` through the spoken turn path. The voice-agent also explicitly shut down its LiveKit job on every STTError, including Gnani's 60-second idle closure; the new job invalidated the room-bound join link.
+- Fix: transient status poll errors no longer terminate calls; hidden tabs pause local tracks and resume them when visible; call events are intercepted before turn logging and LLM handling, and the agent stays silent while a call is ringing or active except safety. Family disconnect has a 15-second grace period. STT errors no longer shut down the job; LiveKit Agents 1.8.6 recreates streaming STT in-session after its reconnect backoff.
+- Verification after the fix: core-api 273, reasoning 973, voice-agent 321, scheduler 8; Vitest 144, TypeScript, production build, Ruff, and dialogue eval pass. Phone verification is still required for camera permission, network handoff, and same-room STT recovery.
+
 ## Open questions (CLAUDE.md has the full list)
 5. Is a non-Gnani LLM allowed in the entry? (We use one for open talk once configured; say which model does what in
    the posts; ask on Discord.) 6. Does noise cancellation help Prisma (it is not installed). 7. Endpointing 1.0 s /

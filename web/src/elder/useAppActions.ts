@@ -59,8 +59,9 @@ export function useAppActions(voice: ArjunVoice, userId: number, contacts: Conta
   }, []);
 
   const action = voice.action;
-  const finishVideoCall = useCallback(async () => {
-    const stoppingCall = Boolean(videoCall || videoCallStarting || callAttempt.current > 0);
+  const finishVideoCall = useCallback(async (reason = "button") => {
+    const stoppingCall = Boolean(videoCall || videoCallStarting);
+    if (stoppingCall) console.info("video call stopped", reason);
     callAttempt.current += 1;
     const current = videoCall;
     setVideoCall(null);
@@ -70,6 +71,7 @@ export function useAppActions(voice: ArjunVoice, userId: number, contacts: Conta
     }
     const room = voice.room;
     if (room) {
+      void room.localParticipant.setAttributes({ "arjun.video_call": "stopped" });
       void room.localParticipant.setCameraEnabled(false);
       if (!document.hidden) {
         void room.localParticipant.setMicrophoneEnabled(false).then(() => room.localParticipant.setMicrophoneEnabled(true));
@@ -107,6 +109,7 @@ export function useAppActions(voice: ArjunVoice, userId: number, contacts: Conta
             return;
           }
           stopHeard.current = voice.heard;
+          void voice.room?.localParticipant.setAttributes({ "arjun.video_call": "ringing" });
           setVideoCall(started);
           setVideoCallStarting(null);
         })
@@ -157,14 +160,15 @@ export function useAppActions(voice: ArjunVoice, userId: number, contacts: Conta
   }, [safety, finishVideoCall]);
 
   useEffect(() => {
-    if (!videoCall || !voice.family || !isVideoCallStopCommand(voice.heard) || voice.heard === stopHeard.current) return;
+    if (!videoCall || !isVideoCallStopCommand(voice.heard) || voice.heard === stopHeard.current) return;
     stopHeard.current = voice.heard;
-    void finishVideoCall();
-  }, [finishVideoCall, videoCall, voice.family, voice.heard]);
+    void finishVideoCall("voice stop command");
+  }, [finishVideoCall, videoCall, voice.heard]);
 
   const missedVideoCall = useCallback((name: string) => {
-    if (voice.snapshot.phase === "live") void voice.sendText("[video_call_stopped]");
+    console.info("video call stopped", "missed timeout");
     if (voice.snapshot.phase === "live") void voice.sendText(`[video_call_missed] ${name}`);
+    void voice.room?.localParticipant.setAttributes({ "arjun.video_call": "stopped" });
     setVideoCall(null);
     setVideoCallStarting(null);
   }, [voice]);

@@ -49,8 +49,17 @@ try:  # TESTING switch (voiceprovider.py). Imported here: a plugin must be regis
 except ImportError:  # the Gnani path does not need it
     sarvam = None
 from livekit.plugins.gnani.tts import SSEChunkedStream
-from media import ATTR_MEDIA, MediaState, should_send, strip_wake_word
+from media import (
+    ATTR_MEDIA,
+    ATTR_VIDEO_CALL,
+    MediaState,
+    is_bare_control,
+    is_system_marker,
+    should_send,
+    strip_wake_word,
+)
 from responder import Responder
+from safety_words import is_safety_phrase
 from screenstate import publish_closed, publish_delivery, publish_screen, publish_thinking
 from sessionstate import SessionState
 from ttsgate import TtsGate
@@ -165,16 +174,18 @@ async def working_tts():  # type: ignore[no-untyped-def]
 class Arjun(Agent):
     def __init__(
         self, turns: TurnLog, responder: Responder, state: SessionState, policy: IdlePolicy, hold: ConjunctionHold,
-        media: MediaState, family: FamilyPresence, user_id: int,
+        media: MediaState, family: FamilyPresence, user_id: int, event_say, call_active,
     ) -> None:
         self.turns = turns
         self.media = media
         self.family = family
         self.user_id = user_id
+        self.event_say = event_say
         self.hold = hold
         self.responder = responder
         self.state = state
         self.policy = policy
+        self.call_active = call_active
         # No LLM on the session; instructions are unused but required by the base class.
         super().__init__(instructions="Arjun is an AI voice companion. Replies come from reasoning.")
 
@@ -185,6 +196,22 @@ class Arjun(Agent):
             await asyncio.to_thread(notify_video_call_stopped, self.user_id)
             logger.info("video call transient state cleared")
             raise StopResponse()
+        if is_system_marker(transcript):
+            # UI lifecycle markers are control events, never spoken user input.
+            logger.info("video call event received: %s", transcript.strip().split("]", 1)[0][1:])
+            if transcript.strip().startswith("[video_call_missed]"):
+                await asyncio.to_thread(notify_video_call_stopped, self.user_id)
+                name = transcript.partition("]")[2].strip()[:80] or "घरच्यांनी"
+                await self.event_say(f"{name}नी उचलला नाही, मी निरोप ठेवला आहे.")
+            raise StopResponse()
+        if self.call_active[0]:
+            # Calls are private family time. Only local safety detection and a short
+            # stop command are relevant; the page handles ending, no reply is spoken.
+            if is_bare_control(transcript):
+                raise StopResponse()
+            if not is_safety_phrase(transcript):
+                self.turns.ignore_collected("video_call_active")
+                raise StopResponse()
         # A family member is in the room: the mic hears them too, so Arjun says nothing at all.
         if self.family.present() and self.family.should_process(transcript):
             # Safety is evaluated locally in reasoning and remains audible during a family call.
@@ -246,6 +273,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         vad=ctx.proc.userdata.get("vad") or silero.VAD.load(),
         turn_handling=handling,
     )
+    call_active = [False]
     user_started = asyncio.Event()  # set whenever she starts speaking (the conjunction hold waits on it)
 
     async def wait_for_speech(timeout: float) -> bool:
@@ -333,6 +361,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     @ctx.room.on("participant_attributes_changed")
     def _on_page_attributes(changed, participant) -> None:  # type: ignore[no-untyped-def]
+        if ATTR_VIDEO_CALL in changed:
+            call_active[0] = changed.get(ATTR_VIDEO_CALL) in ("ringing", "answered")
         if ATTR_MEDIA in changed or "arjun.media.heartbeat" in changed:
             val = changed.get(ATTR_MEDIA, participant.attributes.get(ATTR_MEDIA, "stopped"))
             if _heartbeat_task[0] is not None:
@@ -435,6 +465,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     @session.on("user_input_transcribed")
     def _on_transcript(ev) -> None:  # type: ignore[no-untyped-def]
         if ev.is_final and ev.transcript.strip():
+            if is_system_marker(ev.transcript):
+                return
             turns.final_transcript(ev.created_at, ev.transcript, str(ev.language) if ev.language else None)
 
     @session.on("agent_state_changed")
@@ -444,22 +476,19 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if ev.new_state == "speaking":
             turns.agent_speaking(ev.created_at)
 
-    stt_restart_requested = [False]
-
     @session.on("error")
     def _on_error(ev) -> None:  # type: ignore[no-untyped-def]
         # STT / TTS / plugin failures: type and a short message only (never headers or keys).
         err = getattr(ev, "error", ev)
-        logger.error("session error: %s: %s", type(err).__name__, str(err)[:300])
-        if type(err).__name__ == "STTError" and not stt_restart_requested[0]:
-            stt_restart_requested[0] = True
-
-            async def restart_after_stt_failure() -> None:
-                await asyncio.sleep(0.5)
-                logger.warning("STT stream failed; restarting the voice session to create a fresh stream")
-                ctx.shutdown(reason="stt_stream_recovery")
-
-            asyncio.create_task(restart_after_stt_failure())
+        logger.error("session error: %s", type(err).__name__)
+        if type(err).__name__ == "STTError":
+            message = str(err).casefold()
+            if "no speech segment for 60 seconds" in message:
+                # LiveKit 1.8.6's STT pipeline retries the stream in-place after a short
+                # backoff. Never tear down the job: that invalidates room-bound join links.
+                logger.warning("stt stream recreated (idle)")
+            else:
+                logger.warning("STT error reported; keeping the LiveKit session for stream recovery")
 
     background: list[asyncio.Task[None]] = []
 
@@ -471,7 +500,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Arjun(turns, responder, state, policy, hold, media, family, user_id),
+        agent=Arjun(turns, responder, state, policy, hold, media, family, user_id, say_locked, call_active),
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
 

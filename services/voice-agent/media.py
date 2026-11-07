@@ -12,6 +12,7 @@ import time
 from safety_words import is_safety_phrase
 
 ATTR_MEDIA = "arjun.media"  # set by the ELDER PAGE on its own participant: "playing" | "stopped"
+ATTR_VIDEO_CALL = "arjun.video_call"  # set by the elder page while a call is ringing or connected
 MEDIA_KINDS = frozenset({"youtube_video", "youtube_playlist", "youtube_channel_live", "youtube_live"})
 WAKE_WORDS = ("अर्जुन", "अर्जून", "अर्जन", "अर्जुना", "arjun", "arjoon", "arjuna")
 CONTROL_PHRASES = (
@@ -79,6 +80,12 @@ def should_send(transcript: str, playing: bool) -> bool:
     if is_bare_control(transcript):
         return True
     return is_safety_phrase(transcript)
+
+
+def is_system_marker(text: str) -> bool:
+    """UI event markers travel through the room text lane but are never speech turns."""
+    marker = text.strip()
+    return marker.startswith(("[video_call_", "[media_")) and "]" in marker
 
 
 class MediaState:

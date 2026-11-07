@@ -10,6 +10,7 @@ from media import (
     CONTROL_PHRASES,
     MediaState,
     is_bare_control,
+    is_system_marker,
     should_send,
     starts_with_wake_word,
     strip_wake_word,
@@ -17,6 +18,14 @@ from media import (
 from safety_words import DISTRESS_PHRASES, EMERGENCY_PHRASES, is_safety_phrase
 from screenstate import ACTION, attributes_for
 from turnlog import TurnLog
+
+
+def test_ui_markers_are_events_not_speech():
+    assert is_system_marker("[video_call_stopped]")
+    assert is_system_marker("[video_call_missed] family")
+    assert is_system_marker("[media_stopped]")
+    assert not is_system_marker("stop")
+
 
 SONG = "ये जिंदगी उसी की है"
 
