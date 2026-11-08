@@ -1,8 +1,8 @@
-"""Live web search through the Brave Search API (the only search provider).
+"""Live web search through the Tavily Search API (the only search provider).
 
-Contract: `search(query, lang)` returns up to three {title, snippet} dicts, or None on ANY failure (no key, timeout,
+Contract: `search(query, lang)` returns up to three {title, snippet, source_domain} dicts, or None on ANY failure (no key, timeout,
 HTTP error, bad JSON, rate limit). It never raises. The API key is read from the environment at call time and is
-never logged or returned. Free tier = 1 request/second, so calls are spaced by a small process-wide limiter and
+never logged or returned. Calls are spaced by a small process-wide limiter (1 request/second) and
 identical queries are served from a 10-minute cache. Results are third-party text: callers pass them to the LLM as
 data and never speak URLs.
 """
@@ -23,12 +23,11 @@ import httpx
 
 log = logging.getLogger("arjun.websearch")
 
-URL = "https://api.search.brave.com/res/v1/web/search"
+URL = "https://api.tavily.com/search"
 TIMEOUT_S = 4.0  # total budget for one search, retry included
 CACHE_TTL_S = 600.0
-MIN_INTERVAL_S = 1.0  # Brave free tier: one request per second
+MIN_INTERVAL_S = 1.0  # polite spacing: one request per second
 MAX_RESULTS = 3
-_SEARCH_LANG = {"mr": "mr", "hi": "hi", "en": "en", "bn": "bn", "gu": "gu", "kn": "kn", "ml": "ml", "pa": "pa", "ta": "ta", "te": "te"}
 _TAG = re.compile(r"<[^>]+>")
 
 _lock = threading.Lock()
@@ -44,7 +43,7 @@ def reset() -> None:
 
 
 def available() -> bool:
-    return bool((os.environ.get("BRAVE_API_KEY") or "").strip())
+    return bool((os.environ.get("TAVILY_API_KEY") or "").strip())
 
 
 def host_of(url: str) -> str:
@@ -82,22 +81,25 @@ def search(
     timeout_s: float = TIMEOUT_S,
     domains: list[str] | None = None,
 ) -> list[dict[str, str]] | None:
-    key = (os.environ.get("BRAVE_API_KEY") or "").strip()
+    key = (os.environ.get("TAVILY_API_KEY") or "").strip()
     query = " ".join((query or "").split())[:200]
     if not key or not query:
         return None
     domains = [d.lower() for d in (domains or [])][:5]
-    if domains:  # news: ask Brave for those sites only (site: filter), then drop anything else below
-        query = f"{query} ({' OR '.join('site:' + d for d in domains)})"[:300]
-    cache_key = (query.casefold(), lang)
+    cache_key = (query.casefold(), lang, tuple(domains))
     now = clock()
     with _lock:
         hit = _cache.get(cache_key)
         if hit and now - hit[0] < CACHE_TTL_S:
             return [dict(x) for x in hit[1]]
     deadline = now + timeout_s
-    params = {"q": query, "count": MAX_RESULTS, "country": "IN", "search_lang": _SEARCH_LANG.get(lang, "en")}
-    headers = {"X-Subscription-Token": key, "Accept": "application/json"}
+    body: dict[str, Any] = {
+        "query": query, "max_results": MAX_RESULTS, "search_depth": "basic", "include_answer": False,
+        "topic": "news" if domains else "general",  # news = only the family's approved domains
+    }
+    if domains:
+        body["include_domains"] = domains
+    headers = {"Authorization": f"Bearer {key}"}
     http = client or httpx.Client()
     try:
         for attempt in (1, 2):  # one retry, only for a timeout, a 429 or a 5xx
@@ -111,7 +113,7 @@ def search(
             if remaining <= 0.2:
                 return None
             try:
-                r = http.get(URL, params=params, headers=headers, timeout=remaining)
+                r = http.post(URL, json=body, headers=headers, timeout=remaining)
             except httpx.TimeoutException:
                 log.info("web search timeout (attempt %d)", attempt)
                 continue
@@ -125,17 +127,17 @@ def search(
                 log.info("web search http %d", r.status_code)
                 return None
             try:
-                items = (r.json().get("web") or {}).get("results") or []
+                items = r.json().get("results") or []
             except ValueError:
                 return None
             results = []
             for it in items:
-                title, snippet = _clean(it.get("title")), _clean(it.get("description"))
-                url = str(it.get("url") or "")
-                if domains and not host_allowed(url, domains):
-                    continue  # post-filter: a non-approved source is dropped even if Brave returned it
+                title, snippet = _clean(it.get("title")), _clean(it.get("content"))
+                host = host_of(str(it.get("url") or ""))
+                if domains and not host_allowed(host, domains):
+                    continue  # post-filter: a non-approved source is dropped even if the API returned it
                 if title or snippet:
-                    results.append({"title": title, "snippet": snippet, "url": url})
+                    results.append({"title": title, "snippet": snippet, "source_domain": host})
                 if len(results) == MAX_RESULTS:
                     break
             if not results:

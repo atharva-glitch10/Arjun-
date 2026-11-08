@@ -1,6 +1,8 @@
 """Follow-ups to live web search: /turn/prepare, the elder's city, the 9 s time budget, the news-domain boundary.
 The network is always mocked."""
 
+import json
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +16,7 @@ from test_web_search import Llm, _understand, client, make
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     web_search.reset()
-    monkeypatch.setenv("BRAVE_API_KEY", "brave-test-key-123456")
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily-test-key-123456")
     yield
     web_search.reset()
 
@@ -111,7 +113,7 @@ def test_search_is_capped_at_four_seconds_and_the_turn_fits_under_the_nine_secon
     assert turn_mod._WEB_TURN_BUDGET_S < 9.0
 
 
-def test_the_search_timeout_handed_to_brave_never_exceeds_four_seconds(core_http, uid, monkeypatch):
+def test_the_search_timeout_handed_to_tavily_never_exceeds_four_seconds(core_http, uid, monkeypatch):
     seen = []
     monkeypatch.setattr(web_search, "search", lambda q, lang="mr", **kw: seen.append(kw.get("timeout_s")))
     make(core_http, Llm(_understand())).handle(uid, "आजचा सामना कोण जिंकला")
@@ -120,16 +122,16 @@ def test_the_search_timeout_handed_to_brave_never_exceeds_four_seconds(core_http
 
 # ---- 4. news only from the family's domains ---------------------------------------------------------------
 def _raw(*urls):
-    return [{"title": f"T{i}", "description": f"d{i}", "url": u} for i, u in enumerate(urls)]
+    return [{"title": f"T{i}", "content": f"d{i}", "url": u} for i, u in enumerate(urls)]
 
 
-def _patch_brave(monkeypatch, raw):
+def _patch_tavily(monkeypatch, raw):
     real = web_search.search
     asked = []
 
     def fake(query, lang="mr", **kw):
         asked.append((query, kw.get("domains")))
-        return real(query, lang, client=client(lambda r: httpx.Response(200, json={"web": {"results": raw}})), sleep=lambda s: None, **kw)
+        return real(query, lang, client=client(lambda r: httpx.Response(200, json={"results": raw})), sleep=lambda s: None, **kw)
 
     monkeypatch.setattr(web_search, "search", fake)
     return asked
@@ -142,10 +144,10 @@ def _links(core_http, uid, *pairs):
 
 def test_news_uses_only_family_domains_drops_the_rest_and_names_the_source(core_http, uid, monkeypatch):
     _links(core_http, uid, ("लोकमत", "https://www.lokmat.com/rss"))
-    asked = _patch_brave(monkeypatch, _raw("https://evil.example/a", "https://m.lokmat.com/b"))
+    asked = _patch_tavily(monkeypatch, _raw("https://evil.example/a", "https://m.lokmat.com/b"))
     llm = Llm(_understand(query="बातम्या"), answer="चर्चा सुरू आहे.")
     res = make(core_http, llm).handle(uid, "आजच्या बातम्या सांगा")
-    assert asked[0][1] == ["lokmat.com"]  # Brave is asked for that site only ...
+    assert asked[0][1] == ["lokmat.com"]  # Tavily is asked for that site only ...
     assert res.reply == "लोकमत नुसार: चर्चा सुरू आहे."  # ... and the family's own label is spoken
     system = llm.web_calls[0][0]
     assert "d1" in system and "d0" not in system and "evil.example" not in system  # the unapproved one never reaches the LLM
@@ -153,32 +155,33 @@ def test_news_uses_only_family_domains_drops_the_rest_and_names_the_source(core_
 
 def test_news_with_only_unapproved_results_says_no_information(core_http, uid, monkeypatch):
     _links(core_http, uid, ("लोकमत", "https://lokmat.com/rss"))
-    _patch_brave(monkeypatch, _raw("https://evil.example/a", "https://lokmat.com.evil.example/b"))  # look-alike host
+    _patch_tavily(monkeypatch, _raw("https://evil.example/a", "https://lokmat.com.evil.example/b"))  # look-alike host
     llm = Llm(_understand(query="बातम्या"))
     res = make(core_http, llm).handle(uid, "आजच्या बातम्या सांगा")
     assert res.reply == "आत्ता माहिती मिळाली नाही." and llm.web_calls == []
 
 
 def test_news_without_any_family_source_does_not_search(core_http, uid, monkeypatch):
-    asked = _patch_brave(monkeypatch, _raw("https://anything.example/a"))
+    asked = _patch_tavily(monkeypatch, _raw("https://anything.example/a"))
     res = make(core_http, Llm(_understand(query="बातम्या"))).handle(uid, "आजच्या बातम्या सांगा")
     assert res.reply == "आत्ता माहिती मिळाली नाही." and asked == []
 
 
 def test_non_news_may_use_any_result_and_names_no_source(core_http, uid, monkeypatch):
     _links(core_http, uid, ("लोकमत", "https://lokmat.com/rss"))
-    asked = _patch_brave(monkeypatch, _raw("https://anything.example/score"))
+    asked = _patch_tavily(monkeypatch, _raw("https://anything.example/score"))
     res = make(core_http, Llm(_understand(query="सामना"), answer="भारत जिंकला.")).handle(uid, "आजचा सामना कोण जिंकला")
     assert asked[0][1] is None and res.reply == "भारत जिंकला." and "नुसार" not in res.reply
 
 
-def test_tool_site_filter_and_postfilter():
+def test_tool_sends_news_topic_with_include_domains_and_postfilters():
     web_search.reset()
     seen = []
 
     def h(req):
-        seen.append(req.url.params["q"])
-        return httpx.Response(200, json={"web": {"results": _raw("https://x.example/1", "https://a.b.lokmat.com/2")}})
+        seen.append(json.loads(req.content))
+        return httpx.Response(200, json={"results": _raw("https://x.example/1", "https://a.b.lokmat.com/2")})
 
     out = web_search.search("बातम्या", "mr", client=client(h), sleep=lambda s: None, domains=["lokmat.com"])
-    assert "site:lokmat.com" in seen[0] and [x["url"] for x in out] == ["https://a.b.lokmat.com/2"]
+    assert seen[0]["topic"] == "news" and seen[0]["include_domains"] == ["lokmat.com"]
+    assert out == [{"title": "T1", "snippet": "d1", "source_domain": "a.b.lokmat.com"}]  # the unapproved one is dropped

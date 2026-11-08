@@ -1,7 +1,7 @@
-"""Live web search (Brave) + weather (Open-Meteo). The network is always mocked.
+"""Live web search (Tavily) + weather (Open-Meteo). The network is always mocked.
 
 Boundaries: 8 (safety runs first and never searches), 5/6 (no medical or dose lookups), 14 (never claim an answer we
-did not get: any failure is the fixed "no information" line), 12 (the Brave key is never logged).
+did not get: any failure is the fixed "no information" line), 12 (the Tavily key is never logged).
 """
 
 import json
@@ -21,23 +21,23 @@ from reasoning_svc.tools import weather, web_search
 from reasoning_svc.turn import TurnEngine
 
 NOW = datetime(2026, 10, 6, 9, 0)
-KEY = "brave-test-key-123456"
+KEY = "tavily-test-key-123456"
 EVAL = Path(__file__).resolve().parents[3] / "eval" / "web_eval.jsonl"
 
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     web_search.reset()
-    monkeypatch.setenv("BRAVE_API_KEY", KEY)
+    monkeypatch.setenv("TAVILY_API_KEY", KEY)
     yield
     web_search.reset()
 
 
-def brave_body(n=4):
-    return {"web": {"results": [
-        {"title": f"T{i} <strong>x</strong>", "description": f"snippet &amp; {i} <b>bold</b>", "url": f"https://e.test/{i}"}
+def tavily_body(n=4):
+    return {"results": [
+        {"title": f"T{i} <strong>x</strong>", "content": f"snippet &amp; {i} <b>bold</b>", "url": f"https://e.test/{i}"}
         for i in range(n)
-    ]}}
+    ]}
 
 
 class Clock:
@@ -58,20 +58,22 @@ def client(handler):
 
 
 # ---- the tool ---------------------------------------------------------------------------------------
-def test_success_returns_top_three_cleaned_and_sends_key_and_params():
+def test_success_returns_top_three_cleaned_and_posts_the_documented_request():
     seen = []
 
     def h(req):
         seen.append(req)
-        return httpx.Response(200, json=brave_body())
+        return httpx.Response(200, json=tavily_body())
 
     c = Clock()
     out = web_search.search("पुणे बातम्या", "mr", client=client(h), clock=c, sleep=c.sleep)
-    assert out == [{"title": f"T{i} x", "snippet": f"snippet & {i} bold", "url": f"https://e.test/{i}"} for i in range(3)]
+    assert out == [{"title": f"T{i} x", "snippet": f"snippet & {i} bold", "source_domain": "e.test"} for i in range(3)]
     req = seen[0]
-    assert req.headers["x-subscription-token"] == KEY
-    q = dict(req.url.params)
-    assert q["q"] == "पुणे बातम्या" and q["count"] == "3" and q["country"] == "IN" and q["search_lang"] == "mr"
+    assert req.method == "POST" and str(req.url) == "https://api.tavily.com/search"
+    assert req.headers["authorization"] == f"Bearer {KEY}"
+    assert json.loads(req.content) == {
+        "query": "पुणे बातम्या", "max_results": 3, "search_depth": "basic", "include_answer": False, "topic": "general",
+    }
 
 
 def test_second_identical_query_is_served_from_cache_for_ten_minutes():
@@ -79,7 +81,7 @@ def test_second_identical_query_is_served_from_cache_for_ten_minutes():
 
     def h(req):
         n.append(1)
-        return httpx.Response(200, json=brave_body())
+        return httpx.Response(200, json=tavily_body())
 
     c = Clock()
     http = client(h)
@@ -109,14 +111,14 @@ def test_429_then_200_succeeds_on_the_retry():
 
     def h(req):
         code = next(codes)
-        return httpx.Response(code, json=brave_body() if code == 200 else {})
+        return httpx.Response(code, json=tavily_body() if code == 200 else {})
 
     c = Clock()
     assert web_search.search("q", "mr", client=client(h), clock=c, sleep=c.sleep) is not None
 
 
 def test_no_key_returns_none_without_any_request(monkeypatch):
-    monkeypatch.delenv("BRAVE_API_KEY")
+    monkeypatch.delenv("TAVILY_API_KEY")
 
     def h(req):
         raise AssertionError("no request without a key")
@@ -140,7 +142,7 @@ def test_client_errors_are_none_and_not_retried(status):
 
 def test_rate_limit_spaces_distinct_queries_one_second_apart():
     def h(req):
-        return httpx.Response(200, json=brave_body())
+        return httpx.Response(200, json=tavily_body())
 
     c = Clock()
     http = client(h)
@@ -154,7 +156,7 @@ def test_rate_limit_that_cannot_fit_the_budget_is_none_without_a_request():
 
     def h(req):
         n.append(1)
-        return httpx.Response(200, json=brave_body())
+        return httpx.Response(200, json=tavily_body())
 
     c = Clock()
     http = client(h)
@@ -232,7 +234,7 @@ def make(core_http, llm):
 
 
 @pytest.fixture()
-def brave(monkeypatch):
+def tavily(monkeypatch):
     calls = []
 
     def fake(query, lang="mr", **kw):
@@ -243,10 +245,10 @@ def brave(monkeypatch):
     return calls
 
 
-def test_needs_web_searches_speaks_a_filler_and_answers_from_snippets(core_http, uid, brave):
+def test_needs_web_searches_speaks_a_filler_and_answers_from_snippets(core_http, uid, tavily):
     llm = Llm(_understand(query="भारत सामना निकाल"), answer="संसदेत चर्चा सुरू आहे. https://x.test **ठीक**")
     res = make(core_http, llm).handle(uid, "काल भारताचा सामना कोण जिंकला")
-    assert brave == [("भारत सामना निकाल", "mr")]
+    assert tavily == [("भारत सामना निकाल", "mr")]
     assert res.filler == "बघतो…"
     assert res.reply == "संसदेत चर्चा सुरू आहे. ठीक" and "http" not in res.reply and "*" not in res.reply
     assert res.intent == "CHAT" and res.source == "llm" and res.trace["web"] == "search"
@@ -255,17 +257,17 @@ def test_needs_web_searches_speaks_a_filler_and_answers_from_snippets(core_http,
 
 
 @pytest.mark.parametrize("text", ["मला छातीत दुखतंय", "mala jagaychi iccha nahi"])
-def test_safety_runs_first_and_never_searches(core_http, uid, brave, text):
+def test_safety_runs_first_and_never_searches(core_http, uid, tavily, text):
     llm = Llm(_understand())
     res = make(core_http, llm).handle(uid, text)
-    assert res.mode == "safety" and brave == [] and llm.calls == []
+    assert res.mode == "safety" and tavily == [] and llm.calls == []
 
 
 @pytest.mark.parametrize("text", ["बीपीची गोळी दोन घेऊ का", "शुगर वाढली तर काय करायचं", "can I double my dose today"])
-def test_medicine_and_health_words_never_search(core_http, uid, brave, text):
+def test_medicine_and_health_words_never_search(core_http, uid, tavily, text):
     llm = Llm(_understand())
     res = make(core_http, llm).handle(uid, text)
-    assert brave == [] and llm.web_calls == []
+    assert tavily == [] and llm.web_calls == []
     assert res.reply != "" and "doctor" in res.reply.lower() or "डॉक्टर" in res.reply
 
 
@@ -276,29 +278,29 @@ def test_search_failure_gives_the_fixed_line(core_http, uid, monkeypatch):
 
 
 def test_missing_key_gives_the_fixed_line_without_a_request(core_http, uid, monkeypatch):
-    monkeypatch.delenv("BRAVE_API_KEY")
+    monkeypatch.delenv("TAVILY_API_KEY")
     res = make(core_http, Llm(_understand())).handle(uid, "आजचा सामना कोण जिंकला")
     assert res.reply == "आत्ता माहिती मिळाली नाही."
 
 
-def test_llm_answer_failure_gives_the_fixed_line(core_http, uid, brave):
+def test_llm_answer_failure_gives_the_fixed_line(core_http, uid, tavily):
     res = make(core_http, Llm(_understand(), answer="")).handle(uid, "आजचा सामना कोण जिंकला")
     assert res.reply == "आत्ता माहिती मिळाली नाही."
 
 
-def test_weather_uses_open_meteo_and_the_elders_city(core_http, uid, brave, monkeypatch):
+def test_weather_uses_open_meteo_and_the_elders_city(core_http, uid, tavily, monkeypatch):
     monkeypatch.setenv("ARJUN_CITY", "Pune")
     got = []
     monkeypatch.setattr(weather, "current_weather", lambda city, lang="mr", **k: got.append(city) or "ढगाळ आहे.")
     res = make(core_http, Llm(_understand())).handle(uid, "आज पाऊस पडेल का")
-    assert got == ["Pune"] and brave == [] and res.reply == "ढगाळ आहे." and res.trace["web"] == "weather"
+    assert got == ["Pune"] and tavily == [] and res.reply == "ढगाळ आहे." and res.trace["web"] == "weather"
 
 
-def test_weather_without_a_city_asks_instead_of_guessing(core_http, uid, brave, monkeypatch):
+def test_weather_without_a_city_asks_instead_of_guessing(core_http, uid, tavily, monkeypatch):
     monkeypatch.delenv("ARJUN_CITY", raising=False)
     monkeypatch.setattr(weather, "current_weather", lambda *a, **k: pytest.fail("no city, no lookup"))
     res = make(core_http, Llm(_understand())).handle(uid, "आज पाऊस पडेल का")
-    assert res.reply == rp.R["mr"]["web_city"] and brave == []
+    assert res.reply == rp.R["mr"]["web_city"] and tavily == []
 
 
 # ---- the eval set ------------------------------------------------------------------------------------
@@ -311,9 +313,9 @@ def test_eval_set_has_at_least_fifteen_turns():
 
 
 def test_web_eval_routing_latency_and_samples(core_http, uid, monkeypatch):
-    """System result: every eval turn routes as expected with a mocked Brave/Open-Meteo/LLM. News turns go through the
+    """System result: every eval turn routes as expected with a mocked Tavily/Open-Meteo/LLM. News turns go through the
     REAL web_search code (mock HTTP), so the domain filter and the spoken source are exercised, not faked. The
-    latencies are the in-process cost only (network mocked at zero delay); they say nothing about real Brave/LLM."""
+    latencies are the in-process cost only (network mocked at zero delay); they say nothing about real Tavily/LLM."""
     monkeypatch.setenv("ARJUN_CITY", "Pune")
     monkeypatch.setattr(weather, "current_weather", lambda city, lang="mr", **k: f"{city}: ढगाळ आहे.")
     real_search = web_search.search
@@ -323,14 +325,14 @@ def test_web_eval_routing_latency_and_samples(core_http, uid, monkeypatch):
     for case in _cases():
         web_search.reset()
         raw = case.get("raw") or [
-            {"title": s["title"], "description": s["snippet"], "url": "https://any.example/x"} for s in case.get("snippets") or []
+            {"title": s["title"], "content": s["snippet"], "url": "https://any.example/x"} for s in case.get("snippets") or []
         ]
         seen = {"q": [], "domains": []}
 
         def fake(query, lang="mr", _raw=raw, _seen=seen, **kw):
             _seen["q"].append(query)
             _seen["domains"].append(kw.get("domains"))
-            http = client(lambda req: httpx.Response(200, json={"web": {"results": _raw}}))
+            http = client(lambda req: httpx.Response(200, json={"results": _raw}))
             kw.pop("client", None)
             return real_search(query, lang, client=http, sleep=lambda s: None, **kw)
 

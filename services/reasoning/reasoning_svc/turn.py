@@ -2669,8 +2669,8 @@ class TurnEngine:
         return None
 
     def _web_turn(self, uid: int, text: str, query: str, lang: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
-        """A live-facts question. Weather: Open-Meteo (her city, else ARJUN_CITY, else ask once). News: Brave results
-        from the family's approved domains ONLY, source named aloud. Anything else: any Brave result. The LLM answers
+        """A live-facts question. Weather: Open-Meteo (her city, else ARJUN_CITY, else ask once). News: Tavily results
+        from the family's approved domains ONLY, source named aloud. Anything else: any search result. The LLM answers
         from the snippets only. Never for medicine / health words. Any failure is the fixed "no information" line."""
         r = rp.R[rp.lang_or_default(lang)]
 
@@ -2708,7 +2708,7 @@ class TurnEngine:
             if news and results:
                 # name the source and answer from THAT result alone, so the spoken name is the true origin
                 for d, label in allowed:
-                    hit = [x for x in results if web_search.host_allowed(x.get("url", ""), [d])]
+                    hit = [x for x in results if web_search.host_allowed(x.get("source_domain", ""), [d])]
                     if hit:
                         results, source = hit[:1], label
                         break
