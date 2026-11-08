@@ -382,9 +382,28 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     try {
       await api.ackDelivery(userId, d.id, "ok");
       await loadDeliveries();
-    } catch {
-      setError("काहीतरी चुकलं. परत प्रयत्न करा.");
+    } catch (e) {
+      await cardFailed(d, e);
     }
+  };
+
+  // A card whose item core-api no longer has open (404 gone; 409 dose already taken/missed, no snoozes left, e.g.
+  // last night's dose still shown) must not trap her: mark the CARD seen (outcome "closed", never "taken") and move on.
+  // Any other failure keeps the card and shows a visible message.
+  const cardFailed = async (d: Delivery, e: unknown) => {
+    const code = e instanceof Error ? Number(e.message.slice(0, 3)) : 0;
+    if (code === 404 || code === 409) {
+      try {
+        await api.ackDelivery(userId, d.id, "closed");
+      } catch {
+        // already acknowledged or gone: reloading below is enough
+      }
+      setError("");
+      void loadDeliveries();
+      void pollMedicines();
+      return;
+    }
+    setError("काहीतरी चुकलं. थोड्या वेळाने परत दाबा.");
   };
 
   const answerMedicineCard = async (d: Delivery, status: "taken" | "snoozed") => {
@@ -395,8 +414,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       setCardDone({ status, time: timeLabel(hhmmOf(d.due_at)), name: d.label, dose: d.detail });
       void loadDeliveries();
       void pollMedicines();
-    } catch {
-      setError("काहीतरी चुकलं. परत प्रयत्न करा.");
+    } catch (e) {
+      await cardFailed(d, e);
     }
   };
 
@@ -611,7 +630,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           <span className="hf-dot" aria-hidden /> मी ऐकतोय · कधीही बोला
         </div>
       )}
-      {medicineOpen && error && (
+      {(medicineOpen || shown === "card") && error && (
         <div className="med-error" role="alert">
           {error}
         </div>
