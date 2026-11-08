@@ -41,9 +41,9 @@
   `ensure_checkins` returned early and the tick loop skipped the user. The DB was correct; the seed/profile was not.
 - Demo seed (`scripts/seed_heerabai.py`) is now idempotent and sets user 1: check-ins ON, opener 07:30-21:00,
   wake 06:30, breakfast 08:30, lunch 13:00, snack 17:00, dinner 20:00, walk 18:00, BP 09:00, fasting sugar 08:00,
-  after-lunch sugar 15:00, address "हीराबाई", and four medicine rows (बीपीची गोळी 09:00/21:00, शुगरची गोळी
+  after-lunch sugar 15:00, address "आजी", and four medicine rows (बीपीची गोळी 09:00/21:00, शुगरची गोळी
   08:30/20:30). Medicines not in that plan are switched off. `name` cannot be PATCHed, so the stored name stays
-  "Demo Aaji (synthetic)"; the spoken address is हीराबाई.
+  "Demo Aaji (synthetic)"; the spoken address is आजी.
 - New optional `users.sugar_check_time` / `sugar_after_time` columns (added by `ensure_columns`), dashboard fields,
   and `sugar` / `sugar_after` check-in kinds. `walk_time`, `bp_check_time` and both sugar times are omitted from the
   plan when unset.

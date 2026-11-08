@@ -32,7 +32,7 @@
 The demo user was silent because `daily_checkins=0` and no profile times were seeded; the engine and scheduler were
 running. `scripts/seed_heerabai.py --apply` now sets user 1 to check-ins ON with opener 07:30-21:00, wake 06:30,
 breakfast 08:30, lunch 13:00, snack 17:00, dinner 20:00, walk 18:00, BP 09:00, fasting sugar 08:00, after-lunch
-sugar 15:00, address "हीराबाई", and four medicine rows (बीपीची गोळी 09:00/21:00, शुगरची गोळी 08:30/20:30). It matches
+sugar 15:00, address "आजी", and four medicine rows (बीपीची गोळी 09:00/21:00, शुगरची गोळी 08:30/20:30). It matches
 medicines by `(name, time)` and switches off medicines outside the plan, so re-running is safe. The stored user name
 cannot be changed through `PATCH /users/{id}`; only `address_as` is set.
 

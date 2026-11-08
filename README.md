@@ -104,7 +104,7 @@ scripts\dev-up.ps1 -Phone
 - The URL parser / `.env` line replacer is `scripts\tunnel_url.py`; its standard-library unit tests run
   with `.venv\Scripts\python scripts\test_tunnel_url.py` (pytest also collects them).
 
-## Demo user: Heerabai
+## Demo user: Aaji
 
 Seed synthetic user 1 through core-api. The first command is a dry run; add `--apply` to write the changes.
 Existing user names cannot be changed with the current core-api profile endpoint; if user 1 has a different name,

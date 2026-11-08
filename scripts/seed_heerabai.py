@@ -1,4 +1,4 @@
-"""Seed the synthetic Heerabai demo user through core-api. Dry run unless --apply."""
+"""Seed the synthetic Aaji demo user through core-api. Dry run unless --apply."""
 
 import argparse
 import json
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 USER_ID = 1
-USER_NAME = "हीराबाई पवार (synthetic)"
+USER_NAME = "आजी (synthetic)"
 USER_PROFILE = {
     "language": "mr",
     "wake_time": "06:30",
@@ -24,7 +24,7 @@ USER_PROFILE = {
     "sugar_check_time": "08:00",
     "sugar_after_time": "15:00",
     "daily_checkins": True,
-    "address_as": "हीराबाई",
+    "address_as": "आजी",
     "interests": ["गाणी", "भजन", "स्वयंपाक"],
     "opener_start": "07:30",
     "opener_end": "21:00",
@@ -365,7 +365,7 @@ def print_summary(results: list[tuple[str, str, str]]) -> None:
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="Seed the synthetic Heerabai demo user.")
+    parser = argparse.ArgumentParser(description="Seed the synthetic Aaji demo user.")
     parser.add_argument("--apply", action="store_true", help="write changes (default: dry run)")
     parser.add_argument("--core", default="http://127.0.0.1:8000", help="core-api base URL")
     args = parser.parse_args()
