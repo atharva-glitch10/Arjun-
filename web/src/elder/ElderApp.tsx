@@ -290,13 +290,26 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dueDose?.id]);
 
+  // A dose that core-api no longer has open (404 gone, 409 already taken/missed/no snoozes left) must not trap her on
+  // the medicine screen: close it and refresh. Any other failure stays on screen WITH a visible message.
+  const medicineFailed = (e: unknown) => {
+    const code = e instanceof Error ? Number(e.message.slice(0, 3)) : 0;
+    if (code === 404 || code === 409) {
+      setMedicineOpen(false);
+      lastDose.current = null;
+      void pollMedicines();
+      return;
+    }
+    setError("काहीतरी चुकलं. थोड्या वेळाने परत दाबा.");
+  };
+
   const medicineTaken = async (d: Dose) => {
     try {
       await api.doseTaken(userId, d.id);
       setMedState("taken");
       void pollMedicines();
-    } catch {
-      setError("काहीतरी चुकलं. परत प्रयत्न करा.");
+    } catch (e) {
+      medicineFailed(e);
     }
   };
 
@@ -305,8 +318,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       await api.doseSnooze(userId, d.id);
       setMedState("snoozed");
       void pollMedicines();
-    } catch {
-      setError("काहीतरी चुकलं. परत प्रयत्न करा.");
+    } catch (e) {
+      medicineFailed(e);
     }
   };
 
@@ -596,6 +609,11 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       {HANDS_FREE && live && shown === "home" && (
         <div className="hf-badge" role="status">
           <span className="hf-dot" aria-hidden /> मी ऐकतोय · कधीही बोला
+        </div>
+      )}
+      {medicineOpen && error && (
+        <div className="med-error" role="alert">
+          {error}
         </div>
       )}
       {clonedName && chipScreen && (

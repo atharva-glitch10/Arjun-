@@ -293,3 +293,8 @@ h1, h2, p { margin: 0; }
 .voices-card button.danger { border-color: #B3261E; color: #B3261E; }
 .voices-card button.primary { background: var(--ghar-indigo); color: #fff; padding: 0 20px; border-radius: 12px; }
 .voices-card button:disabled { opacity: .5; }
+
+/* ---- Medicine screen: a failed tap is always visible (2026-11-08) ---- */
+.med-error { position: fixed; top: 14px; left: 16px; right: 16px; max-width: 520px; margin: 0 auto; z-index: 21;
+  padding: 14px 18px; border-radius: 14px; background: #FDECEA; color: #7A1C14; border: 2px solid #B3261E;
+  font-size: 22px; font-weight: 700; text-align: center; }
