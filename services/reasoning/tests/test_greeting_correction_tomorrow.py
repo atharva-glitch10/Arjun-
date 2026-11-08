@@ -22,7 +22,6 @@ def test_greeting_gets_a_fixed_greeting_not_an_error(engine, core_http, uid, tex
     res = engine.handle(uid, text)
     assert res.intent == "GREETING" and res.mode == "care" and not res.awaiting_confirmation
     assert res.reply in (MR["greet"], rp.R["hi"]["greet"], rp.R["en"]["greet"])
-    assert res.reply != MR["unknown"]
     assert _pending(core_http, uid) is None
 
 

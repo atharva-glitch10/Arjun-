@@ -27,6 +27,7 @@ _CONJUNCTIONS = frozenset({
     "ani", "pan", "mhanje", "ki", "aani", "aur", "lekin", "and", "but",
 })
 _TRAILING = re.compile(r"[\s,.;:!?।…\-\"'“”‘’]+$")
+_SHORT_COMMANDS = frozenset({"हो", "होय", "नाही", "नको", "नका", "yes", "no", "ok", "okay", "कर", "करा", "लाव", "लावा", "थांब", "थांबा", "stop"})
 
 
 def ends_with_conjunction(text: str) -> bool:
@@ -102,9 +103,14 @@ class ConjunctionHold:
             text, self.held = self.held, ""
             return text
         text = f"{self.held} {spoken}".strip() if self.held else spoken
-        if ends_with_conjunction(text):
+        words = text.split()
+        unfinished = ends_with_conjunction(text) or (
+            len(words) < 3 and bool(words)
+            and all(word.casefold() not in _SHORT_COMMANDS for word in words)
+        )
+        if unfinished:
             opts = self.policy.options()
-            rest = max(0.0, opts["max_delay"] - opts["min_delay"])
+            rest = min(1.5, max(0.0, opts["max_delay"] - opts["min_delay"]))
             if rest > 0 and await self.wait_for_speech(rest):
                 self.held = text
                 return None

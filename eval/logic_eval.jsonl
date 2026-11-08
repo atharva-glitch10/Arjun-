@@ -1,0 +1,80 @@
+{"id": "logic-mr-IN-01", "text": "आज वांग्याचं भरीत केलं", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["mr-IN", "food"]}
+{"id": "logic-mr-IN-02", "text": "राहुल जेवला असेल का", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["mr-IN", "family"]}
+{"id": "logic-mr-IN-03", "text": "भूक लागली आहे", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["mr-IN", "food"]}
+{"id": "logic-mr-IN-04", "text": "यूट्यूबवर भजन लाव", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["mr-IN", "media"]}
+{"id": "logic-mr-IN-05", "text": "मला पुण्याला जायचं होतं", "language_code": "mr-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["mr-IN", "travel"]}
+{"id": "logic-mr-IN-06", "text": "बागेत फुलं आली", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["mr-IN", "garden"]}
+{"id": "logic-hi-IN-01", "text": "आज मैंने बैंगन का भरता बनाया", "language_code": "hi-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["hi-IN", "food"]}
+{"id": "logic-hi-IN-02", "text": "राहुल ने खाना खाया होगा क्या", "language_code": "hi-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["hi-IN", "family"]}
+{"id": "logic-hi-IN-03", "text": "मुझे भूख लगी है", "language_code": "hi-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["hi-IN", "food"]}
+{"id": "logic-hi-IN-04", "text": "यूट्यूब पर भजन चलाइए", "language_code": "hi-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["hi-IN", "media"]}
+{"id": "logic-hi-IN-05", "text": "मुझे पुणे जाना था", "language_code": "hi-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["hi-IN", "travel"]}
+{"id": "logic-hi-IN-06", "text": "बगीचे में फूल आए हैं", "language_code": "hi-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["hi-IN", "garden"]}
+{"id": "logic-hi-Latn-01", "text": "Aaj baingan ka bharta banaya", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "hinglish_food", "tags": ["hi-Latn", "hinglish_food"]}
+{"id": "logic-hi-Latn-02", "text": "Rahul ne khana khaya hoga kya", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "hinglish_family", "tags": ["hi-Latn", "hinglish_family"]}
+{"id": "logic-hi-Latn-03", "text": "Mujhe bhook lagi hai", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "hinglish_food", "tags": ["hi-Latn", "hinglish_food"]}
+{"id": "logic-hi-Latn-04", "text": "YouTube pe bhajan chalao", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "hinglish_media", "tags": ["hi-Latn", "hinglish_media"]}
+{"id": "logic-hi-Latn-05", "text": "Mujhe Pune jaana tha", "language_code": "hi-Latn", "expected_behavior": "specific_clarify", "topic": "hinglish_travel", "tags": ["hi-Latn", "hinglish_travel"]}
+{"id": "logic-hi-Latn-06", "text": "Garden mein phool aaye hain", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "hinglish_garden", "tags": ["hi-Latn", "hinglish_garden"]}
+{"id": "logic-ta-IN-01", "text": "இன்று கத்திரிக்காய் உணவு செய்தேன்", "language_code": "ta-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["ta-IN", "food"]}
+{"id": "logic-ta-IN-02", "text": "ராகுல் சாப்பிட்டிருப்பாரா", "language_code": "ta-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["ta-IN", "family"]}
+{"id": "logic-ta-IN-03", "text": "எனக்குப் பசிக்கிறது", "language_code": "ta-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["ta-IN", "food"]}
+{"id": "logic-ta-IN-04", "text": "யூடியூபில் பக்திப் பாடல் போடு", "language_code": "ta-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["ta-IN", "media"]}
+{"id": "logic-ta-IN-05", "text": "நான் புனே செல்ல வேண்டும்", "language_code": "ta-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["ta-IN", "travel"]}
+{"id": "logic-ta-IN-06", "text": "தோட்டத்தில் பூக்கள் வந்தன", "language_code": "ta-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["ta-IN", "garden"]}
+{"id": "logic-kn-IN-01", "text": "ಇಂದು ಬದನೆಕಾಯಿ ಪಲ್ಯ ಮಾಡಿದೆ", "language_code": "kn-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["kn-IN", "food"]}
+{"id": "logic-kn-IN-02", "text": "ರಾಹುಲ್ ಊಟ ಮಾಡಿರಬಹುದಾ", "language_code": "kn-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["kn-IN", "family"]}
+{"id": "logic-kn-IN-03", "text": "ನನಗೆ ಹಸಿವಾಗಿದೆ", "language_code": "kn-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["kn-IN", "food"]}
+{"id": "logic-kn-IN-04", "text": "ಯೂಟ್ಯೂಬ್‌ನಲ್ಲಿ ಭಜನೆ ಹಾಕಿ", "language_code": "kn-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["kn-IN", "media"]}
+{"id": "logic-kn-IN-05", "text": "ನಾನು ಪುಣೆಗೆ ಹೋಗಬೇಕಿತ್ತು", "language_code": "kn-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["kn-IN", "travel"]}
+{"id": "logic-kn-IN-06", "text": "ತೋಟದಲ್ಲಿ ಹೂವು ಬಿಟ್ಟಿವೆ", "language_code": "kn-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["kn-IN", "garden"]}
+{"id": "logic-bn-IN-01", "text": "আজ বেগুনের পদ রান্না করেছি", "language_code": "bn-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["bn-IN", "food"]}
+{"id": "logic-bn-IN-02", "text": "রাহুল কি খেয়ে নিয়েছে", "language_code": "bn-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["bn-IN", "family"]}
+{"id": "logic-bn-IN-03", "text": "আমার খিদে পেয়েছে", "language_code": "bn-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["bn-IN", "food"]}
+{"id": "logic-bn-IN-04", "text": "ইউটিউবে ভজন চালাও", "language_code": "bn-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["bn-IN", "media"]}
+{"id": "logic-bn-IN-05", "text": "আমার পুনে যাওয়ার কথা ছিল", "language_code": "bn-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["bn-IN", "travel"]}
+{"id": "logic-bn-IN-06", "text": "বাগানে ফুল ফুটেছে", "language_code": "bn-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["bn-IN", "garden"]}
+{"id": "logic-gu-IN-01", "text": "આજે રીંગણનો ઓળો બનાવ્યો", "language_code": "gu-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["gu-IN", "food"]}
+{"id": "logic-gu-IN-02", "text": "રાહુલે જમ્યું હશે કે", "language_code": "gu-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["gu-IN", "family"]}
+{"id": "logic-gu-IN-03", "text": "મને ભૂખ લાગી છે", "language_code": "gu-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["gu-IN", "food"]}
+{"id": "logic-gu-IN-04", "text": "યૂટ્યુબ પર ભજન વગાડો", "language_code": "gu-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["gu-IN", "media"]}
+{"id": "logic-gu-IN-05", "text": "મારે પુણે જવું હતું", "language_code": "gu-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["gu-IN", "travel"]}
+{"id": "logic-gu-IN-06", "text": "બગીચામાં ફૂલ ખીલ્યાં", "language_code": "gu-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["gu-IN", "garden"]}
+{"id": "logic-pa-IN-01", "text": "ਅੱਜ ਬੈਂਗਣ ਦੀ ਸਬਜ਼ੀ ਬਣਾਈ", "language_code": "pa-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["pa-IN", "food"]}
+{"id": "logic-pa-IN-02", "text": "ਰਾਹੁਲ ਨੇ ਖਾਣਾ ਖਾ ਲਿਆ ਹੋਵੇਗਾ", "language_code": "pa-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["pa-IN", "family"]}
+{"id": "logic-pa-IN-03", "text": "ਮੈਨੂੰ ਭੁੱਖ ਲੱਗੀ ਹੈ", "language_code": "pa-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["pa-IN", "food"]}
+{"id": "logic-pa-IN-04", "text": "ਯੂਟਿਊਬ ਤੇ ਭਜਨ ਚਲਾਓ", "language_code": "pa-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["pa-IN", "media"]}
+{"id": "logic-pa-IN-05", "text": "ਮੈਂ ਪੁਣੇ ਜਾਣਾ ਸੀ", "language_code": "pa-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["pa-IN", "travel"]}
+{"id": "logic-pa-IN-06", "text": "ਬਾਗ ਵਿੱਚ ਫੁੱਲ ਖਿੜੇ ਹਨ", "language_code": "pa-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["pa-IN", "garden"]}
+{"id": "logic-te-IN-01", "text": "ఈరోజు వంకాయ కూర చేశాను", "language_code": "te-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["te-IN", "food"]}
+{"id": "logic-te-IN-02", "text": "రాహుల్ భోజనం చేసి ఉంటాడా", "language_code": "te-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["te-IN", "family"]}
+{"id": "logic-te-IN-03", "text": "నాకు ఆకలిగా ఉంది", "language_code": "te-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["te-IN", "food"]}
+{"id": "logic-te-IN-04", "text": "యూట్యూబ్‌లో భజన పెట్టు", "language_code": "te-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["te-IN", "media"]}
+{"id": "logic-te-IN-05", "text": "నేను పుణెకు వెళ్లాల్సింది", "language_code": "te-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["te-IN", "travel"]}
+{"id": "logic-te-IN-06", "text": "తోటలో పూలు పూశాయి", "language_code": "te-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["te-IN", "garden"]}
+{"id": "logic-ml-IN-01", "text": "ഇന്ന് വഴുതനങ്ങ കറി ഉണ്ടാക്കി", "language_code": "ml-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["ml-IN", "food"]}
+{"id": "logic-ml-IN-02", "text": "രാഹുൽ ഭക്ഷണം കഴിച്ചിട്ടുണ്ടാകുമോ", "language_code": "ml-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["ml-IN", "family"]}
+{"id": "logic-ml-IN-03", "text": "എനിക്ക് വിശക്കുന്നു", "language_code": "ml-IN", "expected_behavior": "answer_topic", "topic": "food", "tags": ["ml-IN", "food"]}
+{"id": "logic-ml-IN-04", "text": "യൂട്യൂബിൽ ഭജൻ ഇടൂ", "language_code": "ml-IN", "expected_behavior": "answer_topic", "topic": "media", "tags": ["ml-IN", "media"]}
+{"id": "logic-ml-IN-05", "text": "എനിക്ക് പൂനെയിൽ പോകണമായിരുന്നു", "language_code": "ml-IN", "expected_behavior": "specific_clarify", "topic": "travel", "tags": ["ml-IN", "travel"]}
+{"id": "logic-ml-IN-06", "text": "തോട്ടത്തിൽ പൂക്കൾ വിരിഞ്ഞു", "language_code": "ml-IN", "expected_behavior": "answer_topic", "topic": "garden", "tags": ["ml-IN", "garden"]}
+{"id": "audit-01", "text": "[video_call_stopped]", "language_code": "mr-IN", "expected_behavior": "silent", "topic": "system_event", "tags": ["marker", "audit"]}
+{"id": "audit-02", "text": "YouTube kholo", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "youtube_open", "tags": ["audit", "action"]}
+{"id": "audit-03", "text": "thamb thamb thamb", "language_code": "mr-IN", "expected_behavior": "specific_clarify", "topic": "stop_or_continue", "tags": ["audit", "stt_noisy"]}
+{"id": "audit-04", "text": "कलेक्शनमध्ये", "language_code": "mr-IN", "expected_behavior": "specific_clarify", "topic": "collection", "tags": ["audit", "cut_off"]}
+{"id": "audit-05", "text": "एप्रिलमध्ये रिकामं आहे सगळं", "language_code": "mr-IN", "expected_behavior": "specific_clarify", "topic": "calendar", "tags": ["audit", "stt_noisy"]}
+{"id": "memory-01", "text": "राहुलने काय आणलं होतं?", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "memory", "setup_turns": ["राहुल काल आंबे घेऊन आला होता"], "tags": ["memory"]}
+{"id": "memory-02", "text": "I told you I made what today?", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "memory", "setup_turns": ["आज मी पुरणपोळी केली"], "tags": ["memory", "code_mix"]}
+{"id": "memory-03", "text": "அவர் எங்கே போனார்?", "language_code": "ta-IN", "expected_behavior": "answer_topic", "topic": "memory", "setup_turns": ["ரவி கடைக்குச் சென்றார்"], "tags": ["memory"]}
+{"id": "memory-04", "text": "ನಾನು ಏನು ಮಾಡಿದೆ ಎಂದು ಹೇಳಿದ್ದೆ?", "language_code": "kn-IN", "expected_behavior": "answer_topic", "topic": "memory", "setup_turns": ["ನಾನು ಇಂದು ಹೂವಿನ ಗಿಡ ನೆಟ್ಟೆ"], "tags": ["memory"]}
+{"id": "memory-05", "text": "আমি কী রান্না করেছিলাম?", "language_code": "bn-IN", "expected_behavior": "answer_topic", "topic": "memory", "setup_turns": ["আমি আজ ডাল রান্না করেছি"], "tags": ["memory"]}
+{"id": "extra-01", "text": "भजन लाव ना आणि", "language_code": "mr-IN", "expected_behavior": "specific_clarify", "topic": "media_cutoff", "tags": ["cut_off"]}
+{"id": "extra-02", "text": "kal Rahul ka call karna tha but he was busy", "language_code": "hi-Latn", "expected_behavior": "answer_topic", "topic": "code_mix_family", "tags": ["code_mix"]}
+{"id": "extra-03", "text": "மருந்து பற்றி ஒரு கேள்வி", "language_code": "ta-IN", "expected_behavior": "answer_topic", "topic": "medicine_no_advice", "tags": ["medical_safe"]}
+{"id": "extra-04", "text": "ಇವತ್ತು ತುಂಬಾ ಚೆನ್ನಾಗಿದೆ ಅಲ್ವಾ", "language_code": "kn-IN", "expected_behavior": "answer_topic", "topic": "chat", "tags": ["normal"]}
+{"id": "extra-05", "text": "রাহুল আজ বাড়ি আসবে", "language_code": "bn-IN", "expected_behavior": "answer_topic", "topic": "family", "tags": ["normal"]}
+{"id": "extra-06", "text": "मला औषधाबद्दल प्रश्न आहे", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "medicine_no_advice", "tags": ["medical_safe"]}
+{"id": "extra-07", "text": "मेरे कैलेंडर में अप्रैल खाली है", "language_code": "hi-IN", "expected_behavior": "specific_clarify", "topic": "calendar", "tags": ["stt_noisy"]}
+{"id": "extra-08", "text": "कलेक्शनमध्ये", "language_code": "mr-IN", "expected_behavior": "specific_clarify", "topic": "collection", "tags": ["cut_off"]}
+{"id": "extra-09", "text": "Marathi-English mix: आज माझा mood छान आहे", "language_code": "mr-IN", "expected_behavior": "answer_topic", "topic": "code_mix", "tags": ["code_mix"]}
+{"id": "extra-10", "text": "ஆமா, அந்த நாளைக்கு போகணும்", "language_code": "ta-IN", "expected_behavior": "specific_clarify", "topic": "cut_off", "tags": ["cut_off"]}

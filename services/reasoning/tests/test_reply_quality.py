@@ -62,10 +62,10 @@ def test_sanitize_strips_first_and_an_all_filler_reply_is_empty():
     assert sanitize_companion("वा, हो.", "mr") == (None, ["empty"])
 
 
-def test_a_reply_over_300_characters_is_too_long():
+def test_a_long_reply_is_not_rejected_by_character_count_alone():
     long_reply = "तुम्ही आज बागेत गेला होतात हे ऐकून " * 12
     assert len(long_reply) > 300
-    assert companion_violations(long_reply, "mr") == ["too_long"]
+    assert companion_violations(long_reply, "mr") == []
     assert companion_violations("चिकन छान झालं! कोणी बनवलं?", "mr") == []
 
 
@@ -159,7 +159,7 @@ def test_the_symptom_reply_is_fixed_and_still_makes_one_understanding_call(core_
     eng, llm = engine(core_http, "छान!")
     res = eng.handle(uid, "सर्दी झाली आहे")
     assert res.intent == "SYMPTOM" and res.mode == "companion" and len(llm.calls) == 1
-    assert llm.calls[0]["messages"][-1]["content"] == "सर्दी झाली आहे"
+    assert "Raw transcript: सर्दी झाली आहे" in llm.calls[0]["messages"][-1]["content"]
     assert res.reply == "हे घरच्यांना किंवा डॉक्टरांना नक्की सांगा."  # no consent: no claim to have told them
     core_http.patch(f"/users/{uid}", json={"consent_distress_alert": True})
     told = eng.handle(uid, "ताप आलाय")

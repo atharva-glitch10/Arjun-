@@ -124,10 +124,7 @@ def test_a_media_turn_enters_the_conversation_history(core_http, uid):
         "I can't do that, but tell me about your garden.",
     ],
 )
-def test_a_refusal_plus_a_topic_change_becomes_the_fixed_line(said):
+def test_a_refusal_is_not_a_sanitizer_violation(said):
     text, reasons = sanitize_companion(said, "mr" if not said.isascii() else "en")
+    assert text == said
     assert reasons == []
-    assert text in (
-        "मी मदत करतो — नक्की काय हवं आहे ते सांगा.",
-        "I'll help — tell me exactly what you need.",
-    )

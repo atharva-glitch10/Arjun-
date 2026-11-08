@@ -20,7 +20,6 @@ from audiowarm import warm_audio_resampler
 from bridge import (
     claim_next_delivery,
     closing_text,
-    fallback_text,
     mark_delivery_spoken,
     release_delivery,
     reply_or_fallback,
@@ -345,12 +344,17 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     logger.info("session serves user %s (%s)", user_id, "dispatch metadata" if from_metadata else "ARJUN_USER_ID fallback")
 
     async def ask(text: str):  # type: ignore[no-untyped-def]
-        detected = transcript_languages.get("__current__", STT_LANGUAGE)
+        normalized = " ".join(text.casefold().split())
+        matching = [
+            (len(key), value) for key, value in transcript_languages.items()
+            if key != "__current__" and key and key in normalized
+        ]
+        detected = max(matching)[1] if matching else transcript_languages.get("__current__", STT_LANGUAGE)
         return await asyncio.to_thread(reply_or_fallback, user_id, text, detected)
 
     async def say_reply(reply) -> bool:  # type: ignore[no-untyped-def]
         """Synthesize this reply in Prisma's detected language using the verified session model/voice."""
-        detected = transcript_languages.get("__current__", STT_LANGUAGE)
+        detected = reply.language or transcript_languages.get("__current__", STT_LANGUAGE)
         language = tts_language_for(detected, TTS_LANGUAGE)
         voice = TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"]
         voice = tts_voice_for(detected, language, voice)
@@ -504,7 +508,6 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         ask,
         say_locked,
         publish,
-        lambda: fallback_text(STT_LANGUAGE),
         thinking=lambda on: publish_thinking(ctx.room.local_participant, on),  # "विचार करतोय…"
         speakable=lambda reply: voiceprovider.sarvam_text(speakable_text(reply)) if use_sarvam else speakable_text(reply),
         say_reply=None if use_sarvam else say_reply,
@@ -578,7 +581,13 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             if is_system_marker(ev.transcript):
                 return
             if ev.language:
-                transcript_languages["__current__"] = str(ev.language)
+                code = str(ev.language)
+                transcript_languages["__current__"] = code
+                transcript_languages[" ".join(ev.transcript.casefold().split())] = code
+                if len(transcript_languages) > 33:
+                    oldest = next((key for key in transcript_languages if key != "__current__"), None)
+                    if oldest:
+                        transcript_languages.pop(oldest, None)
             turns.final_transcript(ev.created_at, ev.transcript, str(ev.language) if ev.language else None)
 
     @session.on("agent_state_changed")

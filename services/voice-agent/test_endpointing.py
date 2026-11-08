@@ -104,13 +104,25 @@ def test_a_cut_off_sentence_waits_up_to_the_rest_of_the_max_delay():
     policy.set_mode("companion")
     hold = ConjunctionHold(policy, speech)
     assert run(hold.settle("डोकं दुखतं आहे माझं थोडं आणि")) == "डोकं दुखतं आहे माझं थोडं आणि"
-    assert speech.asked == [pytest.approx(4.0 - 1.6)]  # the silence already waited (min) counts toward the max
+    assert speech.asked == [pytest.approx(1.5)]  # bounded additional hold after the endpointing minimum
+
+
+def test_a_short_companion_fragment_waits_but_short_commands_do_not():
+    speech = FakeSpeech(False)
+    policy = EndpointingPolicy()
+    policy.set_mode("companion")
+    hold = ConjunctionHold(policy, speech)
+    assert run(hold.settle("राहुल जेवला")) == "राहुल जेवला"
+    assert speech.asked == [pytest.approx(1.5)]
+    speech.asked.clear()
+    assert run(hold.settle("हो")) == "हो"
+    assert speech.asked == []
 
 
 def test_care_timing_holds_for_max_minus_min_too():
     speech = FakeSpeech(False)
     run(ConjunctionHold(EndpointingPolicy(), speech).settle("चहा घेतला आणि"))
-    assert speech.asked == [pytest.approx(2.5 - 0.8)]
+    assert speech.asked == [pytest.approx(1.5)]
 
 
 def test_when_she_goes_on_the_first_part_is_kept_and_joined_to_the_next():
@@ -157,7 +169,7 @@ def test_the_responder_tells_the_policy_the_mode_of_the_reply(tmp_path):
     async def publish(reply, turn):
         return None
 
-    r = Responder(TurnLog("mr-IN", tmp_path / "t.jsonl"), ask, say, publish, lambda: "F", on_mode=modes.append)
+    r = Responder(TurnLog("mr-IN", tmp_path / "t.jsonl"), ask, say, publish, on_mode=modes.append)
     run(r.respond("a", "tap"))
     run(r.respond("b", "tap"))
     assert modes == ["companion", "care"]

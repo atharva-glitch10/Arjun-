@@ -120,7 +120,8 @@ def test_thirty_one_minutes_of_silence_becomes_a_summary_line(core_http, uid):
     eng.handle(uid, STORY)
     eng.t[0] = NOW + timedelta(minutes=31)
     eng.handle(uid, "आता मी स्वयंपाक करते आहे आणि गाणं ऐकते")
-    assert spy.messages == [("user", "आता मी स्वयंपाक करते आहे आणि गाणं ऐकते")]
+    assert len(spy.messages) == 1 and spy.messages[0][0] == "user"
+    assert "Raw transcript:" in spy.messages[0][1]
     assert "Earlier in this session" in spy.system and "तुळशीला पाणी घातलं" in spy.system
 
 

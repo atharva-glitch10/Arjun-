@@ -58,6 +58,7 @@ from .distress import (
 )
 from .evon import (
     EvonClient,
+    LlmBusy,
     salvage_companion,
     sanitize_companion,
     split_voice_tags,
@@ -88,9 +89,18 @@ def _detected_reply_language(language_code: str | None) -> str | None:
     prefix = language_code.replace("_", "-").split("-", 1)[0].lower()
     return prefix if prefix in {"mr", "hi", "en", "bn", "gu", "kn", "ml", "pa", "ta", "te", "or"} else None
 
+
+_SYSTEM_MARKER = re.compile(r"^\[(?:video_call_[a-z_]+|media_[a-z_]+|checkin:[^]]+)\]", re.I)
+_NOISE = frozenset({"hmm", "hm", "umm", "uh", "अं", "हम्म"})
+
+
+def _is_system_marker(text: str) -> bool:
+    return bool(_SYSTEM_MARKER.match((text or "").strip()))
+
 log = logging.getLogger("reasoning.turn")
 
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
+_UNDERSTAND_TIMEOUT_S = 3.0
 _ACTION_CONFIDENCE_FLOOR = 0.4  # below this an LLM action intent is ignored and the rules decide
 # What the LLM may SUGGEST for a turn the rules could not read. Medicines, confirmations, forgetting and
 # sharing are deliberately absent: those come only from the deterministic parser.
@@ -228,6 +238,7 @@ class TurnResult:
     # as "arjun.action", the page performs it.
     action: dict[str, Any] = field(default_factory=lambda: dict(NO_ACTION))
     speech_style: dict[str, Any] = field(default_factory=lambda: {"rate": "normal", "volume": "normal", "simple": False})
+    silent: bool = False
 
 
 class TurnEngine:
@@ -256,6 +267,8 @@ class TurnEngine:
         self._media_ask: dict[int, float] = {}  # user -> mono time of "काय लावू?" waiting for the answer
         self._media_choice: dict[int, _MediaChoice] = {}  # user -> the three cards waiting for an answer
         self._chat_counter: dict[int, int] = {}
+        self._noise_count: dict[int, int] = {}
+        self._last_clarification: dict[int, tuple[str, float]] = {}
         self._convo_at: dict[int, float] = {}  # user -> monotonic time of the last companion turn
         self._last_turn: dict[int, float] = {}  # user -> monotonic time of her last turn (any kind)
         self._family_offer: dict[int, tuple[float, str, str]] = {}  # user -> (when, name, relation) of the offer
@@ -313,6 +326,23 @@ class TurnEngine:
         self._last_turn[user_id] = self._mono()
         text = collapse_repeats(text)  # recognizer artifacts ("हो हो हो कर कर कर ...") before ANY parsing or safety check
         trace: dict[str, Any] = {}
+        if text.strip().casefold().startswith("[video_call_missed]"):
+            name = text.partition("]")[2].strip()[:80] or "घरच्यांनी"
+            return TurnResult(f"{name}नी उचलला नाही, मी निरोप ठेवला आहे.", "VIDEO_CALL_MISSED", "care", "mr")
+        if _is_system_marker(text):
+            log.info("ignoring system marker in turn")
+            return TurnResult("", "SYSTEM_EVENT", "care", "mr", trace={"silent": True}, silent=True)
+        if not text.strip() or normalize(text) in _NOISE:
+            count = self._noise_count.get(user_id, 0) + 1
+            self._noise_count[user_id] = count
+            if count < 2:
+                log.info("turn silent: empty/noise transcript")
+                return TurnResult("", "NOISE", "care", _detected_reply_language(language_code) or "mr", silent=True)
+            self._noise_count[user_id] = 0
+            language = _detected_reply_language(language_code) or "mr"
+            prompt = {"mr": "आवाज नीट आला नाही, जरा जवळ येऊन सांगाल?", "hi": "आवाज़ ठीक से नहीं आई, ज़रा पास आकर बताएँगे?", "en": "I couldn't hear that clearly. Could you come a little closer and tell me?"}
+            return TurnResult(prompt.get(language, prompt["mr"]), "NOISE", "companion", language)
+        self._noise_count[user_id] = 0
         # 0/1. emergency, then distress: both override everything and must not depend on
         # core-api being reachable. The replies are fixed templates, so a failed lookup only
         # costs the language default.
@@ -527,17 +557,37 @@ class TurnEngine:
         if self._llm_remaining() < _MIN_LLM_BUDGET_S:
             return None, "no_budget", True
         view = self.memory.view(uid, now)
+        context = self._user_context(uid, now, user, text)
         try:
             data = self.evon.understand_turn(  # type: ignore[attr-defined]
-                text, lang, now, history=view.messages, context=self._user_context(uid, now, user, text),
-                interests=user.get("interests") or [], timeout=self._llm_remaining(), memory=view.block,
+                text, lang, now, history=view.messages, context=context,
+                interests=user.get("interests") or [],
+                timeout=min(_UNDERSTAND_TIMEOUT_S, self._llm_remaining()), memory=view.block,
             )
         except httpx.TimeoutException:
-            log.info("llm understanding timed out")
-            return None, "timeout", True
+            remaining = self._llm_remaining()
+            if remaining < _MIN_LLM_BUDGET_S:
+                log.info("understanding retry skipped: turn budget exhausted")
+                return None, "timeout", True
+            log.info("understanding timeout; retrying with compact recent context")
+            try:
+                data = self.evon.understand_turn(  # type: ignore[attr-defined]
+                    text, lang, now, history=view.messages[-12:], context=context,
+                    interests=user.get("interests") or [], timeout=remaining, memory=view.block,
+                )
+            except httpx.TimeoutException:
+                log.info("understanding retry timed out")
+                return None, "timeout_retry", True
+            except httpx.HTTPError as exc:
+                log.info("understanding retry failed: %s", type(exc).__name__)
+                return None, "provider_error_retry", True
+            except Exception as exc:  # noqa: BLE001 - malformed or broken providers must not break a turn
+                log.info("understanding retry failed: %s", type(exc).__name__)
+                return None, "error_retry", True
         except httpx.HTTPError as exc:
-            log.info("llm understanding failed: %s", type(exc).__name__)
-            return None, "provider_error", True
+            cause = "llm_busy" if isinstance(exc, LlmBusy) else type(exc).__name__
+            log.info("understanding fallback cause=%s", cause)
+            return None, cause, True
         except Exception as exc:  # noqa: BLE001 - a slow/broken provider never breaks the turn
             log.info("llm understanding failed: %s", type(exc).__name__)
             return None, "error", True
@@ -2121,7 +2171,7 @@ class TurnEngine:
             self.core.delete_story(uid, story["id"])
             return out(r["forgotten"], "companion")
 
-        if intent == "CHAT":
+        if intent in ("CHAT", "UNKNOWN"):
             # "keep your story?" is a companion-mode offer only: never over a pending question or an open
             # reminder draft, and never for recognizer junk (very few distinct words).
             words = text.split()
@@ -2144,11 +2194,15 @@ class TurnEngine:
             )
             res = out(reply, "companion")
             res.speech = speech
+            res.silent = not bool(reply)
             if from_llm:
                 res.source = "llm"
             return res
 
-        return out(r["unknown"])
+        reply = self._specific_clarification(uid, text, lang)
+        result = out(reply, "companion")
+        result.silent = not bool(reply)
+        return result
 
     # ------------------------------------------------------------------ helpers
     def _create_reminder(
@@ -2404,15 +2458,71 @@ class TurnEngine:
             )
         from_llm = reply is not None
         if reply is None:
-            n = self._chat_counter.get(uid, 0)
-            self._chat_counter[uid] = n + 1
-            options = rp.CHAT[rp.lang_or_default(lang)]
-            reply = options[n % len(options)]
+            reply = self._specific_clarification(uid, text, lang)
         if from_llm:  # at most one question, not in every reply, never the same one twice in a day
             shaped = shape_questions(reply, self.memory.asked_today(uid, now), self.memory.previous_reply_was_question(uid, now))
             if shaped != reply:
                 reply, speech = shaped, ""  # the voice tags sat on the old words: say the shaped reply plainly
         return reply, speech, from_llm
+
+    def _specific_clarification(self, uid: int, text: str, lang: str) -> str:
+        """Topic-naming repair for an uncertain transcript; never emit a generic repeat prompt."""
+        norm = normalize(text)
+        topic = ""
+        question = ""
+        try:
+            for contact in self.core.contacts(uid):
+                name = str(contact.get("name") or "").strip()
+                if name and normalize(name) in norm:
+                    topic, question = name.casefold(), f"तुम्ही {name}बद्दल म्हणताय का?"
+                    break
+        except (CoreError, httpx.HTTPError):
+            pass
+        if not topic:
+            choices = (
+                (("औषध", "गोळी", "दवा", "medicine"), "औषध", "औषधाबद्दल विचारताय का?"),
+                (("जेवण", "भूक", "भाजी", "खाल्ली", "खाल्ले", "खायला", "food"), "जेवण", "तुम्ही जेवणाबद्दल सांगताय का?"),
+                (("कॉल", "फोन", "call", "फोनवर"), "फोन", "तुम्हाला फोनबद्दल मदत हवी आहे का?"),
+                (("भजन", "गाणं", "गाणी", "यूट्यूब", "youtube", "video", "व्हिडिओ"), "मीडिया", "तुम्हाला गाणं किंवा व्हिडिओ लावायचा आहे का?"),
+                (("पुणे", "मुंबई", "गाव", "श्रीलंका", "ठिकाण", "कुठे"), "ठिकाण", "तुम्ही त्या ठिकाणाबद्दल विचारताय का?"),
+                (("बाग", "झाड", "फुल", "garden"), "बाग", "तुम्ही बागेबद्दल सांगताय का?"),
+                (("डॉक्टर", "doctor", "भेट"), "डॉक्टर", "तुम्ही डॉक्टरांच्या भेटीबद्दल विचारताय का?"),
+                (("कलेक्शन", "collection", "फोटो"), "कलेक्शन", "तुम्ही फोटोच्या कलेक्शनबद्दल बोलताय का?"),
+                (("एप्रिल", "कॅलेंडर", "calendar", "रिकामं"), "कॅलेंडर", "तुम्ही कॅलेंडरमधल्या तारखांबद्दल बोलताय का?"),
+            )
+            for needles, key, prompt in choices:
+                if any(word in norm for word in needles):
+                    topic, question = key, prompt
+                    break
+        if not topic:
+            return ""
+        previous = self._last_clarification.get(uid)
+        now = self._mono()
+        if previous and previous[0] == topic and now - previous[1] < 600:
+            log.info("clarification suppressed: same topic repeated")
+            return ""
+        self._last_clarification[uid] = (topic, now)
+        if lang == "hi":
+            question = {
+                "औषध": "आप दवा के बारे में पूछ रहे हैं?", "जेवण": "आप खाने के बारे में बता रहे हैं?",
+                "फोन": "क्या आपको फोन करने में मदद चाहिए?", "मीडिया": "क्या आप गाना या वीडियो चलाना चाहते हैं?",
+                "ठिकाण": "क्या आप उस जगह के बारे में पूछ रहे हैं?",
+                "बाग": "क्या आप बगीचे के बारे में बता रहे हैं?",
+                "डॉक्टर": "क्या आप डॉक्टर की मुलाकात के बारे में पूछ रहे हैं?",
+                "कलेक्शन": "क्या आप फोटो कलेक्शन के बारे में बता रहे हैं?",
+                "कॅलेंडर": "क्या आप कैलेंडर की तारीखों के बारे में पूछ रहे हैं?",
+            }.get(topic, f"क्या आप {topic} के बारे में पूछ रहे हैं?")
+        elif lang == "en":
+            question = {
+                "औषध": "Are you asking about a medicine?", "जेवण": "Are you talking about food?",
+                "फोन": "Would you like help with a phone call?", "मीडिया": "Would you like a song or video?",
+                "ठिकाण": "Are you asking about that place?",
+                "बाग": "Are you talking about the garden?",
+                "डॉक्टर": "Are you asking about a doctor appointment?",
+                "कलेक्शन": "Are you talking about the photo collection?",
+                "कॅलेंडर": "Are you asking about the dates in your calendar?",
+            }.get(topic, f"Are you asking about {topic}?")
+        return question
 
     def _symptom(
         self, uid: int, text: str, category: str, lang: str, trace: dict[str, Any], t0: float, now: datetime

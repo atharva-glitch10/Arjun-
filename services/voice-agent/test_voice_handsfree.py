@@ -63,7 +63,7 @@ def test_thinking_marker_is_on_while_reasoning_works_and_off_after(tmp_path):
     async def thinking(on):
         marks.append(on)
 
-    r = Responder(TurnLog("mr-IN", tmp_path / "t.jsonl"), ask, say, publish, lambda: "F", thinking=thinking,
+    r = Responder(TurnLog("mr-IN", tmp_path / "t.jsonl"), ask, say, publish, thinking=thinking,
                   speakable=lambda rep: tts_text(rep.text, rep.speech, "timbre-v3.0"))
     asyncio.run(r.respond("मी आज गाणं गायलं"))
     assert order == [("ask", True)] and marks == [True, False]

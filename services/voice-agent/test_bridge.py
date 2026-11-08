@@ -19,7 +19,7 @@ def test_ask_reasoning_parses_reply():
 
 def test_fallback_on_server_error():
     r = reply_or_fallback(1, "x", "mr-IN", _client(lambda req: httpx.Response(502, json={})))
-    assert r.mode == "fallback" and r.text == fallback_text("mr")
+    assert r.mode == "fallback" and r.text and "समजलं नाही" not in r.text
 
 
 def test_fallback_on_network_error():
@@ -27,24 +27,36 @@ def test_fallback_on_network_error():
         raise httpx.ConnectError("reasoning down", request=request)
 
     r = reply_or_fallback(1, "x", "mr-IN", _client(down))
-    assert r.mode == "fallback" and "पुन्हा" in r.text
+    assert r.mode == "fallback" and r.text and "समजलं नाही" not in r.text
 
 
 def test_fallback_on_timeout():
     def slow(request):
         raise httpx.ReadTimeout("too slow", request=request)
 
-    assert reply_or_fallback(1, "x", "hi-IN", _client(slow)).text == fallback_text("hi")
+    assert reply_or_fallback(1, "x", "hi-IN", _client(slow)).text.startswith("क्या आप")
 
 
 def test_fallback_on_malformed_json():
     r = reply_or_fallback(1, "x", "en-IN", _client(lambda req: httpx.Response(200, json={"oops": 1})))
-    assert r.mode == "fallback" and r.text == fallback_text("en")
+    assert r.mode == "fallback" and r.text.startswith("Are you asking")
 
 
-def test_unknown_language_falls_back_to_marathi():
-    assert fallback_text("en-IN,hi-IN") == fallback_text("en")
-    assert fallback_text("ta-IN") == fallback_text("mr")
+def test_unknown_language_uses_specific_transcript_language_or_english_fallback():
+    assert fallback_text("en-IN,hi-IN", "Hello") == "Are you asking about Hello?"
+    assert fallback_text("ta-IN", "food").startswith("நீங்கள்")
+
+
+def test_reasoning_outage_names_the_requested_topic_and_never_uses_generic_fallback():
+    down = _client(lambda req: httpx.Response(502, json={}))
+    result = reply_or_fallback(1, "YouTube pe bhajan chalao", "hi-IN", down)
+    assert result.mode == "fallback" and "गाना" in result.text and "समझ नहीं आया" not in result.text
+
+
+def test_reasoning_outage_keeps_local_distress_path_in_safety_mode():
+    down = _client(lambda req: httpx.Response(502, json={}))
+    result = reply_or_fallback(1, "I want to die", "en-IN", down)
+    assert result.mode == "safety" and "family" in result.text and not result.silent
 
 
 def test_detected_language_code_is_forwarded_without_transcript_logging():

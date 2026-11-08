@@ -1,5 +1,12 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Logical companion replies (2026-11-08)
+- Baseline from local turnlog: 128 turns, 1 fixed fallback (0.8%), 69 LLM replies, and 11 system-marker turns; 5 `[video_call_stopped]` markers reached the LLM. The single fallback followed a 5.0 s reasoning wait, consistent with the configured voice timeout, but the log lacks enough structured causes to attribute it conclusively. Sanitizer, malformed-JSON, busy/429, cut-off, and garbled-STT counts are not recoverable from those historical rows.
+- Removed routine generic “didn't hear/understand” lines. Empty/noise input is silent once and gets a warm proximity prompt after two consecutive noise turns. Uncertain content gets a topic-specific clarification; markers are handled as events before LLM. Safety path remains first. Companion endpointing merges short/conjunction fragments for at most 1.5 s; reply timing is bounded by the configured LLM budget and understanding retries once with shorter context.
+- Prompt now asks the model to answer the elder’s actual last sentence, use transcript error tolerance, preserve facts/history, and clarify specifically. Sanitizer rejection gets a corrective retry and a topic-aware final response. TTS errors no longer trigger an unrelated spoken fallback.
+- Sarvam scores for the last 50 historical LLM replies were not requested from the provider: no `SARVAM_API_KEY` or synthetic evaluation user/reasoning URL is configured, and historical conversation text is not sent to a judge. `eval/logic_eval.jsonl` contains 80 synthetic cases; `scripts/eval_logic.py` requires those explicit environment values to execute. No before/after provider judge score is claimed.
+- Verification: core-api 298, reasoning 994, voice-agent 352, scheduler 7; Vitest 146, TypeScript, production build, Ruff, and `eval/run_eval.py` pass. Build reports the existing >500 kB bundle warning. Full local pytest cache writes remain denied; workspace-local basetemp was used.
+
 ## Accounts and per-user authorization — Phase 1 (2026-11-07)
 - Added opt-in `ARJUN_AUTH=1` core-api account/session/membership/device auth. Default `0` and service `X-API-Key`
   behavior remain compatible. Argon2id hashes passwords; sessions use HttpOnly cookies; invite and device-pairing

@@ -100,7 +100,8 @@ def test_preferred_languages_are_sent_as_locale_hints(monkeypatch):
         async def send(self, _data): return None
         def __aiter__(self):
             async def messages():
-                if False: yield ""
+                if False:
+                    yield ""
             return messages()
 
     def connect(_url, **kwargs):

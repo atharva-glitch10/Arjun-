@@ -96,6 +96,7 @@ class TurnOut(BaseModel):
     source: str  # rules | llm
     trace: dict[str, object]
     speech_style: dict[str, object] = {"rate": "normal", "volume": "normal", "simple": False}
+    silent: bool = False
 
 
 @app.get("/health")
@@ -200,9 +201,10 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
     except CoreError as exc:
         raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
     # The family's conversation summary: buffered in memory, sent after the conversation ends.
-    background.add_task(
-        get_tracker().record, body.user_id, body.text, res.reply, res.intent, res.action.get("title", ""),
-    )
+    if not res.silent:
+        background.add_task(
+            get_tracker().record, body.user_id, body.text, res.reply, res.intent, res.action.get("title", ""),
+        )
     if llm_debug_enabled():
         debug_log(
             "turn", user=body.user_id, stt=body.text, route=res.source, intent=res.intent,

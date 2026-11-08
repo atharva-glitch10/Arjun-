@@ -37,11 +37,6 @@ def test_evon_can_be_selected_as_primary_when_explicitly_enabled():
     assert s.provider == "evon" and s.model == "gnani/gnani-evon-v3.3-30B-A3B"
 
 
-def test_evon_can_be_selected_as_primary_when_explicitly_enabled():
-    s = config.llm_settings({"GNANI_REASONING_IMPL": "evon", "EVON_BASE_URL": "http://evon/v1"})
-    assert s.provider == "evon" and s.model == "gnani/gnani-evon-v3.3-30B-A3B"
-
-
 def test_new_names_win_and_never_borrow_the_evon_model_name():
     # an Evon model name sent to a hosted provider would just 404; a missing LLM_MODEL means "not configured"
     s = config.llm_settings({"LLM_BASE_URL": "https://x.test/v1", "EVON_MODEL": "gnani/evon", "EVON_API_KEY": "old"})
@@ -62,11 +57,11 @@ def test_template_kwargs_flag_for_non_vllm_providers():
 
 def test_limits_have_the_agreed_defaults_and_ignore_nonsense():
     s = config.llm_settings(HOSTED)
-    assert (s.timeout_s, s.max_tokens, s.history_exchanges) == (4.0, 250, 8)
+    assert (s.timeout_s, s.max_tokens, s.history_exchanges) == (6.0, 250, 8)
     t = config.llm_settings({**HOSTED, "LLM_TIMEOUT_S": "2.5", "LLM_MAX_TOKENS": "60"})
     assert (t.timeout_s, t.max_tokens) == (2.5, 60)
     bad = config.llm_settings({**HOSTED, "LLM_TIMEOUT_S": "abc", "LLM_MAX_TOKENS": "-5"})
-    assert (bad.timeout_s, bad.max_tokens) == (4.0, 250)
+    assert (bad.timeout_s, bad.max_tokens) == (6.0, 250)
 
 
 def test_the_key_never_shows_in_repr_or_health():

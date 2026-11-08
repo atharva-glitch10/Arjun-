@@ -81,7 +81,7 @@ def test_distress_reply_survives_core_api_failure(uid):
     res = TurnEngine(CoreClient(http), evon=None).handle(uid, "I want to die")
     assert res.mode == "safety" and res.intent == "DISTRESS"
     assert "कळवलं" not in res.reply  # nothing was alerted: the reply must not claim it
-    assert "मुलाला फोन लाव" in res.reply
+    assert "call my family" in res.reply
 
 
 # ---- the family the safety line names (2026-11-03) ---------------------------------------------------------

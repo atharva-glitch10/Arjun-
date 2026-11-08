@@ -92,30 +92,18 @@ _VIOLATIONS: dict[str, re.Pattern[str]] = {
         r"|\btake\s+rest\b|\bsee\s+a\s+doctor\b",
         re.IGNORECASE,
     ),
+    "unsafe": re.compile(
+        r"\b(?:kill yourself|hurt yourself|take your life|you should die|kill (?:him|her|them)|hurt (?:him|her|them))\b"
+        r"|स्वतःला\s+(?:मारून\s+टाका|इजा\s+करा)|मरून\s+जा|त्याला\s+मारून\s+टाका"
+        r"|खुद\s+को\s+मारो|जान\s+दे\s+दो|उसे\s+मार\s+दो",
+        re.IGNORECASE,
+    ),
 }
-_MAX_REPLY_CHARS = 300  # a longer reply is a runaway, not a long answer; 1-3 sentences fit well under this
 _MAX_SENTENCES = 4  # more than four sentences is a runaway; a how-to may use three
 
 
 def _stated_rest_plan(text: str) -> bool:
     return bool(re.search(r"(?:आराम\s+(?:करते|करतो|करणार|करायचं)|विश्रांती\s+(?:घेते|घेतो|घेणार|घ्यायची)|झोप(?:णार|ायला))", text))
-
-
-# A refusal followed by a topic change ("... बघता येत नाही, पण तुमची सकाळ कशी गेली?"): the real transcripts from the
-# elder screen showed Arjun saying he cannot do something and then asking an unrelated question. Never spoken: the
-# companion admits the limit in one fixed line and does not change the subject.
-_REFUSAL = re.compile(
-    r"येत\s+नाही\S*\s*[,;]?\s*पण\b"
-    r"|देता\s+येत\s+नाही"
-    r"|बघता\s+येत\s+नाही"
-    r"|\bcan(?:'|’)?t\b|\bcannot\b",
-    re.IGNORECASE,
-)
-_REFUSAL_LINE = {
-    "mr": "मी मदत करतो — नक्की काय हवं आहे ते सांगा.",
-    "hi": "मैं मदद करता हूँ — ठीक से बताइए क्या चाहिए।",
-    "en": "I'll help — tell me exactly what you need.",
-}
 
 
 def companion_violations(text: str, language: str, user_text: str = "") -> list[str]:
@@ -135,8 +123,6 @@ def companion_violations(text: str, language: str, user_text: str = "") -> list[
         low, high = ranges[language]
         if not any(low <= ch <= high for ch in text):
             reasons.append("script")
-    if len(text) > _MAX_REPLY_CHARS:
-        reasons.append("too_long")
     if len(re.split(r"(?<=[.?!।])\s+", text.strip())) > _MAX_SENTENCES:
         reasons.append("sentences")
     return reasons
@@ -180,10 +166,6 @@ def sanitize_companion(text: str | None, language: str, user_text: str = "") -> 
         debug_log("sanitize", verdict="rejected", reasons=["empty"], text=text)
         return None, ["empty"]
     cut = text.strip()
-    if _REFUSAL.search(cut):  # "I cannot ... but tell me about your garden" is never spoken
-        line = _REFUSAL_LINE.get(language, _REFUSAL_LINE["mr"])
-        debug_log("sanitize", verdict="replaced", reasons=["refusal"], text=text, out=line)
-        return line, []
     reasons = companion_violations(cut, language, user_text)
     if reasons == ["medical"] and language == "mr" and _stated_rest_plan(user_text) and re.search(r"आराम|विश्रांती|झोप", cut):
         return "हो, आराम करा, नंतर बोलूया.", []  # keep only agreement with her plan; discard extra advice
@@ -311,6 +293,14 @@ def _conversation_rules(language: str) -> str:
         f"Never say you missed her, never make her feel guilty, and encourage her to talk to her family. "
         f"Never invent facts about people or places she mentions. Do not end every reply with a generic "
         f"how-are-you-feeling question, and never answer an actionable request by saying you cannot do it. "
+        f"Answer her latest sentence first; never change the subject or contradict something she said earlier today. "
+        f"If uncertain, make one specific clarification naming your best guess, and do not repeat that question within 10 minutes. "
+        f"Examples: 'आज वांग्याचं भरीत केलं' → 'वांग्याचं भरीत छान झालं असेल; तुम्ही ते कशाबरोबर खाल्लं?' "
+        f"'राहुल जेवला असेल का?' → 'कदाचित जेवला असेल; तुम्हाला त्याची काळजी वाटतेय.' "
+        f"'भूक लागली आहे' → 'तुम्हाला भूक लागली आहे; घरात खायला काय आहे?' "
+        f"'मला काल पुण्याला जायचं होतं' → 'पुण्याला जाणं झालं का?' "
+        f"'हे बटण कसं दाबू?' → 'बटणावर एकदा हलकेच दाबा; स्क्रीनवर काय दिसतंय?' "
+        f"'माझा मुलगा उद्या येणार आहे' → 'छान, उद्या तुमचा मुलगा भेटायला येणार आहे.' "
     )
 
 
@@ -425,7 +415,7 @@ class LlmBusy(httpx.TransportError):
 class Limiter:
     """Concurrency (at most N calls in flight) + rate (at most M per minute) + backoff after a provider 429.
 
-    Never waits: in a voice turn a queued LLM call is worse than the rules' answer now."""
+    Waits at most two seconds for an in-flight call, then reports busy to the turn fallback."""
 
     def __init__(self, max_concurrent: int = 4, per_minute: int = 60, clock: Any = time.monotonic) -> None:
         import threading
@@ -439,14 +429,27 @@ class Limiter:
     def acquire(self) -> None:
         now = self.clock()
         with self._lock:
+            self._calls = [t for t in self._calls if now - t < 60.0]
+            cooldown_wait = max(0.0, self._cool_until - now)
+            rate_wait = max(0.0, 60.0 - (now - self._calls[0])) if len(self._calls) >= self.per_minute else 0.0
+            wait_s = min(2.0, max(cooldown_wait, rate_wait))
+        if wait_s:
+            time.sleep(wait_s)
+        now = self.clock()
+        with self._lock:
+            self._calls = [t for t in self._calls if now - t < 60.0]
             if now < self._cool_until:
                 raise LlmBusy("provider asked us to slow down")
-            self._calls = [t for t in self._calls if now - t < 60.0]
             if len(self._calls) >= self.per_minute:
                 raise LlmBusy("per-minute LLM limit reached")
-            if not self._sem.acquire(blocking=False):
-                raise LlmBusy("too many LLM calls in flight")
             self._calls.append(now)
+        if not self._sem.acquire(timeout=2.0):
+            with self._lock:
+                for index in range(len(self._calls) - 1, -1, -1):
+                    if self._calls[index] == now:
+                        del self._calls[index]
+                        break
+            raise LlmBusy("LLM queue wait exceeded")
 
     def release(self) -> None:
         self._sem.release()
@@ -728,7 +731,7 @@ class EvonClient:
         )
         messages = [{"role": "system", "content": system}]
         messages += [{"role": role, "content": content} for role, content in (history or [])]
-        messages.append({"role": "user", "content": text})
+        messages.append({"role": "user", "content": "This is a speech transcript and may contain recognition errors; infer the most likely meaning. Raw transcript: " + text})
         meta: dict[str, Any] = {}
         try:
             raw = self._chat(
@@ -820,7 +823,7 @@ class EvonClient:
             )
         messages = [{"role": "system", "content": system}]
         messages += [{"role": role, "content": content} for role, content in (history or [])]
-        messages.append({"role": "user", "content": text})
+        messages.append({"role": "user", "content": "This is a speech transcript and may contain recognition errors; infer the most likely meaning. Raw transcript: " + text})
         meta: dict[str, Any] = {}
         try:
             out = self._chat(

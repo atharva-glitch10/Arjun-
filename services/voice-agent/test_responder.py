@@ -13,7 +13,7 @@ class Fakes:
         self.replies = list(replies)
         self.asked, self.said, self.published = [], [], []
         self.turns = TurnLog("mr-IN", tmp_path / "t.jsonl")
-        self.r = Responder(self.turns, self.ask, self.say, self.publish, lambda: "FALLBACK LINE")
+        self.r = Responder(self.turns, self.ask, self.say, self.publish)
 
     async def ask(self, text):
         self.asked.append(text)
@@ -106,7 +106,7 @@ def test_tts_failure_speaks_the_fixed_fallback_once(tmp_path):
 
     f.r.say = flaky
     _run(f.r.respond("x", "voice"))
-    assert calls == ["hello", "FALLBACK LINE"]
+    assert calls == ["hello"]
 
 
 # ---- screen attributes ----------------------------------------------------------------------------
@@ -145,3 +145,9 @@ def test_publish_screen_sets_attributes_on_the_participant():
         "arjun.screen": "saved", "arjun.turn": "2", "arjun.reply": "ठीक आहे", "arjun.item": "", "arjun.thinking": "0", "arjun.action": "",
         "arjun.speech_style": '{"rate": "normal", "volume": "normal", "simple": false}',
     }
+
+
+def test_silent_reply_is_not_published_or_spoken(tmp_path):
+    f = Fakes(tmp_path, [BridgeReply("", "care", False, 1.0, silent=True)])
+    assert _run(f.r.respond("[video_call_stopped]")) == "silent"
+    assert f.said == [] and f.published == []

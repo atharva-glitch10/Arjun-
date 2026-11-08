@@ -180,7 +180,7 @@ def _responder(tmp_path, say, reply=None):
     async def publish(r, turn):
         return None
 
-    r = Responder(log, ask, say, publish, lambda: "FALLBACK")
+    r = Responder(log, ask, say, publish)
     return log, lambda text: asyncio.run(r.respond(text, "tap"))
 
 
@@ -205,16 +205,14 @@ def test_a_say_that_was_interrupted_is_written_at_once_as_interrupted(tmp_path):
     assert t["outcome"] == "interrupted"
 
 
-def test_a_tts_exception_is_recorded_and_the_fallback_line_is_still_tried(tmp_path):
+def test_a_tts_exception_is_recorded_without_speaking_an_unrelated_fallback(tmp_path):
     said = []
 
     async def say(text):
         said.append(text)
-        if len(said) == 1:
-            raise RuntimeError("Gnani TTS SSE Error (429)")
-        return True
+        raise RuntimeError("Gnani TTS SSE Error (429)")
 
     log, go = _responder(tmp_path, say)
     go("आज काय आहे")
-    assert said[-1] == "FALLBACK"
+    assert len(said) == 1
     assert rows(tmp_path / "t.jsonl")[0]["outcome"] == "tts_failed"

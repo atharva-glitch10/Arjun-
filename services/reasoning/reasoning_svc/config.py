@@ -33,7 +33,7 @@ class LlmSettings:
     api_key: str = field(default="", repr=False)  # never printed or logged
     provider: str = "none"
     send_template_kwargs: bool = True
-    timeout_s: float = 4.0  # one budget for ALL LLM calls in a turn (the voice path waits ~5 s for reasoning)
+    timeout_s: float = 6.0  # one budget for ALL LLM calls in a turn (the voice path waits ~5 s for reasoning)
     max_tokens: int = 250  # one chat reply (LLM_MAX_TOKENS); 80 cut replies mid-sentence
     history_exchanges: int = 8  # last eight user/assistant exchanges (task B, 2026-10-31); was 4
     reasoning_off: bool = False  # send reasoning_effort=null (Sarvam): no hidden "thinking" before the answer
@@ -84,7 +84,7 @@ def llm_settings(env: Mapping[str, str] | None = None) -> LlmSettings:
         api_key=key,
         provider=provider,
         send_template_kwargs=template != "0",
-        timeout_s=float(number("LLM_TIMEOUT_S", 4.0, float)),
+        timeout_s=float(number("LLM_TIMEOUT_S", 6.0, float)),
         max_tokens=int(number("LLM_MAX_TOKENS", 250, int)),
         history_exchanges=int(number("LLM_HISTORY_EXCHANGES", 8, int)),
         # Sarvam-105B "thinks" by default; in a voice turn that is pure latency, so it is switched off.

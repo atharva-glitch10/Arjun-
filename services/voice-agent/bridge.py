@@ -10,19 +10,13 @@ import time
 from dataclasses import dataclass
 
 import httpx
+from safety_words import is_distress, is_emergency
 
 REASONING_URL = os.environ.get("REASONING_URL", "http://127.0.0.1:8001")
 # A voice user cannot wait long: fail fast and speak the fallback instead.
-REASONING_TIMEOUT_S = float(os.environ.get("REASONING_TIMEOUT_S", "5"))
+REASONING_TIMEOUT_S = float(os.environ.get("REASONING_TIMEOUT_S", "7.5"))
 
 log = logging.getLogger("arjun.bridge")
-
-# Fixed fallback lines, by STT language prefix. Spoken only when reasoning fails.
-FALLBACK_REPLY = {
-    "mr": "माफ करा, मला नीट ऐकू आलं नाही. पुन्हा सांगाल का?",
-    "hi": "माफ़ कीजिए, मैं ठीक से समझ नहीं पाया. क्या आप फिर से बताएँगे?",
-    "en": "Sorry, I didn't catch that. Could you say it again?",
-}
 
 _client: httpx.Client | None = None
 
@@ -47,6 +41,8 @@ class BridgeReply:
     source: str = ""  # rules | llm: who wrote the answer (for the turn log)
     action: dict | None = None  # type: ignore[type-arg]  # what the elder screen opens / does: {type, kind, value, title}
     speech_style: dict | None = None  # type: ignore[type-arg]
+    silent: bool = False
+    language: str = ""
 
 
 def ask_reasoning(
@@ -72,11 +68,72 @@ def ask_reasoning(
         source=data.get("source", "") or "",
         action=data.get("action") or None,
         speech_style=data.get("speech_style") or None,
+        silent=bool(data.get("silent", False)),
+        language=str(data.get("language") or language or ""),
     )
 
 
-def fallback_text(language: str) -> str:
-    return FALLBACK_REPLY.get((language or "mr").split("-")[0].lower(), FALLBACK_REPLY["mr"])
+def fallback_text(language: str, transcript: str = "") -> str:
+    """A local, topic-naming repair used only when reasoning is unreachable; never a generic repeat line."""
+    prefix = (language or "mr").replace("_", "-").split("-", 1)[0].lower()
+    text = " ".join((transcript or "").split())
+    if not text:
+        return ""
+    if is_emergency(text):
+        return {
+            "mr": "तुम्हाला आत्ता तातडीची मदत हवी आहे का? जवळच्या घरच्यांना बोलवूया?",
+            "hi": "क्या आपको अभी तुरंत मदद चाहिए? पास में किसी अपने को बुलाएँ?",
+            "en": "Do you need urgent help now? Should someone nearby come to you?",
+            "ta": "உங்களுக்கு இப்போது அவசர உதவி வேண்டுமா? அருகில் உள்ள குடும்பத்தினரை அழைக்கவா?",
+            "kn": "ನಿಮಗೆ ಈಗ ತುರ್ತು ಸಹಾಯ ಬೇಕೇ? ಹತ್ತಿರದ ಕುಟುಂಬದವರನ್ನು ಕರೆಯಬೇಕೇ?",
+            "bn": "আপনার কি এখন জরুরি সাহায্য দরকার? কাছের পরিবারের কাউকে ডাকব?",
+            "gu": "શું તમને અત્યારે તાત્કાલિક મદદ જોઈએ છે? નજીકના પરિવારજનોને બોલાવું?",
+            "pa": "ਕੀ ਤੁਹਾਨੂੰ ਹੁਣੇ ਫੌਰੀ ਮਦਦ ਚਾਹੀਦੀ ਹੈ? ਨੇੜੇ ਦੇ ਪਰਿਵਾਰਕ ਜੀਅ ਨੂੰ ਬੁਲਾਵਾਂ?",
+            "te": "మీకు ఇప్పుడు అత్యవసర సహాయం కావాలా? దగ్గరలోని కుటుంబ సభ్యులను పిలవనా?",
+            "ml": "ഇപ്പോൾ അടിയന്തര സഹായം വേണോ? അടുത്തുള്ള വീട്ടുകാരെ വിളിക്കട്ടേ?",
+            "or": "ଆପଣଙ୍କୁ ଏବେ ଜରୁରୀ ସାହାଯ୍ୟ ଦରକାର କି? ପାଖରେ ଥିବା ପରିବାର ଲୋକଙ୍କୁ ଡାକିବି?",
+        }.get(prefix, "तुम्हाला आत्ता तातडीची मदत हवी आहे का? जवळच्या घरच्यांना बोलवूया?")
+    if is_distress(text):
+        return {
+            "mr": "तुम्हाला खूप त्रास होतोय असं वाटतंय. आत्ता घरच्यांपैकी कोणाशी बोलायचं आहे?",
+            "hi": "आप बहुत परेशान लग रहे हैं। क्या आप अभी अपने परिवार में किसी से बात करना चाहेंगे?",
+            "en": "It sounds like you are in a lot of pain. Would you like to talk to someone in your family now?",
+            "ta": "உங்களுக்கு மிகவும் கஷ்டமாக இருக்கிறது போல. இப்போது குடும்பத்தில் யாரிடமாவது பேச விரும்புகிறீர்களா?",
+            "kn": "ನಿಮಗೆ ತುಂಬಾ ಕಷ್ಟವಾಗುತ್ತಿದೆ ಅನಿಸುತ್ತದೆ. ಈಗ ಮನೆಯವರಲ್ಲಿ ಯಾರೊಂದಿಗಾದರೂ ಮಾತನಾಡಬೇಕೇ?",
+            "bn": "আপনার খুব কষ্ট হচ্ছে মনে হচ্ছে। এখন পরিবারের কারও সঙ্গে কথা বলতে চান?",
+            "gu": "તમને ઘણું મુશ્કેલ લાગી રહ્યું છે. હમણાં પરિવારના કોઈની સાથે વાત કરશો?",
+            "pa": "ਤੁਹਾਨੂੰ ਬਹੁਤ ਔਖਾ ਲੱਗ ਰਿਹਾ ਹੈ। ਕੀ ਹੁਣ ਪਰਿਵਾਰ ਵਿੱਚ ਕਿਸੇ ਨਾਲ ਗੱਲ ਕਰਨੀ ਹੈ?",
+            "te": "మీకు చాలా కష్టంగా ఉన్నట్టుంది. ఇప్పుడు కుటుంబంలో ఎవరితోనైనా మాట్లాడాలనుకుంటున్నారా?",
+            "ml": "നിങ്ങൾക്ക് വളരെ വിഷമമുണ്ടെന്ന് തോന്നുന്നു. ഇപ്പോൾ വീട്ടുകാരിൽ ആരോടെങ്കിലും സംസാരിക്കണോ?",
+            "or": "ଆପଣଙ୍କୁ ବହୁତ କଷ୍ଟ ହେଉଛି ଲାଗୁଛି। ଏବେ ପରିବାରର କାହା ସହ କଥା ହେବେ କି?",
+        }.get(prefix, "तुम्हाला खूप त्रास होतोय असं वाटतंय. आत्ता घरच्यांपैकी कोणाशी बोलायचं आहे?")
+    norm = text.casefold()
+    topics = (
+        (("भजन", "गाणं", "गाणी", "youtube", "यूट्यूब", "video", "व्हिडिओ", "பாடல்", "ಭಜನೆ", "ভজন", "ભજન", "ਭਜਨ", "భజన", "ഭജൻ"),
+         {"mr": "गाणं किंवा भजन", "hi": "गाना या भजन", "en": "a song or devotional video", "ta": "பாடல்", "kn": "ಹಾಡು ಅಥವಾ ಭಜನೆ", "bn": "গান বা ভজন", "gu": "ગીત કે ભજન", "pa": "ਗੀਤ ਜਾਂ ਭਜਨ", "te": "పాట లేదా భజన", "ml": "പാട്ടോ ഭജനയോ", "or": "ଗୀତ ବା ଭଜନ"}),
+        (("औषध", "गोळी", "दवा", "medicine", "மருந்து", "ಔಷಧ", "ওষুধ", "દવા", "ਦਵਾਈ", "మందు", "മരുന്ന്"),
+         {"mr": "औषध", "hi": "दवा", "en": "medicine", "ta": "மருந்து", "kn": "ಔಷಧ", "bn": "ওষুধ", "gu": "દવા", "pa": "ਦਵਾਈ", "te": "మందు", "ml": "മരുന്ന്", "or": "ଔଷଧ"}),
+        (("जेवण", "भूक", "भाजी", "food", "खाना", "உணவு", "ಊಟ", "খাবার", "જમવાનું", "ਖਾਣਾ", "భోజనం", "ഭക്ഷണം"),
+         {"mr": "जेवण", "hi": "खाने", "en": "food", "ta": "உணவு", "kn": "ಊಟ", "bn": "খাবার", "gu": "જમવાનું", "pa": "ਖਾਣੇ", "te": "భోజనం", "ml": "ഭക്ഷണം", "or": "ଖାଦ୍ୟ"}),
+        (("कॉल", "फोन", "call", "தொலைபேசி", "ಫೋನ್", "ফোন", "ફોન", "ਫ਼ੋਨ", "ఫోన్", "ഫോൺ"),
+         {"mr": "फोन", "hi": "फोन", "en": "a phone call", "ta": "தொலைபேசி அழைப்பு", "kn": "ಫೋನ್ ಕರೆ", "bn": "ফোন কল", "gu": "ફોન કૉલ", "pa": "ਫ਼ੋਨ ਕਾਲ", "te": "ఫోన్ కాల్", "ml": "ഫോൺ വിളി", "or": "ଫୋନ କଲ"}),
+    )
+    topic = ""
+    for words, labels in topics:
+        if any(word in norm for word in words):
+            topic = labels.get(prefix, labels["mr"])
+            break
+    if not topic:
+        topic = text.strip(" .,!?।…")[-48:].strip()
+    templates = {
+        "mr": "तुम्ही {topic} बद्दल म्हणताय का?", "hi": "क्या आप {topic} के बारे में पूछ रहे हैं?",
+        "en": "Are you asking about {topic}?", "ta": "நீங்கள் {topic} பற்றி கேட்கிறீர்களா?",
+        "kn": "ನೀವು {topic} ಬಗ್ಗೆ ಕೇಳುತ್ತಿದ್ದೀರಾ?", "bn": "আপনি কি {topic} সম্পর্কে জানতে চাইছেন?",
+        "gu": "શું તમે {topic} વિશે પૂછો છો?", "pa": "ਕੀ ਤੁਸੀਂ {topic} ਬਾਰੇ ਪੁੱਛ ਰਹੇ ਹੋ?",
+        "te": "మీరు {topic} గురించి అడుగుతున్నారా?", "ml": "നിങ്ങൾ {topic} കുറിച്ചാണോ ചോദിക്കുന്നത്?",
+        "or": "ଆପଣ {topic} ବିଷୟରେ ପଚାରୁଛନ୍ତି କି?",
+    }
+    return templates.get(prefix, templates["mr"]).format(topic=topic)
 
 
 def reply_or_fallback(
@@ -87,12 +144,15 @@ def reply_or_fallback(
     try:
         return ask_reasoning(user_id, transcript, http, language)
     except (httpx.HTTPError, KeyError, ValueError) as exc:
-        log.error("reasoning call failed (%s): %s", type(exc).__name__, exc)
+        cause = "rate_limit" if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429 else type(exc).__name__
+        log.error("reasoning fallback cause=%s", cause)
         return BridgeReply(
-            text=fallback_text(language),
-            mode="fallback",
+            text=fallback_text(language, transcript),
+            mode="safety" if is_emergency(transcript) or is_distress(transcript) else "fallback",
             awaiting_confirmation=False,
             round_trip_ms=(time.perf_counter() - t0) * 1000,
+            language=language,
+            silent=not bool(fallback_text(language, transcript)),
         )
 
 

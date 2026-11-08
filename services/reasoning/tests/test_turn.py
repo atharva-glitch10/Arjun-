@@ -152,7 +152,8 @@ def test_opener_never_supplies_facts(engine, uid):
 
 
 def test_unknown_asks_to_repeat(engine, uid):
-    assert engine.handle(uid, "hmm").intent == "UNKNOWN"
+    result = engine.handle(uid, "hmm")
+    assert result.intent == "NOISE" and result.silent and result.reply == ""
 
 
 def test_past_time_is_rejected_by_core(engine, core_http, uid):
@@ -345,3 +346,26 @@ def test_explicit_speech_style_controls(engine, core_http, uid):
     assert core_http.get(f"/users/{uid}").json()["speech_style"]["rate"] == "slow"
     assert engine.handle(uid, "मोठ्याने बोल").intent == "SPEAK_LOUDER"
     assert core_http.get(f"/users/{uid}").json()["speech_style"]["volume"] == "loud"
+
+
+def test_system_markers_are_silent_and_never_enter_the_llm(engine, uid):
+    class MustNotRun:
+        def understand_turn(self, *args, **kwargs):
+            raise AssertionError("system marker reached the LLM")
+    engine.evon = MustNotRun()
+    result = engine.handle(uid, "[video_call_stopped]")
+    assert result.silent and result.reply == "" and result.intent == "SYSTEM_EVENT"
+
+
+def test_uncertain_known_topic_uses_a_specific_clarification(engine, core_http, uid):
+    core_http.post(f"/users/{uid}/contacts", json={"name": "Rahul", "relation": "son"})
+    engine.evon = None
+    result = engine.handle(uid, "Rahul")
+    assert "Rahul" in result.reply and result.reply and not result.silent
+
+
+def test_repeated_noise_is_silent_then_gives_the_warm_noise_prompt(engine, uid):
+    first = engine.handle(uid, "hmm")
+    second = engine.handle(uid, "hmm")
+    assert first.silent and first.reply == ""
+    assert not second.silent and bool(second.reply)

@@ -22,13 +22,12 @@ class Responder:
         ask: Callable[[str], Awaitable[BridgeReply]],
         say: Callable[[str], Awaitable[bool | None]],
         publish: Callable[[BridgeReply, int], Awaitable[None]],
-        fallback_text: Callable[[], str],
         thinking: Callable[[bool], Awaitable[None]] | None = None,
         speakable: Callable[[BridgeReply], str] | None = None,
         say_reply: Callable[[BridgeReply], Awaitable[bool | None]] | None = None,
         on_mode: Callable[[str], None] | None = None,
     ) -> None:
-        self.turns, self.ask, self.say, self.publish, self.fallback_text = turns, ask, say, publish, fallback_text
+        self.turns, self.ask, self.say, self.publish = turns, ask, say, publish
         self.thinking = thinking  # the "विचार करतोय…" marker on the elder screen
         # reply -> the exact text for TTS (tagged for Timbre v3, plain otherwise); default: the screen text
         self.speakable = speakable or (lambda r: r.text)
@@ -48,6 +47,9 @@ class Responder:
             idx, time.time(), reply.text, reply.mode, reply.round_trip_ms, intent=reply.intent, source=reply.source,
             action_type=(reply.action or {}).get("type", ""),
         )
+        if reply.silent:
+            self.turns.not_spoken(idx, "no_reply")
+            return "silent"
         if self.on_mode is not None:
             try:
                 self.on_mode(reply.mode)
@@ -73,11 +75,6 @@ class Responder:
         except Exception:  # noqa: BLE001 - TTS failure must be logged, not crash the session
             logger.exception("TTS failed for reply (mode=%s)", reply.mode)
             self.turns.not_spoken(idx, "tts_failed")
-            if reply.mode != "fallback":
-                try:
-                    await self.say(self.fallback_text())
-                except Exception:  # noqa: BLE001
-                    logger.exception("TTS fallback also failed")
         return "spoken"
 
     async def _mark_thinking(self, on: bool) -> None:

@@ -1,5 +1,12 @@
 # HANDOFF (2026-11-04, memory + smarter companion on top of LLM-first understanding)
 
+## Logical companion replies (2026-11-08)
+- Generic normal-conversation no-hearing replies were removed. Empty/noise first turns are silent; after two consecutive empty/noise turns Arjun asks warmly for the elder to move closer. Topic uncertainty produces a specific clarification, with same-topic repeats suppressed. Markers are consumed as events before reasoning. Emergency/distress checks remain ahead of ordinary LLM handling.
+- The reasoning path retries understanding once within the per-turn budget, shortens context to the last six exchanges, wraps raw speech as a possibly noisy transcript, and logs timeout/retry/sanitizer fallback causes without logging exception payloads. The voice endpoint waits up to 1.5 seconds for short/conjunction fragments; companion endpoint minimum remains 1.6 seconds. A TTS failure is logged and does not make Arjun speak a generic unrelated line.
+- Baseline log measurement (Nov 6–8): 128 turns, one fixed fallback (0.8%), 69 LLM replies. One recorded fallback took 5006 ms, consistent with a timeout but not conclusive. The log does not retain enough cause detail to count sanitizer/JSON/rate-limit/STT/cutoff causes. Eleven event markers appear; five video-stop markers were incorrectly sent to the LLM in that historical sample.
+- `eval/logic_eval.jsonl` has 80 synthetic multilingual/noisy/memory/cutoff cases. Live Sarvam strict-JSON judging of 50 recent LLM replies was not run because `SARVAM_API_KEY`, `ARJUN_LOGIC_EVAL_USER_ID`, and `REASONING_URL` are not configured; no historical conversation was uploaded for judging. Run `scripts/eval_logic.py` only with a synthetic test user and those environment variables.
+- Full verification: core-api 298, reasoning 994, voice-agent 352, scheduler 7, Vitest 146, TypeScript/build, Ruff and `eval/run_eval.py` all pass. The web build emits the existing chunk-size warning; pytest cache writes are denied, so tests used workspace-local basetemp. Physical phone behavior and provider-level logicality remain unverified.
+
 ## Daily Telegram voice briefing (2026-11-07)
 - Core-api composes 3-5 short Marathi sentences from the selected user's current-day medicine status, raw BP values,
   meal check-ins, and (only with `consent_distress_alert`) the existing mood word and paraphrased conversation highlight.
