@@ -309,6 +309,16 @@ class Arjun(Agent):
         # No LLM on the session; instructions are unused but required by the base class.
         super().__init__(instructions="Arjun is an AI voice companion. Replies come from reasoning.")
 
+    async def _answer_held_later(self, held: str) -> None:
+        await asyncio.sleep(HELD_ANSWER_S)
+        if not held or self.hold.held != held:  # a later turn already took (or replaced) it
+            return
+        self.hold.held = ""
+        vlog("held turn answered after %.1f s with no more words (%d chars)", HELD_ANSWER_S, len(held))
+        async with self.state.turn():
+            await self.responder.respond(held, "voice")
+        self.policy.touch()
+
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:  # type: ignore[no-untyped-def]
         """Send the transcript to reasoning and speak its templated reply (no built-in LLM)."""
         transcript = new_message.text_content or ""
@@ -352,7 +362,12 @@ class Arjun(Agent):
         # A sentence that ends in "आणि / पण / म्हणजे / की" is not finished: wait for the rest (endpointing.py).
         text = await self.hold.settle(transcript)
         if text is None or not text.strip():  # held for more speech, or nothing to answer
-            vlog("turn held for more speech (%d chars)", len(transcript))
+            if text is None:
+                vlog("turn held for more speech (%d chars)", len(transcript))
+                # If the rest never becomes words (noise, a cough, Prisma returns nothing), the held part would never
+                # be answered. Answer it ourselves once nothing new has arrived for HELD_ANSWER_S.
+                held = self.hold.held
+                asyncio.create_task(self._answer_held_later(held))
             raise StopResponse()
         t0 = time.monotonic()
         vlog("turn -> reasoning (%d chars)", len(text))
@@ -366,6 +381,8 @@ class Arjun(Agent):
 # One short line per step of a spoken turn (speech heard, STT result, reasoning, reply voice) so a silent Arjun can be
 # diagnosed from logs/voice-agent.app.log. Never the words: only lengths, language, timings. ARJUN_DEBUG_VOICE=0 = off.
 DEBUG_VOICE = os.environ.get("ARJUN_DEBUG_VOICE", "1").strip() != "0"
+# A held (unfinished-sounding) sentence is answered after this many seconds if no further words arrive.
+HELD_ANSWER_S = float(os.environ.get("ARJUN_HELD_ANSWER_S", "4.0") or 4.0)
 
 
 def vlog(msg: str, *args: object) -> None:
