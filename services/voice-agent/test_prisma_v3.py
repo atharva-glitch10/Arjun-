@@ -125,3 +125,49 @@ def test_context_values_are_bounded_and_deduplicated():
     adapter = PrismaV3STT(api_key="unit-test-key", keyterms=["x"] * 202, speaker_names=["a", "b", "c", "d", "e"])
     assert len(adapter.keyterms) == 1
     assert len(adapter.speaker_names) == 4
+
+
+def _capture_headers(monkeypatch, first_message='{"type":"connected"}', **adapter_kw):
+    captured = {}
+
+    class Socket:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_args): return None
+        async def recv(self): return first_message
+        async def send(self, _data): return None
+        def __aiter__(self):
+            async def messages():
+                if False:
+                    yield ""
+            return messages()
+
+    def connect(_url, **kwargs):
+        captured.update(kwargs)
+        return Socket()
+
+    monkeypatch.setattr(websockets, "connect", connect)
+
+    async def run():
+        await PrismaV3STT(api_key="unit-test-key", **adapter_kw).stream()._run()
+
+    return captured, run
+
+
+def test_devanagari_terms_are_ascii_escaped_in_headers(monkeypatch):
+    """Gnani: non-ASCII keyterms JSON must be escaped in headers (raw Devanagari failed the handshake, 2026-11-08)."""
+    captured, run = _capture_headers(monkeypatch, keyterms=["शुगरची गोळी", "Glimepiride"], speaker_names=["राहुल"])
+    asyncio.run(run())
+    headers = captured["additional_headers"]
+    for value in headers.values():
+        value.encode("ascii")  # raises if any header is not plain ASCII
+    assert json.loads(headers["keyterms"]) == ["शुगरची गोळी", "Glimepiride"]
+    assert json.loads(headers["speaker_names"]) == ["राहुल"]
+
+
+def test_refused_handshake_reports_gnanis_reason(monkeypatch):
+    import pytest
+    from livekit.agents import APIConnectionError
+
+    _, run = _capture_headers(monkeypatch, first_message='{"type":"error","message":"invalid language_code"}')
+    with pytest.raises(APIConnectionError, match="invalid language_code"):
+        asyncio.run(run())
