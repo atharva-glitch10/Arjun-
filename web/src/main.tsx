@@ -47,7 +47,7 @@ function App() {
       {view === "elder" ? <ElderApp userId={userId} forceEvening={evening} /> : <Dashboard userId={userId} onUser={changeUser} />}
       <nav
         aria-label="Switch view"
-        style={{ display: "flex", gap: 6, justifyContent: "flex-end", padding: 12, background: "var(--ghar-ground)" }}
+        style={{ display: "flex", gap: 6, justifyContent: "flex-end", padding: 12, background: view === "elder" ? "#FFD25E" : "transparent" }}
       >
         <button className="fbtn" style={{ minHeight: 44 }} onClick={() => setView(view === "elder" ? "caregiver" : "elder")}>
           {view === "elder" ? "Family dashboard" : "Elder screen"}
