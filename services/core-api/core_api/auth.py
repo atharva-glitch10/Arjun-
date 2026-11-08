@@ -184,6 +184,7 @@ def _is_elder_route(method: str, path: str) -> bool:
         ("POST", r"/users/\d+/calls"),
         ("GET", r"/users/\d+/calls/\d+"),
         ("POST", r"/users/\d+/calls/\d+/end"),
+        ("POST", r"/users/\d+/emergency/location"),
     )
     return any(method == mth and re.fullmatch(pattern, path) for mth, pattern in elder)
 
@@ -201,6 +202,9 @@ def _is_family_route(method: str, path: str) -> bool:
         ("GET", r"/users/\d+/appointments/next"),
         ("GET", r"/users/\d+/facts"),
         ("GET", r"/users/\d+/voices(?:/audit)?"),
+        ("GET", r"/users/\d+/emergency-settings"),
+        ("PUT", r"/users/\d+/emergency-settings"),
+        ("GET", r"/users/\d+/emergency/calls"),
         ("POST", r"/users/\d+/voices"),
         ("POST", r"/users/\d+/voices/\d+/(?:activate|deactivate)"),
         ("DELETE", r"/users/\d+/voices/\d+"),

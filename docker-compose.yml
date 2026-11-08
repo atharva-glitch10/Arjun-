@@ -22,6 +22,10 @@ services:
       ARJUN_SOUND_EVENTS: ${ARJUN_SOUND_EVENTS:-0}
       GNANI_API_KEY: ${GNANI_API_KEY:-}
       VOICE_CLONE_KEY: ${VOICE_CLONE_KEY:-}
+      CALLS_ENABLED: ${CALLS_ENABLED:-0}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM: ${TWILIO_FROM:-}
     volumes:
       - ./eval/results:/app/eval/results:ro
     depends_on:

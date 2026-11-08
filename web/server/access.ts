@@ -41,6 +41,7 @@ export const ELDER_ROUTES: Route[] = [
   route("POST", `/users/${ID}/calls`),
   route("GET", `/users/${ID}/calls/${ID}`),
   route("POST", `/users/${ID}/calls/${ID}/end`),
+  route("POST", `/users/${ID}/emergency/location`),
 ];
 
 /** What the family dashboard calls (web/src/family/*, api.ts) including the live feed REST fallback and WebSocket. */
@@ -56,6 +57,9 @@ export const FAMILY_ROUTES: Route[] = [
   route("GET", `/users/${ID}/facts`), // "अर्जुनला माहीत असलेल्या गोष्टी": core-api hides it without the consent flag
   route("DELETE", `/users/${ID}/facts/${ID}`),
   route("GET", `/users/${ID}/voices(?:/audit)?`),
+  route("GET", `/users/${ID}/emergency-settings`),
+  route("PUT", `/users/${ID}/emergency-settings`),
+  route("GET", `/users/${ID}/emergency/calls`),
   route("POST", `/users/${ID}/voices`),
   route("POST", `/users/${ID}/voices/${ID}/(?:activate|deactivate)`),
   route("DELETE", `/users/${ID}/voices/${ID}`),

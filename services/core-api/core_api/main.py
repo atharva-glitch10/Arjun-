@@ -20,6 +20,7 @@ from .db import Base, engine, ensure_columns, get_db
 from .deliveries import ack_item, enqueue
 from .deliveries import router as deliveries_router
 from .deps import auth_enabled, check_api_key_configured, get_now, require_key
+from .emergency import router as emergency_router
 from .facts import router as facts_router
 from .family_call import router as family_router
 from .feed import router as feed_router
@@ -823,6 +824,7 @@ app.include_router(family_router)
 app.include_router(activity_router)
 app.include_router(readings_router)
 app.include_router(voices_router)
+app.include_router(emergency_router)
 app.include_router(wellbeing_router)
 app.include_router(applinks_router)
 app.include_router(media_router)
