@@ -116,7 +116,7 @@ def _is_system_marker(text: str) -> bool:
 
 log = logging.getLogger("reasoning.turn")
 
-_WEB_TURN_BUDGET_S = 7.0  # whole turn, understanding + search + answer (voice path waits 7.5 s)
+_WEB_TURN_BUDGET_S = 8.5  # whole turn, understanding + search (<=4 s) + answer; the voice path waits 9 s
 _WEB_ANSWER_RESERVE_S = 1.5  # kept back for the answer call when sizing the search timeout
 _WEB_BLOCK = re.compile(
     r"औषध|गोळी|गोळ्या|डोस|इंजेक्शन|दवा|दवाई|खुराक|medicine|tablet|dose|injection|pill|"
@@ -124,6 +124,13 @@ _WEB_BLOCK = re.compile(
     re.IGNORECASE,
 )
 _WEATHER = re.compile(r"पाऊस|पावस|हवामान|तापमान|थंडी|उकाडा|मौसम|बारिश|तापमान|weather|mausam|temperature|rain|\bpa+u?s\b|havaman|hawaman|b(?:a+)?rish", re.IGNORECASE)
+_NEWS = re.compile(r"बातम्या|बातमी|खबर|समाचार|न्यूज|घडामोडी|headline|\bnews\b|batmya|batami|khabar", re.IGNORECASE)
+# prepare(): a sentence that LOOKS like a live-facts question (weather, news, score, price, who holds an office)
+_WEB_LIKELY = re.compile(
+    _WEATHER.pattern + "|" + _NEWS.pattern + r"|स्कोर|सामना|मॅच|मैच|क्रिकेट|score|match|cricket|भाव|दर\b|किंमत|price|rate|"
+    r"पंतप्रधान|मुख्यमंत्री|प्रधानमंत्री|prime minister|president|कोण जिंकल|आज काय चालू",
+    re.IGNORECASE,
+)
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
 _UNDERSTAND_TIMEOUT_S = 3.0
 _ACTION_CONFIDENCE_FLOOR = 0.4  # below this an LLM action intent is ignored and the rules decide
@@ -337,6 +344,7 @@ class TurnEngine:
         self._listen_i: dict[int, int] = {}
         self._last_reply_simplifiable: dict[int, bool] = {}
         self._repeat_times: dict[int, deque[float]] = {}
+        self._city_state: dict[int, tuple[str, str, float]] = {}  # uid -> ("ask"|"save", city, expires) after a weather turn
 
     # ------------------------------------------------------------------ public
     def _llm_remaining(self) -> float:
@@ -489,6 +497,12 @@ class TurnEngine:
         remembered = self._memory_command(user_id, text, lang, now, trace, t0)
         if remembered is not None:
             return remembered
+
+        # 2b. the answer to "which city?" / "keep it?" after a weather turn: short, deterministic, no LLM
+        if user_id in self._city_state:
+            city_turn = self._city_followup(user_id, text, lang, trace, t0)
+            if city_turn is not None:
+                return city_turn
 
         # 3. ONE LLM call for every non-safety turn: the whole sentence, this conversation's history and the
         # family/dashboard context together. The rules are only the fallback (no LLM, timeout, bad JSON, or a
@@ -2575,10 +2589,89 @@ class TurnEngine:
                 reply, speech = shaped, ""  # the voice tags sat on the old words: say the shaped reply plainly
         return reply, speech, from_llm
 
+    # ---- live web facts ---------------------------------------------------------------------------------
+    def prepare(self, text: str, language_code: str | None = None) -> dict[str, Any]:
+        """FAST pre-check for the voice agent (no core-api, no LLM, no search): will this turn probably need a live
+        web lookup? Rules only. A safety / medicine / health sentence is never web. A wrong "yes" only costs one
+        spoken "बघतो…"; the real decision is still the LLM's in /turn."""
+        lang = _detected_reply_language(language_code) or detect_language(text, "mr")
+        r = rp.R[rp.lang_or_default(lang)]
+        web = (
+            bool(_WEB_LIKELY.search(text))
+            and not (is_emergency(text) or is_distress(text) or has_failsafe_word(text) or has_health_word(text))
+            and not _WEB_BLOCK.search(text)
+            and not symptom_category(text)
+        )
+        return {"needs_web": web, "filler": r["web_filler"] if web else "", "hold": r["web_hold"], "language": lang}
+
+    def _city_for(self, uid: int) -> str:
+        """Her city: the family's profile value, else the household ARJUN_CITY. Never guessed."""
+        try:
+            city = str(self.core.user(uid).get("city") or "").strip()
+        except (CoreError, httpx.HTTPError):
+            city = ""
+        return city or os.environ.get("ARJUN_CITY", "").strip()
+
+    def _news_domains(self, uid: int) -> list[tuple[str, str]]:
+        """(domain, family label) for every rss / link the family added: the ONLY news sources Arjun may use."""
+        try:
+            links = self.core.app_links(uid)
+        except (CoreError, httpx.HTTPError):
+            return []
+        out: list[tuple[str, str]] = []
+        for link in links:
+            if link.get("kind") in ("rss", "link"):
+                host = web_search.host_of(str(link.get("value") or ""))
+                if host and host not in [d for d, _ in out]:
+                    out.append((host, str(link.get("label") or host)))
+        return out
+
+    def _weather_line(self, uid: int, city: str, lang: str) -> str | None:
+        return weather.current_weather(city, rp.lang_or_default(lang))
+
+    def _city_followup(self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
+        """The two short answers after "which city?": the city itself, then a yes/no to keeping it."""
+        state = self._city_state.get(uid)
+        if state is None:
+            return None
+        kind, city, expires = state
+        if self._mono() > expires:
+            self._city_state.pop(uid, None)
+            return None
+        r = rp.R[rp.lang_or_default(lang)]
+        norm = normalize(text)
+        toks = tokens(norm)
+
+        def out(reply: str, how: str, filler: str = "") -> TurnResult:
+            return TurnResult(reply, "CHAT", "companion", lang, filler=filler,
+                              trace=self._t({**trace, "intent": "CHAT", "web": how}, t0))
+
+        if kind == "ask":
+            self._city_state.pop(uid, None)
+            if len(toks) > 4 or _WEB_BLOCK.search(text) or symptom_category(text):
+                return None  # not a city: the normal turn handles it
+            named = " ".join(text.replace("मध्ये", " ").replace("चं", " ").replace("चे", " ").split()).strip(" .,?!")
+            line = self._weather_line(uid, named, lang) if named else None
+            if not line:
+                return out(r["web_none"], "weather_failed")
+            self._city_state[uid] = ("save", named, self._mono() + 120)
+            return out(line + r["web_city_offer"], "weather", r["web_filler"])
+        self._city_state.pop(uid, None)  # "save": one yes/no, then done
+        if has_any(norm, YES) and not has_any(norm, NO):
+            try:
+                self.core.patch_user(uid, {"city": city})
+            except (CoreError, httpx.HTTPError) as exc:
+                log.warning("could not save the city (%s)", type(exc).__name__)
+                return out(r["web_none"], "city_not_saved")
+            return out(r["web_city_saved"], "city_saved")
+        if has_any(norm, NO):
+            return out(r["web_city_declined"], "city_declined")
+        return None
+
     def _web_turn(self, uid: int, text: str, query: str, lang: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
-        """A live-facts question: Open-Meteo for weather, Brave snippets for the rest, answered by the LLM from those
-        snippets only. Never for medicine / health words (a fixed "ask the doctor" line instead). Any failure is the
-        fixed "no information" line; this method never raises and never makes up an answer."""
+        """A live-facts question. Weather: Open-Meteo (her city, else ARJUN_CITY, else ask once). News: Brave results
+        from the family's approved domains ONLY, source named aloud. Anything else: any Brave result. The LLM answers
+        from the snippets only. Never for medicine / health words. Any failure is the fixed "no information" line."""
         r = rp.R[rp.lang_or_default(lang)]
 
         def done(reply: str, how: str, source: str = "rules") -> TurnResult:
@@ -2591,21 +2684,38 @@ class TurnEngine:
             return TurnResult(
                 r["web_health"], "CHAT", "companion", lang, trace=self._t({**trace, "intent": "CHAT", "web": "blocked"}, t0)
             )
-        # one wall-clock budget for the whole lookup, kept under the voice path's wait (7.5 s)
+        # one wall-clock budget for the whole lookup, kept under the voice path's 9 s wait
         end = self._llm_deadline - self._llm_timeout_s + _WEB_TURN_BUDGET_S
         try:
             if _WEATHER.search(text):
-                city = os.environ.get("ARJUN_CITY", "").strip()  # household city, like ARJUN_TZ; never guessed
-                if not city:
+                city = self._city_for(uid)
+                if not city:  # ask once; her answer is handled by _city_followup
+                    self._city_state[uid] = ("ask", "", self._mono() + 120)
                     return TurnResult(r["web_city"], "CHAT", "companion", lang, trace=self._t({**trace, "intent": "CHAT", "web": "ask_city"}, t0))
-                line = weather.current_weather(city, rp.lang_or_default(lang))
+                line = self._weather_line(uid, city, lang)
                 return done(line, "weather") if line else done(r["web_none"], "weather_failed")
+            news = bool(_NEWS.search(text) or _NEWS.search(query))
+            allowed = self._news_domains(uid)[:5] if news else []
+            if news and not allowed:
+                return done(r["web_none"], "news_no_source")
             search_s = min(web_search.TIMEOUT_S, end - self._mono() - _WEB_ANSWER_RESERVE_S)
             if search_s < 1.0:
                 return done(r["web_none"], "no_budget")
-            results = web_search.search(query or text, lang, timeout_s=search_s)
+            results = web_search.search(
+                query or text, lang, timeout_s=search_s, domains=[d for d, _ in allowed] or None
+            )
+            source = ""
+            if news and results:
+                # name the source and answer from THAT result alone, so the spoken name is the true origin
+                for d, label in allowed:
+                    hit = [x for x in results if web_search.host_allowed(x.get("url", ""), [d])]
+                    if hit:
+                        results, source = hit[:1], label
+                        break
+                else:
+                    results = None
             if not results:
-                return done(r["web_none"], "search_failed")
+                return done(r["web_none"], "search_failed" if not news else "news_no_approved_result")
             self._llm_deadline = end  # the answer call may use what is left of the lookup budget
             if self.evon is None or not hasattr(self.evon, "web_answer") or self._llm_remaining() < _MIN_LLM_BUDGET_S:
                 return done(r["web_none"], "no_llm")
@@ -2614,7 +2724,9 @@ class TurnEngine:
             reply, _ = sanitize_companion(clean, lang, user_text=text) if clean else (None, [])
             if not reply:
                 return done(r["web_none"], "answer_failed")
-            return done(reply, "search", "llm")
+            if source:
+                reply = r["web_source"].format(src=source, answer=reply)
+            return done(reply, "search_news" if news else "search", "llm")
         except Exception as exc:  # noqa: BLE001 - a web lookup never breaks a turn
             log.info("web turn failed: %s", type(exc).__name__)
             return done(r["web_none"], "error")

@@ -21,6 +21,8 @@ export interface User {
   /** Optional fasting / after-lunch sugar checks. */
   sugar_check_time: string | null;
   sugar_after_time: string | null;
+  /** Her city, used for spoken weather. null = not set (Arjun asks). */
+  city: string | null;
   /** Meal / walk / BP / sugar check-ins are spoken only when the family switches this on. */
   daily_checkins: boolean;
   interests: string[];

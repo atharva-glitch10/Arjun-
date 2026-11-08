@@ -151,3 +151,73 @@ def test_silent_reply_is_not_published_or_spoken(tmp_path):
     f = Fakes(tmp_path, [BridgeReply("", "care", False, 1.0, silent=True)])
     assert _run(f.r.respond("[video_call_stopped]")) == "silent"
     assert f.said == [] and f.published == []
+
+
+# ---- two-step flow: /turn/prepare -> filler while /turn runs -> hold line at 5 s -----------------------------
+class SlowFakes(Fakes):
+    def __init__(self, tmp_path, delay, prep, slow_after_s=5.0):
+        super().__init__(tmp_path, [_reply("उत्तर")])
+        self.delay, self.events = delay, []
+        self.r = Responder(self.turns, self.ask, self.say, self.publish, prepare=prep, slow_after_s=slow_after_s)
+
+    async def ask(self, text):
+        self.events.append("ask_start")
+        await asyncio.sleep(self.delay)
+        self.events.append("ask_done")
+        return await super().ask(text)
+
+    async def say(self, text):
+        self.events.append(f"say:{text}")
+        await super().say(text)
+
+
+def _prep(result, delay=0.0):
+    async def prepare(text):
+        await asyncio.sleep(delay)
+        if isinstance(result, Exception):
+            raise result
+        return result
+    return prepare
+
+
+def test_filler_is_spoken_while_the_turn_is_still_running(tmp_path):
+    f = SlowFakes(tmp_path, 0.05, _prep({"needs_web": True, "filler": "बघतो…", "hold": "थोडा वेळ…"}))
+    assert _run(f.r.respond("आज पाऊस पडेल का")) == "spoken"
+    assert f.said == ["बघतो…", "उत्तर"]
+    assert f.events.index("ask_start") < f.events.index("say:बघतो…") < f.events.index("ask_done")  # in parallel
+
+
+def test_no_filler_when_prepare_says_no_fails_or_is_slow(tmp_path):
+    for prep in (
+        _prep({"needs_web": False, "filler": ""}),
+        _prep(RuntimeError("down")),
+        _prep({"needs_web": True, "filler": "बघतो…"}, delay=1.0),  # slower than the hard stop
+        None,
+    ):
+        f = SlowFakes(tmp_path, 0.0, prep)
+        assert _run(f.r.respond("आज पाऊस पडेल का")) == "spoken"
+        assert f.said == ["उत्तर"]
+
+
+def test_hold_line_is_spoken_once_when_the_answer_is_late(tmp_path):
+    f = SlowFakes(tmp_path, 0.3, _prep({"needs_web": True, "filler": "बघतो…", "hold": "थोडा वेळ लागतोय…"}), slow_after_s=0.1)
+    _run(f.r.respond("आज पाऊस पडेल का"))
+    assert f.said == ["बघतो…", "थोडा वेळ लागतोय…", "उत्तर"]
+
+
+def test_hold_line_also_covers_a_slow_turn_without_a_filler(tmp_path):
+    f = SlowFakes(tmp_path, 0.3, _prep({"needs_web": False}), slow_after_s=0.1)
+    _run(f.r.respond("नमस्कार"))
+    assert f.said == ["थोडा वेळ लागतोय…", "उत्तर"]
+
+
+def test_a_fast_answer_gets_no_hold_line(tmp_path):
+    f = SlowFakes(tmp_path, 0.0, _prep({"needs_web": False}), slow_after_s=0.1)
+    _run(f.r.respond("नमस्कार"))
+    assert f.said == ["उत्तर"]
+
+
+def test_defaults_match_the_budget():
+    import bridge
+    import responder
+    assert responder.SLOW_AFTER_S == 5.0 and bridge.REASONING_TIMEOUT_S == 9.0 and bridge.PREPARE_TIMEOUT_S <= 0.3

@@ -188,6 +188,20 @@ def session_busy(user_id: int) -> dict[str, object]:
         raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
 
 
+class PrepareOut(BaseModel):
+    needs_web: bool
+    filler: str = ""  # speak this at once while /turn works
+    hold: str = ""  # speak this if /turn is still working after ~5 s
+    language: str = "mr"
+
+
+@app.post("/turn/prepare", response_model=PrepareOut)
+def turn_prepare(body: TurnIn) -> PrepareOut:
+    """Step 1 of the two-step voice flow: rules only, no core-api / LLM / search, so it returns in milliseconds. It
+    never touches memory or state; /turn (unchanged) still produces the one real answer."""
+    return PrepareOut(**get_engine().prepare(body.text, body.language_code))
+
+
 @app.post("/turn", response_model=TurnOut)
 def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
     engine = get_engine()

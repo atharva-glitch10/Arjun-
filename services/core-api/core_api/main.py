@@ -140,8 +140,8 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> m.User:
 def patch_user(user_id: int, body: s.UserPatch, db: Session = Depends(get_db)) -> m.User:
     user = _user(db, user_id)
     for key, value in body.model_dump(exclude_unset=True).items():
-        if value is not None or key in ("walk_time", "bp_check_time", "sugar_check_time", "sugar_after_time"):
-            setattr(user, key, value)  # an explicit null removes an optional walk / BP / sugar check
+        if value is not None or key in ("walk_time", "bp_check_time", "sugar_check_time", "sugar_after_time", "city"):
+            setattr(user, key, ((value or "").strip() or None) if key == "city" else value)  # an explicit null removes an optional walk / BP / sugar check
     db.commit()
     return user
 

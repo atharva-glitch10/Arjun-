@@ -25,6 +25,7 @@ from bridge import (
     claim_next_delivery,
     closing_text,
     mark_delivery_spoken,
+    prepare_reasoning,
     release_delivery,
     reply_or_fallback,
     report_sound_event,
@@ -491,14 +492,19 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
     logger.info("session serves user %s (%s)", user_id, "dispatch metadata" if from_metadata else "ARJUN_USER_ID fallback")
 
-    async def ask(text: str):  # type: ignore[no-untyped-def]
+    def detect_for(text: str) -> str:
         normalized = " ".join(text.casefold().split())
         matching = [
             (len(key), value) for key, value in transcript_languages.items()
             if key != "__current__" and key and key in normalized
         ]
-        detected = max(matching)[1] if matching else transcript_languages.get("__current__", STT_LANGUAGE)
-        return await asyncio.to_thread(reply_or_fallback, user_id, text, detected)
+        return max(matching)[1] if matching else transcript_languages.get("__current__", STT_LANGUAGE)
+
+    async def ask(text: str):  # type: ignore[no-untyped-def]
+        return await asyncio.to_thread(reply_or_fallback, user_id, text, detect_for(text))
+
+    async def prepare(text: str):  # type: ignore[no-untyped-def]
+        return await asyncio.to_thread(prepare_reasoning, user_id, text, detect_for(text))
 
     async def say_reply(reply) -> bool:  # type: ignore[no-untyped-def]
         """Synthesize this reply in Prisma's detected language using the verified session model/voice."""
@@ -703,6 +709,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         speakable=lambda reply: voiceprovider.sarvam_text(speakable_text(reply)) if use_sarvam else speakable_text(reply),
         say_reply=None if use_sarvam else say_reply,
         on_mode=apply_mode,
+        prepare=prepare,
     )
 
     async def on_tapped_text(sess, ev) -> None:  # type: ignore[no-untyped-def]

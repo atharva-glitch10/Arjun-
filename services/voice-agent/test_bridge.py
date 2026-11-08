@@ -74,3 +74,19 @@ def test_sound_event_forwards_label_and_score_only():
         return httpx.Response(200, json={"recorded": True})
 
     assert report_sound_event(1, "cough", 0.8, http=_client(ok))
+
+
+def test_prepare_reasoning_returns_the_json_and_never_raises():
+    import httpx
+    from bridge import prepare_reasoning
+
+    seen = []
+
+    def ok(req):
+        seen.append((req.url.path, req.extensions["timeout"]["read"]))
+        return httpx.Response(200, json={"needs_web": True, "filler": "बघतो…", "hold": "x"})
+
+    assert prepare_reasoning(1, "आज पाऊस", "mr", httpx.Client(transport=httpx.MockTransport(ok)))["needs_web"] is True
+    assert seen == [("/turn/prepare", 0.3)]
+    for handler in (lambda r: httpx.Response(500), lambda r: (_ for _ in ()).throw(httpx.ReadTimeout("slow"))):
+        assert prepare_reasoning(1, "x", "mr", httpx.Client(transport=httpx.MockTransport(handler))) is None

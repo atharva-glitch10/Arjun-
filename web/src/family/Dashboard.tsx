@@ -875,6 +875,11 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
                 run(() => api.patchUser(userId, { conditions: v.split(",").map((s) => s.trim()).filter(Boolean) }))
               }
             />
+            <TextField
+              label="City (for the weather Arjun tells her)"
+              initial={user.city ?? ""}
+              onSave={(v) => run(() => api.patchUser(userId, { city: v.trim() || null }))}
+            />
           </div>
         </section>
 

@@ -17,6 +17,7 @@ import threading
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -46,6 +47,16 @@ def available() -> bool:
     return bool((os.environ.get("BRAVE_API_KEY") or "").strip())
 
 
+def host_of(url: str) -> str:
+    host = (urlparse(url if "//" in url else "//" + url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def host_allowed(url: str, domains: list[str]) -> bool:
+    host = host_of(url)
+    return bool(host) and any(host == d or host.endswith("." + d) for d in domains)
+
+
 def _clean(text: Any) -> str:
     return " ".join(html.unescape(_TAG.sub("", str(text or ""))).split())
 
@@ -69,11 +80,15 @@ def search(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     timeout_s: float = TIMEOUT_S,
+    domains: list[str] | None = None,
 ) -> list[dict[str, str]] | None:
     key = (os.environ.get("BRAVE_API_KEY") or "").strip()
     query = " ".join((query or "").split())[:200]
     if not key or not query:
         return None
+    domains = [d.lower() for d in (domains or [])][:5]
+    if domains:  # news: ask Brave for those sites only (site: filter), then drop anything else below
+        query = f"{query} ({' OR '.join('site:' + d for d in domains)})"[:300]
     cache_key = (query.casefold(), lang)
     now = clock()
     with _lock:
@@ -116,8 +131,11 @@ def search(
             results = []
             for it in items:
                 title, snippet = _clean(it.get("title")), _clean(it.get("description"))
+                url = str(it.get("url") or "")
+                if domains and not host_allowed(url, domains):
+                    continue  # post-filter: a non-approved source is dropped even if Brave returned it
                 if title or snippet:
-                    results.append({"title": title, "snippet": snippet})
+                    results.append({"title": title, "snippet": snippet, "url": url})
                 if len(results) == MAX_RESULTS:
                     break
             if not results:

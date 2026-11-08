@@ -37,6 +37,7 @@ class UserIn(BaseModel):
     bp_check_time: str | None = None
     sugar_check_time: str | None = None  # fasting sugar check (optional)
     sugar_after_time: str | None = None  # after-lunch sugar check (optional)
+    city: str | None = Field(default=None, max_length=80)  # her city, for spoken weather
     daily_checkins: bool = False  # meal / walk / BP check-ins are spoken only when the family switches this on
     honorific: str = Field(default="", max_length=60)
     address_as: str | None = Field(default=None, max_length=60)
@@ -67,6 +68,7 @@ class UserPatch(BaseModel):
     bp_check_time: str | None = None
     sugar_check_time: str | None = None
     sugar_after_time: str | None = None
+    city: str | None = Field(default=None, max_length=80)
     daily_checkins: bool | None = None
     honorific: str | None = Field(default=None, max_length=60)
     address_as: str | None = Field(default=None, max_length=60)

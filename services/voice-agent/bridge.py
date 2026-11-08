@@ -14,7 +14,10 @@ from safety_words import is_distress, is_emergency
 
 REASONING_URL = os.environ.get("REASONING_URL", "http://127.0.0.1:8001")
 # A voice user cannot wait long: fail fast and speak the fallback instead.
-REASONING_TIMEOUT_S = float(os.environ.get("REASONING_TIMEOUT_S", "7.5"))
+# 9 s since the live-web lookup (reasoning keeps its own turn budget under this); the responder says "थोडा वेळ
+# लागतोय" at 5 s. Never longer: past this the fixed fallback speaks.
+REASONING_TIMEOUT_S = float(os.environ.get("REASONING_TIMEOUT_S", "9.0"))
+PREPARE_TIMEOUT_S = 0.3  # /turn/prepare is rules only; slower than this and the filler is skipped
 
 log = logging.getLogger("arjun.bridge")
 
@@ -71,6 +74,23 @@ def ask_reasoning(
         silent=bool(data.get("silent", False)),
         language=str(data.get("language") or language or ""),
     )
+
+
+def prepare_reasoning(
+    user_id: int, transcript: str, language: str | None = None, http: httpx.Client | None = None
+) -> dict | None:  # type: ignore[type-arg]
+    """POST /turn/prepare: {needs_web, filler, hold} within PREPARE_TIMEOUT_S, or None on ANY failure or slowness
+    (then the turn simply runs without a filler)."""
+    try:
+        payload = {"user_id": user_id, "text": transcript}
+        if language:
+            payload["language_code"] = language
+        r = (http or _shared_client()).post(f"{REASONING_URL}/turn/prepare", json=payload, timeout=PREPARE_TIMEOUT_S)
+        r.raise_for_status()
+        data = r.json()
+        return data if isinstance(data, dict) else None
+    except (httpx.HTTPError, ValueError):
+        return None
 
 
 def fallback_text(language: str, transcript: str = "") -> str:

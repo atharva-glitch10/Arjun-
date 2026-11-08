@@ -1,5 +1,12 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Web search follow-ups (2026-11-08)
+- **Early filler:** `POST /turn/prepare` (rules only: no core-api/LLM/search; <=0.3 s) returns `{needs_web, filler, hold}`. voice-agent's Responder starts `/turn` at once, asks prepare, speaks the filler while `/turn` runs, and says the hold line ("थोडा वेळ लागतोय…") if no answer by 5 s (any slow turn). Prepare failing or slower than 0.35 s = no filler. `/turn` is unchanged. A false needs_web only costs one spoken "बघतो…".
+- **City:** nullable `users.city` (VARCHAR 80, added by `ensure_columns`), in the user API, the auth parent PATCH and the family dashboard ("City" field). Order: profile city, then `ARJUN_CITY`, then ask once; her answer is used for the weather and Arjun offers to keep it (yes saves via PATCH, no does not).
+- **Budget:** search <=4 s total; whole web turn <=8.5 s (`_WEB_TURN_BUDGET_S`); voice-agent waits 9 s (`REASONING_TIMEOUT_S`).
+- **News boundary (CLAUDE.md #10 updated):** news queries search only family-approved domains (rss/link app_links; Brave `site:` filter plus a hard post-filter on the result URL, subdomains allowed, look-alike hosts rejected), answer from the first approved result only, and speak the family's label as the source. No approved domain/result = "आत्ता माहिती मिळाली नाही." Non-news may use any result.
+- Verified with mocked Brave/Open-Meteo/LLM only. The responder flow is tested with fakes: no real TTS/LiveKit run of the filler or hold line. The 20-turn eval (`eval/web_eval.jsonl`) has 5 news turns that run through the real search code and show only allowlisted sources.
+
 ## Live web search (2026-11-08)
 - `reasoning_svc/tools/web_search.py` (Brave only, key `BRAVE_API_KEY`, 4 s, 10-min cache, one retry, 1 req/s limiter, any failure -> None) and `tools/weather.py` (Open-Meteo, city from `ARJUN_CITY`; unset -> Arjun asks, never guesses). The users table has no city column; adding one is a core-api change not made here.
 - The LLM-first JSON gained `needs_web` / `web_query`. Only a `chat` turn that survives every safety, symptom, lonely, pending and draft path can search; medicine/health words never do (fixed "ask the doctor" line). The answer is written by the LLM from the snippets only (<=2 sentences, URLs/markdown stripped, same sanitizer as chat). Missing key or any failure -> "आत्ता माहिती मिळाली नाही."

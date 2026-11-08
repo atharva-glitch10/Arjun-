@@ -458,8 +458,8 @@ def patch_parent(
     parent, _ = _parent_or_404(db, account_id, parent_id)
     values = body.model_dump(exclude_unset=True, exclude={"contacts"})
     for key, value in values.items():
-        if value is not None or key in {"walk_time", "bp_check_time", "sugar_check_time", "sugar_after_time"}:
-            setattr(parent, key, value)
+        if value is not None or key in {"walk_time", "bp_check_time", "sugar_check_time", "sugar_after_time", "city"}:
+            setattr(parent, key, ((value or "").strip() or None) if key == "city" else value)
     if body.contacts is not None:
         db.execute(delete(m.Contact).where(m.Contact.user_id == parent_id))
         for contact in body.contacts:

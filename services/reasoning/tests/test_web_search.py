@@ -67,7 +67,7 @@ def test_success_returns_top_three_cleaned_and_sends_key_and_params():
 
     c = Clock()
     out = web_search.search("पुणे बातम्या", "mr", client=client(h), clock=c, sleep=c.sleep)
-    assert out == [{"title": f"T{i} x", "snippet": f"snippet & {i} bold"} for i in range(3)]
+    assert out == [{"title": f"T{i} x", "snippet": f"snippet & {i} bold", "url": f"https://e.test/{i}"} for i in range(3)]
     req = seen[0]
     assert req.headers["x-subscription-token"] == KEY
     q = dict(req.url.params)
@@ -244,9 +244,9 @@ def brave(monkeypatch):
 
 
 def test_needs_web_searches_speaks_a_filler_and_answers_from_snippets(core_http, uid, brave):
-    llm = Llm(_understand(query="ताज्या बातम्या"), answer="संसदेत चर्चा सुरू आहे. https://x.test **ठीक**")
-    res = make(core_http, llm).handle(uid, "आजच्या ताज्या बातम्या काय आहेत")
-    assert brave == [("ताज्या बातम्या", "mr")]
+    llm = Llm(_understand(query="भारत सामना निकाल"), answer="संसदेत चर्चा सुरू आहे. https://x.test **ठीक**")
+    res = make(core_http, llm).handle(uid, "काल भारताचा सामना कोण जिंकला")
+    assert brave == [("भारत सामना निकाल", "mr")]
     assert res.filler == "बघतो…"
     assert res.reply == "संसदेत चर्चा सुरू आहे. ठीक" and "http" not in res.reply and "*" not in res.reply
     assert res.intent == "CHAT" and res.source == "llm" and res.trace["web"] == "search"
@@ -271,18 +271,18 @@ def test_medicine_and_health_words_never_search(core_http, uid, brave, text):
 
 def test_search_failure_gives_the_fixed_line(core_http, uid, monkeypatch):
     monkeypatch.setattr(web_search, "search", lambda *a, **k: None)
-    res = make(core_http, Llm(_understand())).handle(uid, "आजच्या बातम्या सांग")
+    res = make(core_http, Llm(_understand())).handle(uid, "आजचा सामना कोण जिंकला")
     assert res.reply == rp.R["mr"]["web_none"] == "आत्ता माहिती मिळाली नाही." and res.source == "rules"
 
 
 def test_missing_key_gives_the_fixed_line_without_a_request(core_http, uid, monkeypatch):
     monkeypatch.delenv("BRAVE_API_KEY")
-    res = make(core_http, Llm(_understand())).handle(uid, "आजच्या बातम्या सांग")
+    res = make(core_http, Llm(_understand())).handle(uid, "आजचा सामना कोण जिंकला")
     assert res.reply == "आत्ता माहिती मिळाली नाही."
 
 
 def test_llm_answer_failure_gives_the_fixed_line(core_http, uid, brave):
-    res = make(core_http, Llm(_understand(), answer="")).handle(uid, "आजच्या बातम्या सांग")
+    res = make(core_http, Llm(_understand(), answer="")).handle(uid, "आजचा सामना कोण जिंकला")
     assert res.reply == "आत्ता माहिती मिळाली नाही."
 
 
@@ -311,44 +311,62 @@ def test_eval_set_has_at_least_fifteen_turns():
 
 
 def test_web_eval_routing_latency_and_samples(core_http, uid, monkeypatch):
-    """System result: every eval turn routes as expected with a mocked Brave/Open-Meteo/LLM. The latencies are the
-    in-process cost of the pipeline only (all network mocked at zero delay); they say nothing about real Brave/LLM."""
+    """System result: every eval turn routes as expected with a mocked Brave/Open-Meteo/LLM. News turns go through the
+    REAL web_search code (mock HTTP), so the domain filter and the spoken source are exercised, not faked. The
+    latencies are the in-process cost only (network mocked at zero delay); they say nothing about real Brave/LLM."""
     monkeypatch.setenv("ARJUN_CITY", "Pune")
     monkeypatch.setattr(weather, "current_weather", lambda city, lang="mr", **k: f"{city}: ढगाळ आहे.")
-    rows, lat, correct = [], [], 0
+    real_search = web_search.search
+    for label, url in (("लोकमत", "https://www.lokmat.com/rss"), ("लोकसत्ता", "https://loksatta.com/feed")):
+        core_http.post(f"/users/{uid}/app-links", json={"kind": "rss", "label": label, "value": url, "allow_other_host": True})
+    rows, lat = [], []
     for case in _cases():
-        searches = []
-        snippets = case.get("snippets")
+        web_search.reset()
+        raw = case.get("raw") or [
+            {"title": s["title"], "description": s["snippet"], "url": "https://any.example/x"} for s in case.get("snippets") or []
+        ]
+        seen = {"q": [], "domains": []}
 
-        def fake(query, lang="mr", _s=searches, _sn=snippets, **kw):
-            _s.append(query)
-            return _sn
+        def fake(query, lang="mr", _raw=raw, _seen=seen, **kw):
+            _seen["q"].append(query)
+            _seen["domains"].append(kw.get("domains"))
+            http = client(lambda req: httpx.Response(200, json={"web": {"results": _raw}}))
+            kw.pop("client", None)
+            return real_search(query, lang, client=http, sleep=lambda s: None, **kw)
 
         monkeypatch.setattr(web_search, "search", fake)
+        if case.get("no_links"):
+            for link in core_http.get(f"/users/{uid}/app-links").json():
+                core_http.delete(f"/users/{uid}/app-links/{link['id']}")
         llm = Llm(_understand(web=case["web"], query=case.get("q", "")), answer=case.get("answer", ""))
         eng = make(core_http, llm)
         t = time.perf_counter()
         res = eng.handle(uid, case["text"])
         lat.append((time.perf_counter() - t) * 1000)
-        how = res.trace.get("web")
-        expect = case["expect"]
+        how, expect, queries = res.trace.get("web"), case["expect"], seen["q"]
+        shown = llm.web_calls[0][0] if llm.web_calls else ""
         ok = {
-            "weather": how == "weather" and not searches,
-            "search": how == "search" and len(searches) == 1 and res.reply == case["answer"] and res.filler,
+            "weather": how == "weather" and not queries,
+            "search": how == "search" and len(queries) == 1 and res.reply == case["answer"] and res.filler,
             "search_fail": how == "search_failed" and res.reply == "आत्ता माहिती मिळाली नाही.",
-            "blocked": not searches and not res.filler and bool(res.reply),
-            "safety": res.mode == "safety" and not searches and not llm.calls,
-            "no_web": how is None and not searches and not res.filler,
+            "blocked": not queries and not res.filler and bool(res.reply),
+            "safety": res.mode == "safety" and not queries and not llm.calls,
+            "no_web": how is None and not queries and not res.filler,
+            # news: only family domains asked for, only an approved result shown to the LLM, source named aloud
+            "news": how == "search_news" and seen["domains"] == [["lokmat.com", "loksatta.com"]]
+            and "random-news.example" not in shown and "असत्यापित" not in shown
+            and res.reply == rp.R[case["lang"]]["web_source"].format(src=case["source"], answer=case["answer"]),
+            "news_none": how == "news_no_approved_result" and res.reply == "आत्ता माहिती मिळाली नाही." and not llm.web_calls,
+            "news_nosource": how == "news_no_source" and not queries and not llm.web_calls,
         }[expect]
         rows.append((case["id"], expect, bool(ok), res.reply))
-        correct += bool(ok)
     bad = [r for r in rows if not r[2]]
     assert not bad, bad
     lat.sort()
     out = os.environ.get("WEB_EVAL_REPORT")
     if out:
         Path(out).write_text(json.dumps({
-            "turns": len(rows), "routed_ok": correct, "p50_ms": round(statistics.median(lat), 1),
+            "turns": len(rows), "routed_ok": sum(r[2] for r in rows), "p50_ms": round(statistics.median(lat), 1),
             "p95_ms": round(lat[min(len(lat) - 1, int(len(lat) * 0.95))], 1),
             "samples": [{"id": r[0], "reply": r[3]} for r in rows],
         }, ensure_ascii=False, indent=1), encoding="utf-8")

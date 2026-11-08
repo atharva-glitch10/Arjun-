@@ -5,6 +5,7 @@ one: reasoning (which checks the pending action), the stale / safety / confirmat
 `bridge.should_speak`, the screen attributes, then speech. There is no second path to keep in step.
 """
 
+import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -13,6 +14,10 @@ from bridge import BridgeReply, should_speak
 from turnlog import TurnLog
 
 logger = logging.getLogger("arjun.responder")
+
+PREPARE_WAIT_S = 0.35  # /turn/prepare is asked for within 0.3 s; this is the hard stop
+HOLD_LINE = "थोडा वेळ लागतोय…"  # used when prepare gave no translated hold line
+SLOW_AFTER_S = 5.0  # hold line if the answer is still not here after this long
 
 
 class Responder:
@@ -26,7 +31,10 @@ class Responder:
         speakable: Callable[[BridgeReply], str] | None = None,
         say_reply: Callable[[BridgeReply], Awaitable[bool | None]] | None = None,
         on_mode: Callable[[str], None] | None = None,
+        prepare: Callable[[str], Awaitable[dict | None]] | None = None,  # type: ignore[type-arg]
+        slow_after_s: float = SLOW_AFTER_S,
     ) -> None:
+        self.prepare, self.slow_after_s = prepare, slow_after_s
         self.turns, self.ask, self.say, self.publish = turns, ask, say, publish
         self.thinking = thinking  # the "विचार करतोय…" marker on the elder screen
         # reply -> the exact text for TTS (tagged for Timbre v3, plain otherwise); default: the screen text
@@ -40,7 +48,7 @@ class Responder:
         await self._mark_thinking(True)
         # Never silence: `ask` turns any reasoning failure into a fixed spoken line.
         try:
-            reply = await self.ask(transcript)
+            reply = await self._ask_with_filler(transcript)
         finally:
             await self._mark_thinking(False)
         self.turns.reasoning_done(
@@ -76,6 +84,34 @@ class Responder:
             logger.exception("TTS failed for reply (mode=%s)", reply.mode)
             self.turns.not_spoken(idx, "tts_failed")
         return "spoken"
+
+    async def _ask_with_filler(self, transcript: str) -> BridgeReply:
+        """/turn runs the whole time. In parallel: /turn/prepare (<=0.3 s); if it says a web lookup is coming, the
+        filler is spoken at once; if the answer is still not here after `slow_after_s`, one "it takes a while" line.
+        A failed or slow prepare just means no filler. The answer itself always comes from `ask` (the /turn call)."""
+        t0 = time.monotonic()
+        answer = asyncio.ensure_future(self.ask(transcript))
+        prep = None
+        if self.prepare is not None:
+            try:
+                prep = await asyncio.wait_for(self.prepare(transcript), timeout=PREPARE_WAIT_S)
+            except Exception:  # noqa: BLE001 - timeout or any error: no filler, the turn goes on
+                prep = None
+        web = bool(prep and prep.get("needs_web"))
+        if web and prep and prep.get("filler") and not answer.done():
+            await self._say_quiet(str(prep["filler"]))
+        wait = self.slow_after_s - (time.monotonic() - t0)
+        if wait > 0:
+            await asyncio.wait({answer}, timeout=wait)
+        if not answer.done():  # any slow turn, web or not
+            await self._say_quiet(str((prep or {}).get("hold") or HOLD_LINE))
+        return await answer
+
+    async def _say_quiet(self, text: str) -> None:
+        try:
+            await self.say(text)
+        except Exception:  # noqa: BLE001 - a filler must never break the turn
+            logger.debug("could not speak the filler", exc_info=True)
 
     async def _mark_thinking(self, on: bool) -> None:
         if self.thinking is None:
