@@ -1,7 +1,8 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
 ## Prisma v3 handshake refused on the laptop (2026-11-08 21:52)
-- `GNANI_STT_IMPL=v3` failed every connection ("did not confirm connection"); laptop reverted to `plugin`. Likely
+- `GNANI_STT_IMPL=v3` failed every connection. Gnani reason (now logged, 21:55): "exactly one locale is required" for
+  `language_code`; several languages now send `indic-auto`. Earlier also fixed: likely
   cause: Devanagari keyterms/speaker names sent raw in WS headers (`ensure_ascii=False`); Gnani's docs require
   escaping. Now ASCII-escaped, and a refused handshake logs Gnani's own reason. Unit-tested; not yet verified live.
 

@@ -163,9 +163,9 @@ def _fetch_user_languages(user_id: int) -> dict:
 
 
 def prisma_language_hints(preferred: list[str]) -> list[str]:
-    """Prisma v3 language hints (max 4): the elder's own languages first, then Hindi and English, because elders
-    switch into Hinglish mid-sentence; with only "mr-IN" Prisma labelled Hindi speech as Marathi (laptop 2026-11-08)
-    and Arjun answered in Marathi. GNANI_STT_LANGUAGE_HINTS="mr-IN,hi-IN" overrides; "auto" = indic-auto."""
+    """Languages Arjun expects (max 4): the elder's own first, then Hindi and English, because elders switch into
+    Hinglish mid-sentence. More than one -> Prisma v3 gets language_code=indic-auto (Gnani accepts exactly one locale,
+    else automatic identification). GNANI_STT_LANGUAGE_HINTS="mr-IN" pins one locale; "auto" = indic-auto."""
     override = os.environ.get("GNANI_STT_LANGUAGE_HINTS", "").strip()
     if override.lower() == "auto":
         return []
