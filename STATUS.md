@@ -1,5 +1,10 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Held sentence never answered (2026-11-08 21:36, laptop)
+- "नमस्कार अर्जुन" (2 words) was held for more speech; the next speech produced no words, so no turn ever completed
+  and the held text was never answered. Now a held part is answered after `ARJUN_HELD_ANSWER_S` (default 4 s) with no
+  new words. Unit-tested (`test_held_watchdog.py`); not yet heard live.
+
 ## Arjun speaks again; cloned voice heard live (2026-11-08 evening)
 - Root cause of "answers on screen, never speaks": `session.say(text, tts=...)` (since 66e76d0) - LiveKit 1.8.6
   `say()` has no `tts`; every reply raised TypeError. Fixed with `say(audio=tts_audio(...))`;
