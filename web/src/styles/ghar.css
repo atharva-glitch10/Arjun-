@@ -407,9 +407,9 @@ h1, h2, p { margin: 0; }
 .fam-seen.ok { background: var(--ghar-leaf-soft); color: var(--ghar-leaf-deep); }
 .fam-tech summary { cursor: pointer; font-size: 18px; font-weight: 800; color: #5C4210; }
 .fam-tech[open] summary { margin-bottom: 14px; }
-.emergency-card .fam-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: end; }
-.emergency-card .fam-form label { display: flex; flex-direction: column; gap: 6px; font-size: 15px; font-weight: 700; color: #5C4210; }
-.emergency-card .fam-form input:not([type="checkbox"]) { min-height: 48px; padding: 8px 12px; font-size: 17px; font-family: inherit; color: #2B1B05; }
+.emergency-card .fam-form, .names-card .fam-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: end; }
+.emergency-card .fam-form label, .names-card .fam-form label { display: flex; flex-direction: column; gap: 6px; font-size: 15px; font-weight: 700; color: #5C4210; }
+.emergency-card .fam-form input:not([type="checkbox"]), .names-card .fam-form input, .names-card .fam-form select { min-height: 48px; padding: 8px 12px; font-size: 17px; font-family: inherit; color: #2B1B05; }
 .emergency-card .fam-form label.check { flex-direction: row; align-items: center; gap: 10px; font-size: 16px; }
 .emergency-card .fam-form label.check input { width: 22px; height: 22px; }
 .emergency-card > .fbtn { align-self: flex-start; }

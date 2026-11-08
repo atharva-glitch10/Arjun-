@@ -165,7 +165,7 @@ def _fetch_user_languages(user_id: int) -> dict:
 
 def prisma_language_hints(preferred: list[str]) -> list[str]:
     """Languages Arjun expects (max 4): the elder's own first, then Hindi and English, because elders switch into
-    Hinglish mid-sentence. More than one -> Prisma v3 gets language_code=indic-auto (Gnani accepts exactly one locale,
+    Hinglish mid-sentence. Any other first language is pinned alone (see below). More than one -> Prisma v3 gets language_code=indic-auto (Gnani accepts exactly one locale,
     else automatic identification). GNANI_STT_LANGUAGE_HINTS="mr-IN" pins one locale; "auto" = indic-auto."""
     override = os.environ.get("GNANI_STT_LANGUAGE_HINTS", "").strip()
     if override.lower() == "auto":
@@ -173,6 +173,10 @@ def prisma_language_hints(preferred: list[str]) -> list[str]:
     codes = [c.strip() for c in override.split(",") if c.strip()] if override else [
         f"{str(c).split('-')[0].lower()}-IN" for c in preferred if str(c).strip()
     ] + ["hi-IN", "en-IN"]
+    # Her own language outside Marathi / Hindi / English (Tamil, Kannada...) is PINNED: indic-auto heard a short
+    # Tamil "இனிய இரவு" as Hindi (live, 2026-11-08). Prisma's codemix output still keeps her English words.
+    if not override and codes and codes[0].split("-")[0] not in {"mr", "hi", "en"}:
+        return [codes[0]]
     out: list[str] = []
     for code in codes:
         if code not in out:

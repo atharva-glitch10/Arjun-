@@ -84,11 +84,18 @@ export function HeartMark({ size = 40 }: { size?: number }) {
   );
 }
 
+/** What she calls her companion (family-set in Settings; blank = अर्जुन). Set by ElderApp after it loads the user. */
+let companionLabel = "अर्जुन";
+export function setCompanionLabel(name: string | undefined): void {
+  const n = (name ?? "").trim();
+  companionLabel = !n || n.toLowerCase() === "arjun" ? "अर्जुन" : n;
+}
+
 function Brand() {
   return (
     <div className="ad-brand">
       <HeartMark size={40} />
-      <span>अर्जुन</span>
+      <span>{companionLabel}</span>
     </div>
   );
 }

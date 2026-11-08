@@ -27,7 +27,7 @@ export interface User {
   opener_start: string;
   opener_end: string;
   consent_distress_alert: boolean;
-  speech_style: { rate: "normal" | "slow"; volume: "normal" | "loud"; simple: boolean };
+  speech_style: { rate: "normal" | "slow"; volume: "normal" | "loud"; simple: boolean; companion_name?: string };
 }
 
 export interface VoiceMetricStage {

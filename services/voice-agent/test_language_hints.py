@@ -10,7 +10,8 @@ def test_marathi_elder_also_gets_hindi_and_english(monkeypatch):
     monkeypatch.delenv("GNANI_STT_LANGUAGE_HINTS", raising=False)
     a = _agent(monkeypatch)
     assert a.prisma_language_hints(["mr"]) == ["mr-IN", "hi-IN", "en-IN"]
-    assert a.prisma_language_hints(["ta", "hi"]) == ["ta-IN", "hi-IN", "en-IN"]
+    assert a.prisma_language_hints(["ta", "hi"]) == ["ta-IN"]  # pinned: indic-auto misheard Tamil as Hindi
+    assert a.prisma_language_hints(["kn"]) == ["kn-IN"]
     assert len(a.prisma_language_hints(["mr", "ta", "kn", "te"])) == 4
 
 
