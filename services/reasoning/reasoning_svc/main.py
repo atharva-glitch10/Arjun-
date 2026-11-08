@@ -97,6 +97,7 @@ class TurnOut(BaseModel):
     trace: dict[str, object]
     speech_style: dict[str, object] = {"rate": "normal", "volume": "normal", "simple": False}
     silent: bool = False
+    filler: str = ""  # "बघतो…" for a live web lookup (the reply above is the answer, ready after the search)
 
 
 @app.get("/health")

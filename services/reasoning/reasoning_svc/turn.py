@@ -10,6 +10,7 @@
 
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -88,6 +89,7 @@ from .textutil import (
     normalize,
     tokens,
 )
+from .tools import weather, web_search
 
 
 def _reply_language(language_code: str | None, text: str, default: str) -> str:
@@ -114,6 +116,14 @@ def _is_system_marker(text: str) -> bool:
 
 log = logging.getLogger("reasoning.turn")
 
+_WEB_TURN_BUDGET_S = 7.0  # whole turn, understanding + search + answer (voice path waits 7.5 s)
+_WEB_ANSWER_RESERVE_S = 1.5  # kept back for the answer call when sizing the search timeout
+_WEB_BLOCK = re.compile(
+    r"औषध|गोळी|गोळ्या|डोस|इंजेक्शन|दवा|दवाई|खुराक|medicine|tablet|dose|injection|pill|"
+    r"बीपी|शुगर|रक्तदाब|ब्लड|bp|sugar|diabet|मधुमेह|ताप|fever|दुखत|दर्द|pain|ऑपरेशन|surgery",
+    re.IGNORECASE,
+)
+_WEATHER = re.compile(r"पाऊस|पावस|हवामान|तापमान|थंडी|उकाडा|मौसम|बारिश|तापमान|weather|mausam|temperature|rain|\bpa+u?s\b|havaman|hawaman|b(?:a+)?rish", re.IGNORECASE)
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
 _UNDERSTAND_TIMEOUT_S = 3.0
 _ACTION_CONFIDENCE_FLOOR = 0.4  # below this an LLM action intent is ignored and the rules decide
@@ -277,6 +287,9 @@ class TurnResult:
     action: dict[str, Any] = field(default_factory=lambda: dict(NO_ACTION))
     speech_style: dict[str, Any] = field(default_factory=lambda: {"rate": "normal", "volume": "normal", "simple": False})
     silent: bool = False
+    # Spoken "बघतो…" for a turn that needed a live web lookup. The reply is only ready after the search, so a caller
+    # that wants to say it first must play this before waiting; /turn itself still answers once.
+    filler: str = ""
 
 
 class TurnEngine:
@@ -561,6 +574,13 @@ class TurnEngine:
             if is_lonely(text):
                 return self._lonely(user_id, text, lang, trace, t0, now)
 
+        # 3c. live facts (weather, news, scores): only on the LLM's say-so, only after every safety path above
+        if pending is None and draft is None and parsed.intent == "CHAT" and llm and llm.get("needs_web"):
+            web = self._web_turn(user_id, text, str(llm.get("web_query") or ""), lang, trace, t0)
+            if web is not None:
+                self._convo_at[user_id] = self._mono()
+                return web
+
         # 4. dispatch
         try:
             result = self._dispatch(user_id, text, parsed, pending, draft, profile, now, lang, llm)
@@ -702,6 +722,23 @@ class TurnEngine:
         except (CoreError, httpx.HTTPError, AttributeError):
             pass
         return ""
+
+    def _story_recall(self, uid: int, text: str) -> str:
+        """RAG over HER OWN saved stories only (boundary 2: past stories, never reminders or medicines). The text comes
+        from stored rows, so Arjun can refer to a past story but never invent one. Any failure means no recall."""
+        if len(text.strip()) < 6:
+            return ""
+        try:
+            hits = self.core.search_stories(uid, text, 2)
+        except Exception:  # core-api down or an older core: the reply just has no memory block
+            return ""
+        lines = [str(h.get("summary", "")).strip()[:240] for h in hits if h.get("summary")]
+        if not lines:
+            return ""
+        return (
+            "\nHER OWN PAST STORIES (stored text, related to what she just said). Mention one only if it fits "
+            "naturally; use only these words, never add details or invent a memory: " + " | ".join(lines)
+        )
 
     def _base_context(self, uid: int, now: datetime, user: dict[str, Any]) -> str:
         """A short, private context block for the companion LLM (<=700 chars), cached for five minutes.
@@ -2482,6 +2519,7 @@ class TurnEngine:
         view = self.memory.view(uid, now)
         user = self.core.user(uid)
         context = self._user_context(uid, now, user, text)
+        context += self._story_recall(uid, text)
         style = user.get("speech_style") or {}
         if style.get("simple"):
             context += (
@@ -2536,6 +2574,50 @@ class TurnEngine:
             if shaped != reply:
                 reply, speech = shaped, ""  # the voice tags sat on the old words: say the shaped reply plainly
         return reply, speech, from_llm
+
+    def _web_turn(self, uid: int, text: str, query: str, lang: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
+        """A live-facts question: Open-Meteo for weather, Brave snippets for the rest, answered by the LLM from those
+        snippets only. Never for medicine / health words (a fixed "ask the doctor" line instead). Any failure is the
+        fixed "no information" line; this method never raises and never makes up an answer."""
+        r = rp.R[rp.lang_or_default(lang)]
+
+        def done(reply: str, how: str, source: str = "rules") -> TurnResult:
+            return TurnResult(
+                reply, "CHAT", "companion", lang, source=source, filler=r["web_filler"],
+                trace=self._t({**trace, "intent": "CHAT", "web": how}, t0),
+            )
+
+        if _WEB_BLOCK.search(text) or symptom_category(text):
+            return TurnResult(
+                r["web_health"], "CHAT", "companion", lang, trace=self._t({**trace, "intent": "CHAT", "web": "blocked"}, t0)
+            )
+        # one wall-clock budget for the whole lookup, kept under the voice path's wait (7.5 s)
+        end = self._llm_deadline - self._llm_timeout_s + _WEB_TURN_BUDGET_S
+        try:
+            if _WEATHER.search(text):
+                city = os.environ.get("ARJUN_CITY", "").strip()  # household city, like ARJUN_TZ; never guessed
+                if not city:
+                    return TurnResult(r["web_city"], "CHAT", "companion", lang, trace=self._t({**trace, "intent": "CHAT", "web": "ask_city"}, t0))
+                line = weather.current_weather(city, rp.lang_or_default(lang))
+                return done(line, "weather") if line else done(r["web_none"], "weather_failed")
+            search_s = min(web_search.TIMEOUT_S, end - self._mono() - _WEB_ANSWER_RESERVE_S)
+            if search_s < 1.0:
+                return done(r["web_none"], "no_budget")
+            results = web_search.search(query or text, lang, timeout_s=search_s)
+            if not results:
+                return done(r["web_none"], "search_failed")
+            self._llm_deadline = end  # the answer call may use what is left of the lookup budget
+            if self.evon is None or not hasattr(self.evon, "web_answer") or self._llm_remaining() < _MIN_LLM_BUDGET_S:
+                return done(r["web_none"], "no_llm")
+            raw = self.evon.web_answer(text, lang, results, timeout=self._llm_remaining())  # type: ignore[attr-defined]
+            clean, _ = split_voice_tags(raw) if raw else (None, "")
+            reply, _ = sanitize_companion(clean, lang, user_text=text) if clean else (None, [])
+            if not reply:
+                return done(r["web_none"], "answer_failed")
+            return done(reply, "search", "llm")
+        except Exception as exc:  # noqa: BLE001 - a web lookup never breaks a turn
+            log.info("web turn failed: %s", type(exc).__name__)
+            return done(r["web_none"], "error")
 
     def _specific_clarification(self, uid: int, text: str, lang: str) -> str:
         """Topic-naming repair for an uncertain transcript; never emit a generic repeat prompt."""

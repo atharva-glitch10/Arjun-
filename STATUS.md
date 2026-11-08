@@ -1,5 +1,11 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Live web search (2026-11-08)
+- `reasoning_svc/tools/web_search.py` (Brave only, key `BRAVE_API_KEY`, 4 s, 10-min cache, one retry, 1 req/s limiter, any failure -> None) and `tools/weather.py` (Open-Meteo, city from `ARJUN_CITY`; unset -> Arjun asks, never guesses). The users table has no city column; adding one is a core-api change not made here.
+- The LLM-first JSON gained `needs_web` / `web_query`. Only a `chat` turn that survives every safety, symptom, lonely, pending and draft path can search; medicine/health words never do (fixed "ask the doctor" line). The answer is written by the LLM from the snippets only (<=2 sentences, URLs/markdown stripped, same sanitizer as chat). Missing key or any failure -> "आत्ता माहिती मिळाली नाही."
+- `TurnResult.filler` ("बघतो…") is returned with the answer. NOT yet played early: `/turn` answers once after the search, and voice-agent does not speak `filler` first. Worst case understand 3 s + search 4 s + answer must fit 7 s (turn budget `_WEB_TURN_BUDGET_S`), the voice wait is 7.5 s.
+- Verified with mocked Brave/Open-Meteo/LLM only: 25 new tests, 18-turn eval (`eval/web_eval.jsonl`) routes 18/18. No Brave or Sarvam key is configured here, so real search latency and real answer quality are UNMEASURED; the ~25/37 ms p50/p95 of the mocked run is in-process overhead only. CLAUDE.md boundary 10 says news facts come only from approved sources: the owner must decide whether Brave counts.
+
 
 ## Emergency escalation + live location (2026-11-08 23:30)
 - Emergency reply -> Telegram + dashboard alarm -> family phoned (max 2) -> "तुम्ही ठीक आहात का?" -> 10 s with no
