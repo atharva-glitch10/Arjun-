@@ -66,6 +66,18 @@ _HI_MARKERS = (
 _EN_MARKERS = ("the", "is", "to", "what", "my", "remind", "me", "today", "tomorrow", "yes", "no")
 
 
+# Marathi-only verb / case endings ("दुखतंय", "जातोय", "छातीत", "करायचं"). Prisma's indic-auto often labels short
+# Marathi sentences hi-IN; these words never occur in Hindi, so they outrank that label.
+_MR_ENDINGS = re.compile(r"(?:तंय|तोय|तेय|लंय|लोय|लेय|ायचं|ायला|ातीत|ाऱ्या|तात|तोस|त्ये)$")
+_MR_WORDS = frozenset(_MR_MARKERS) | {"माझ्या", "माझा", "माझी", "माझं", "पडले", "पडलो", "होतंय", "छातीत", "दुखतंय",
+                                      "घेता", "येत", "नाहीये", "आहेत", "आम्ही", "मी", "बरं", "वाटतंय"}
+
+
+def marathi_evidence(text: str) -> int:
+    """How many words are unmistakably Marathi (not Hindi)."""
+    return sum(1 for t in tokens(normalize(text)) if t in _MR_WORDS or _MR_ENDINGS.search(t))
+
+
 def detect_language(text: str, default: str) -> str:
     norm = normalize(text)
     toks = set(tokens(norm))

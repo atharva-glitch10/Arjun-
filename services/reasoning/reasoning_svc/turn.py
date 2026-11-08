@@ -80,7 +80,22 @@ from .parser import (
     parse,
 )
 from .readings import format_bp, parse_bp
-from .textutil import collapse_repeats, detect_language, has_any, normalize, tokens
+from .textutil import (
+    collapse_repeats,
+    detect_language,
+    has_any,
+    marathi_evidence,
+    normalize,
+    tokens,
+)
+
+
+def _reply_language(language_code: str | None, text: str, default: str) -> str:
+    """STT's language label, except that clearly Marathi words win over a hi-IN label (Prisma confuses the two)."""
+    detected = _detected_reply_language(language_code)
+    if detected in (None, "hi") and marathi_evidence(text) >= 1:
+        return "mr"
+    return detected or detect_language(text, default)
 
 
 def _detected_reply_language(language_code: str | None) -> str | None:
@@ -359,7 +374,7 @@ class TurnEngine:
                 default_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
                 default_lang = "mr"
-            lang = _detected_reply_language(language_code) or detect_language(text, default_lang)
+            lang = _reply_language(language_code, text, default_lang)
             if emergency:
                 return self._safety(user_id, lang, trace, t0, kind="emergency")
             return self._distress(user_id, lang, trace, t0)
@@ -372,7 +387,7 @@ class TurnEngine:
             lang = detect_language(text, "mr")
             r = rp.R[rp.lang_or_default(lang)]
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
-        lang = _detected_reply_language(language_code) or detect_language(text, user["language"])
+        lang = _reply_language(language_code, text, user["language"])
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
         style = user.get("speech_style") or {"rate": "normal", "volume": "normal", "simple": False}
