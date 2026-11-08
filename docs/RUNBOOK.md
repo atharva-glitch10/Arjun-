@@ -42,6 +42,10 @@ Close the five windows.
 ## Voice cloning setup
 `.env`: `VOICE_CLONE_KEY=<Fernet key>` (make one: `.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
 Never change it later (saved voices stop working) and never share it. Dashboard: Family & memories, A familiar voice.
+- Record 20-30 s of the person speaking **Marathi** naturally in a quiet room: the clone copies the sample's accent.
+- Gnani's voice-clone API has no language field. If Marathi still sounds Hindi-like, set
+  `ARJUN_CLONED_VOICE_LANGUAGES=hi,en` in `.env` and restart: Marathi replies then use Arjun's Timbre voice.
+- `ARJUN_CLONED_VOICE_METHOD=sse` (default) streams the cloned voice; `rest` waits for the whole clip.
 
 ## Checks before a demo
 `pytest` in services/core-api, reasoning, voice-agent, scheduler; `ruff check .`; in web `npx tsc --noEmit` and

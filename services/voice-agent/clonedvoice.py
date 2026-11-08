@@ -7,6 +7,8 @@ Hard rule: emergencies, safety checks, medicines, reminders, confirmations, call
 own voice, so a cloned voice can never be the one telling an elder something urgent or asking them to act.
 """
 
+import base64
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -15,6 +17,12 @@ from typing import Any, Callable
 import httpx
 
 ENABLED = os.environ.get("ARJUN_CLONED_VOICE", "1").strip() != "0"
+# How the cloned voice is fetched from Gnani: "sse" (default, starts playing on the first chunk) or "rest" (one file).
+METHOD = os.environ.get("ARJUN_CLONED_VOICE_METHOD", "sse").strip().lower()
+# Languages the cloned voice may speak, e.g. "hi,en" (prefix of the detected code). Empty = every language. Gnani's
+# voice-clone API takes no language field, so Marathi text can come out Hindi-sounding; the family can keep Marathi
+# in Arjun's own Timbre voice by leaving "mr" out.
+LANGUAGES = tuple(x.strip().lower() for x in os.environ.get("ARJUN_CLONED_VOICE_LANGUAGES", "").split(",") if x.strip())
 CACHE_S = 60.0
 _CHAT_INTENTS = ("chat", "companion", "story", "smalltalk", "greeting", "memory")
 _NEVER = ("emergency", "safety", "medicine", "reminder", "distress", "call", "confirm", "money", "appointment")
@@ -47,6 +55,55 @@ def allowed(reply: Any) -> bool:
     if any(word in intent for word in _NEVER):
         return False
     return any(intent.startswith(word) for word in _CHAT_INTENTS) or mode in ("companion", "story")
+
+
+def language_allowed(detected: str | None, languages: tuple[str, ...] | None = None) -> bool:
+    """May the cloned voice speak a reply in this detected language? Unknown language counts as allowed only when no
+    list is set (so a configured list never lets an unidentified language through)."""
+    langs = LANGUAGES if languages is None else languages
+    if not langs:
+        return True
+    code = (detected or "").lower()
+    return bool(code) and any(code.startswith(lang) for lang in langs)
+
+
+class SseError(Exception):
+    """Gnani reported an error inside the SSE stream."""
+
+
+class SseParser:
+    """Incremental reader for Gnani TTS SSE (same rules as the plugin's reader): skip keep-alives / metadata,
+    accumulate JSON that spans lines, emit each audio chunk once, stop at is_final, raise on an error payload."""
+
+    def __init__(self) -> None:
+        self.buf = ""
+        self.done = False
+
+    def feed(self, raw: str) -> list[bytes]:
+        out: list[bytes] = []
+        for piece in raw.splitlines() or [raw]:
+            line = piece.strip()
+            if self.done or not line or line.startswith((":", "event:", "id:", "retry:")):
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+                if not line:
+                    continue
+            self.buf += line
+            try:
+                payload = json.loads(self.buf)
+            except json.JSONDecodeError:
+                continue
+            self.buf = ""
+            if payload.get("status") == "error" or "error" in payload:
+                raise SseError(str(payload.get("message") or payload.get("error") or "error")[:200])
+            if payload.get("status") == "streaming_started":
+                continue
+            if payload.get("audio"):
+                out.append(base64.b64decode(payload["audio"]))
+            if payload.get("is_final"):
+                self.done = True
+        return out
 
 
 def cloned_payload(base: dict[str, Any], voice: ClonedVoice) -> dict[str, Any]:

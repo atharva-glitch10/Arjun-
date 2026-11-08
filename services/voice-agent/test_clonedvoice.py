@@ -55,3 +55,30 @@ def test_source_caches_and_survives_errors():
     assert src.get().voice_id == 3
     src.forget()
     assert src.get() is None
+
+
+def test_sse_parser_emits_each_chunk_once_across_split_lines():
+    import base64 as b64
+
+    import pytest
+
+    a, b = b64.b64encode(b"AAAA").decode(), b64.b64encode(b"BBBB").decode()
+    p = cv.SseParser()
+    got = []
+    got += p.feed(": keep-alive\n")
+    got += p.feed('data: {"status": "streaming_started"}\n')
+    got += p.feed('data: {"audio": "' + a[:3])  # JSON split across network chunks
+    got += p.feed(a[3:] + '"}\n')
+    got += p.feed('data: {"audio": "' + b + '", "is_final": true}\n')
+    got += p.feed('data: {"audio": "' + a + '"}\n')  # after final: ignored
+    assert got == [b"AAAA", b"BBBB"] and p.done
+    with pytest.raises(cv.SseError):
+        cv.SseParser().feed('data: {"status": "error", "message": "bad embedding"}\n')
+
+
+def test_language_switch():
+    assert cv.language_allowed("mr-IN", ())  # no list: every language
+    assert cv.language_allowed(None, ())
+    assert cv.language_allowed("hi-IN", ("hi", "en"))
+    assert not cv.language_allowed("mr-IN", ("hi", "en"))  # Marathi stays in Arjun's Timbre voice
+    assert not cv.language_allowed(None, ("hi",))  # unknown language never passes a configured list
