@@ -392,6 +392,9 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
 
   const evening = forceEvening ?? isEvening(now);
   const shownDose = dueDose ?? lastDose.current;
+  // The familiar-voice chip only where Arjun may actually chat in that voice: never on medicine, safety or confirm.
+  const chipScreen =
+    ["listen", "reply", "story"].includes(shown as string) || (shown === "home" && !(medicineOpen && shownDose));
   if (dueDose) lastDose.current = dueDose;
   const card = pending?.action_type === "CREATE_REMINDER" ? pendingToCard(pending, now) : null;
   const shareNames = contacts.slice(0, 3);
@@ -595,7 +598,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           <span className="hf-dot" aria-hidden /> मी ऐकतोय · कधीही बोला
         </div>
       )}
-      {clonedName && !["safety", "confirm"].includes(shown as string) && (
+      {clonedName && chipScreen && (
         <div className="voice-chip" role="status">
           <span aria-hidden>♥</span> {voiceChipText(displayLanguage, clonedName)}
         </div>
