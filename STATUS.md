@@ -1,5 +1,22 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Voice cloning, voice diagnostics, single session (2026-11-08)
+- **Voice cloning (consent-first)** merged (#2-#4): family dashboard "A familiar voice"; Gnani voice-clone embeddings
+  called once by core-api (CLAUDE.md rule 12 exception, PROPOSED); only the Fernet-encrypted embedding is stored
+  (`VOICE_CLONE_KEY`); companion chat only via `vachana-vc-v1`; safety/medicine/reminder/confirm/action/fallback always
+  Timbre; cloned-TTS error or silence falls back to Timbre. **Verified live:** adding a voice on a real laptop (Gnani
+  accepted the WAV). **NOT verified live:** hearing a cloned reply (no full spoken turn ran yet).
+- **Arjun silent on the laptop (open):** a 2026-11-08 log showed the mic stream read for ~20 s and no transcript, no
+  turn, no error. Root cause NOT found yet. Added `ARJUN_DEBUG_VOICE` (default on) logging per step, never the words:
+  `voice: user listening -> speaking`, `stt interim/final (chars, language)`, `turn -> reasoning`, `turn answered in N ms`,
+  `reply voice: ...`, `error detail` (keys scrubbed), plus a warning when speech is detected but Prisma returns nothing.
+- **Duplicate rooms fixed:** a tap during the page's pre-warm join opened a second room (two Arjun jobs per elder). The
+  tap now waits for the pre-warm join. Verified by reading the code path and tsc/tests, not on a device.
+- **Elder UI:** medicine screen no longer gets stuck when a tap is refused (409/404 closes it; other errors shown in
+  red) - verified in headless Chromium with mocked core-api. Familiar-voice chip never on medicine/safety/confirm.
+- Verification (this sandbox, no Gnani/LiveKit network): core-api 306, reasoning 984 (+1 skipped), voice-agent 356,
+  scheduler 7, web 146, tsc, ruff, `eval/run_eval.py` (distress 5/5, emergency 87/87, false alarms 0/12).
+
 ## Logical companion replies (2026-11-08)
 - Baseline from local turnlog: 128 turns, 1 fixed fallback (0.8%), 69 LLM replies, and 11 system-marker turns; 5 `[video_call_stopped]` markers reached the LLM. The single fallback followed a 5.0 s reasoning wait, consistent with the configured voice timeout, but the log lacks enough structured causes to attribute it conclusively. Sanitizer, malformed-JSON, busy/429, cut-off, and garbled-STT counts are not recoverable from those historical rows.
 - Removed routine generic “didn't hear/understand” lines. Empty/noise input is silent once and gets a warm proximity prompt after two consecutive noise turns. Uncertain content gets a topic-specific clarification; markers are handled as events before LLM. Safety path remains first. Companion endpointing merges short/conjunction fragments for at most 1.5 s; reply timing is bounded by the configured LLM budget and understanding retries once with shorter context.

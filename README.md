@@ -131,6 +131,10 @@ the script reports that limitation while seeding the other requested data.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
+- **Arjun silent on one laptop (2026-11-08, open):** mic audio reached the agent but no transcript came back. Run with
+  `ARJUN_DEBUG_VOICE=1` (default) and read `logs/voice-agent.app.log` lines starting `voice:`; see docs/RUNBOOK.md.
+- **Voice cloning:** adding a voice is verified live; hearing a cloned reply is not yet. Gnani documents no remote
+  delete for the uploaded clip, so Arjun only claims it deletes its own encrypted copy.
 - **Apps by voice (2026-11-02) is automated-test verified, not phone-verified**: no complete live voice session on current code. Word lists are UNVERIFIED (no native speaker, no real current Prisma output).
 - **WhatsApp needs one tap**: Arjun only opens her chat with the contact; she presses the green call / send button. A pop-up blocker turns the open
   into one big tap button. Numbers are made up in the demo.

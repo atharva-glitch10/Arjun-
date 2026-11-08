@@ -93,6 +93,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const actionTurn = useRef(0); // the last action turn taken: an attribute that returns after a reconnect never runs twice
   const warm = useRef(false); // a room joined without the mic, waiting for the first tap
   const joining = useRef(false);
+  const prewarming = useRef<Promise<void> | null>(null); // a tap waits for it instead of opening a 2nd room
   const recovering = useRef(false);
   const recoverRef = useRef<((freshRoom?: boolean) => Promise<void>) | null>(null);
   const needsFreshRoom = useRef(false);
@@ -298,12 +299,17 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const prewarm = useCallback(async () => {
     if (phaseRef.current !== "idle" || room.current || joining.current) return;
     joining.current = true;
-    try {
-      const r = await join(performance.now());
-      if (r) warm.current = true;
-    } finally {
-      joining.current = false;
-    }
+    const work = (async () => {
+      try {
+        const r = await join(performance.now());
+        if (r) warm.current = true;
+      } finally {
+        joining.current = false;
+        prewarming.current = null;
+      }
+    })();
+    prewarming.current = work;
+    await work;
   }, [join]);
 
   const arm = useCallback(async () => {
@@ -335,6 +341,12 @@ export function useArjunVoice(userId: number): ArjunVoice {
     setItem("");
     setSafetyDismissedTurn(0);
 
+    // A pre-warm join still in flight: wait for it and use that room. Tearing it down and joining again left a
+    // second room (and a second Arjun job) behind for the same elder.
+    if (prewarming.current) {
+      setPhaseBoth("connecting");
+      await prewarming.current.catch(() => undefined);
+    }
     let r = room.current && room.current.state === "connected" && warm.current ? room.current : null;
     if (r) {
       warm.current = false; // the pre-warmed room is now this session

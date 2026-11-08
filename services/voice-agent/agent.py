@@ -9,6 +9,7 @@ token/room config dispatches that name (see scripts/make_token.py). The tested l
 import asyncio
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -309,11 +310,25 @@ class Arjun(Agent):
         # A sentence that ends in "आणि / पण / म्हणजे / की" is not finished: wait for the rest (endpointing.py).
         text = await self.hold.settle(transcript)
         if text is None or not text.strip():  # held for more speech, or nothing to answer
+            vlog("turn held for more speech (%d chars)", len(transcript))
             raise StopResponse()
+        t0 = time.monotonic()
+        vlog("turn -> reasoning (%d chars)", len(text))
         async with self.state.turn():  # while a spoken turn is being answered the session is not idle / quiet
             await self.responder.respond(text, "voice")
+        vlog("turn answered in %d ms", int((time.monotonic() - t0) * 1000))
         self.policy.touch()
         raise StopResponse()  # suppress the default LLM reply
+
+
+# One short line per step of a spoken turn (speech heard, STT result, reasoning, reply voice) so a silent Arjun can be
+# diagnosed from logs/voice-agent.app.log. Never the words: only lengths, language, timings. ARJUN_DEBUG_VOICE=0 = off.
+DEBUG_VOICE = os.environ.get("ARJUN_DEBUG_VOICE", "1").strip() != "0"
+
+
+def vlog(msg: str, *args: object) -> None:
+    if DEBUG_VOICE:
+        logger.info("voice: " + msg, *args)
 
 
 def prewarm(proc: agents.JobProcess) -> None:
@@ -336,6 +351,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     else:
         tts_plugin, active_model = await working_tts()  # Timbre v3.0 over SSE, or the verified fallback
         stt_impl = os.environ.get("GNANI_STT_IMPL", "plugin").strip().lower()
+        vlog("stt implementation: %s", stt_impl)
         if stt_impl not in {"plugin", "v3"}:
             raise ValueError("GNANI_STT_IMPL must be plugin or v3")
         if stt_impl == "v3":
@@ -415,6 +431,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             text = slower_text(text)
         # Off the event loop: the lookup is a (cached) HTTP call and must never stall live audio.
         cloned = await asyncio.to_thread(cloned_voices.get) if not use_sarvam and clonedvoice.allowed(reply) else None
+        vlog("reply voice: %s (%d chars)", f"cloned {cloned.name}" if cloned else active_model, len(text))
         async with speech_lock:
             before = state.speaking_count
             if cloned is not None:
@@ -624,6 +641,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     @session.on("user_state_changed")
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
+        vlog("user %s -> %s", ev.old_state, ev.new_state)
         state.on_user_state(ev.new_state)
         if ev.new_state == "speaking":
             sound_check.answered()
@@ -642,11 +660,29 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         policy.touch()
         if ev.old_state == "speaking" and ev.new_state == "listening":
             turns.end_of_speech(ev.created_at)
+            if DEBUG_VOICE:
+                asyncio.create_task(_warn_if_no_transcript(stt_finals[0]))
 
     transcript_languages: dict[str, str] = {}
+    stt_heard = [False]  # an interim was already logged for the current utterance
+    stt_finals = [0]  # count of final transcripts, to catch "speech detected but STT said nothing"
+
+    async def _warn_if_no_transcript(finals_before: int) -> None:
+        await asyncio.sleep(4.0)
+        if stt_finals[0] == finals_before:
+            logger.warning(
+                "voice: speech was detected but Prisma returned no words within 4 s. Check GNANI_API_KEY is valid, "
+                "try GNANI_STT_IMPL=v3 (auto language), and that the right microphone is selected in Chrome."
+            )
 
     @session.on("user_input_transcribed")
     def _on_transcript(ev) -> None:  # type: ignore[no-untyped-def]
+        if ev.is_final:
+            stt_finals[0] += 1
+            vlog("stt final: %d chars, language %s", len(ev.transcript.strip()), ev.language or "?")
+        elif not stt_heard[0]:
+            vlog("stt interim: speech is being recognised")
+        stt_heard[0] = not ev.is_final
         if ev.is_final and ev.transcript.strip():
             if is_system_marker(ev.transcript):
                 return
@@ -662,6 +698,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     @session.on("agent_state_changed")
     def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
+        vlog("arjun %s -> %s", ev.old_state, ev.new_state)
         state.on_agent_state(ev.new_state)
         if ev.old_state == "speaking" and ev.new_state != "speaking":
             turns.agent_stopped_speaking(ev.created_at)
@@ -674,6 +711,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         # STT / TTS / plugin failures: type and a short message only (never headers or keys).
         err = getattr(ev, "error", ev)
         logger.error("session error: %s", type(err).__name__)
+        # The provider's own reason (status/message), never headers or keys: says WHY STT/TTS failed.
+        vlog("error detail: %s", re.sub(r"(vach_|sk_|AQ\.|AIza)[\w\-.]+", r"\1<hidden>", " ".join(str(err).split()))[:200])
         if type(err).__name__ == "STTError":
             message = str(err).casefold()
             if "no speech segment for 60 seconds" in message:
