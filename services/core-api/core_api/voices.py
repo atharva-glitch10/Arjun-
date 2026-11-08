@@ -82,7 +82,9 @@ def create_embedding(audio: bytes, mime: str) -> dict[str, object]:
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Gnani voice-clone unreachable ({type(exc).__name__})") from exc
     if res.status_code != 200:
-        raise HTTPException(502, f"Gnani voice-clone error {res.status_code}")
+        # Gnani's own error text (never our key) so the family/dev can see why, e.g. an unsupported format.
+        reason = " ".join(res.text.split())[:200]
+        raise HTTPException(502, f"Gnani voice-clone error {res.status_code}: {reason}")
     data = (res.json().get("data") or {}).get("voice_clone_embedding") or {}
     if not isinstance(data.get("embedding"), str) or not data["embedding"]:
         raise HTTPException(502, "Gnani voice-clone returned no embedding")
