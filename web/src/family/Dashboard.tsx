@@ -380,7 +380,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             )}
           </div>
         ))}
-        <div className="fam-note" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+        <div className="fam-note fam-alarm">
           {alarm.sound && alarm.popup ? (
             <span>
               <strong style={{ color: "var(--ghar-leaf)" }}>Emergency alarm is on</strong> (sound and pop-up). Keep this
@@ -399,10 +399,11 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </>
           )}
         </div>
-        <div className="fam-topbar">
-          <HeartMark size={48} />
+        <div className="fam-topbar fam-header">
+          <HeartMark size={56} />
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <h1 className="h-display" style={{ fontSize: 34, lineHeight: 1.25 }}>
+            <span className="fam-brand">Arjun · family</span>
+            <h1 className="fam-title">
               {name}'s day
             </h1>
             <span className="t-muted" style={{ fontSize: 17 }}>
@@ -457,53 +458,52 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
         {tab === "today" && (
           <>
-        <BeforeYouCall name={name} summary={data.today.last_summary} book={data.book} feed={feed} />
-
-        <section
-          className="fam-card"
-          aria-label={`How is ${name} today`}
-          style={{ borderLeft: `10px solid ${SEVERITY_STYLE[data.today.severity].bg}` }}
-        >
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
-            <h2 style={{ margin: 0 }}>How is {name} today</h2>
-            <SeverityChip level={data.today.severity} />
-            {data.today.mood !== "not_assessed" && <span className="pill" style={{ fontSize: 17 }}>Mood: {data.today.mood}</span>}
-            <span className="grow" />
+        <div className="fam-hero">
+          <section
+            className="fam-card"
+            aria-label={`How is ${name} today`}
+            style={{ borderLeft: `10px solid ${SEVERITY_STYLE[data.today.severity].bg}` }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
+              <h2 style={{ margin: 0 }}>How is {name} today</h2>
+              <SeverityChip level={data.today.severity} />
+              {data.today.mood !== "not_assessed" && <span className="pill" style={{ fontSize: 17 }}>Mood: {data.today.mood}</span>}
+              <span className="grow" />
+              <span className="t-muted" style={{ fontSize: 15 }}>
+                {feedStatus === "live" ? "Live" : feedStatus === "polling" ? "Updating every 5 s" : "Connecting..."}
+              </span>
+            </div>
+            <p style={{ fontSize: 19, lineHeight: 1.5, margin: "10px 0 6px" }}>
+              {data.today.last_summary ||
+                (user.consent_distress_alert
+                  ? "No conversation summary yet today."
+                  : `Summaries and mood are off. Turn on "share how ${name} is doing" below to see them.`)}
+            </p>
+            <span className={`fam-seen ${seen.tone}`}>Last heard: {seen.text}</span>
             <span className="t-muted" style={{ fontSize: 15 }}>
-              {feedStatus === "live" ? "Live" : feedStatus === "polling" ? "Updating every 5 s" : "Connecting..."}
+              {data.today.conversations} conversation{data.today.conversations === 1 ? "" : "s"} today · summaries, never
+              her exact words
             </span>
-          </div>
-          <p style={{ fontSize: 19, lineHeight: 1.5, margin: "10px 0 6px" }}>
-            {data.today.last_summary ||
-              (user.consent_distress_alert
-                ? "No conversation summary yet today."
-                : `Summaries and mood are off. Turn on "share how ${name} is doing" below to see them.`)}
-          </p>
-          <span className="t-muted" style={{ fontSize: 15 }}>
-            {data.today.conversations} conversation{data.today.conversations === 1 ? "" : "s"} today · summaries, never
-            her exact words
-          </span>
-          {feed.length > 0 && (
-            <ul className="fam-list" style={{ marginTop: 12 }}>
-              {feed.slice(0, 12).map((e) => (
-                <li key={`f${e.id}`}>
-                  <SeverityChip level={e.severity} small />
-                  <span style={{ fontWeight: 800, minWidth: 64 }}>{clock(parse(e.created_at))}</span>
-                  <span style={{ flex: 1 }}>
-                    <strong>{e.title}</strong> {e.body}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+            {feed.length > 0 && (
+              <ul className="fam-list" style={{ marginTop: 12 }}>
+                {feed.slice(0, 12).map((e) => (
+                  <li key={`f${e.id}`}>
+                    <SeverityChip level={e.severity} small />
+                    <span style={{ fontWeight: 800, minWidth: 64 }}>{clock(parse(e.created_at))}</span>
+                    <span style={{ flex: 1 }}>
+                      <strong>{e.title}</strong> {e.body}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <BeforeYouCall name={name} summary={data.today.last_summary} book={data.book} feed={feed} />
+
+        </div>
 
         <div className="tiles">
-          <div className={seen.tone === "ok" ? "tile" : "tile empty"} style={seen.tone === "quiet" ? { background: "var(--ghar-haldi-soft, #fbe7b5)" } : undefined}>
-            <span className="label">How is {name} now</span>
-            <span className="value" style={{ fontSize: 20 }}>{seen.text}</span>
-            <span className="label">from her talks and taps with Arjun only; no words are shared</span>
-          </div>
           <div className="tile">
             <span className="label">Reminders today</span>
             <span className="value">
@@ -534,19 +534,17 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               <span className="label">self-reported</span>
             </div>
           )}
-          <div className={latestBp ? "tile" : "tile empty"}>
-            <span className="label">BP check</span>
-            <span className="value">{latestBp ? `${latestBp.systolic} / ${latestBp.diastolic}` : "No reading yet"}</span>
-            <span className="label">{latestBp ? "last reading · raw numbers" : user.bp_check_time ? `at ${user.bp_check_time}` : "not in her day"}</span>
-          </div>
-          <div className="tile empty">
-            <span className="label">Sugar check</span>
-            <span className="value">Not set up</span>
-          </div>
+          {latestBp && (
+            <div className="tile">
+              <span className="label">Last BP (raw numbers)</span>
+              <span className="value">{latestBp.systolic} / {latestBp.diastolic}</span>
+            </div>
+          )}
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 22, alignItems: "flex-start" }}>
-          <section className="fam-card" style={{ flex: "1 1 480px" }}>
+
+        <div className="fam-cols">
+          <section className="fam-card">
             <h2>Today</h2>
             {todayItems.length === 0 && <p className="fam-note">Nothing scheduled for today.</p>}
             {todayItems.map((t, i) => (
@@ -564,82 +562,42 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </p>
           </section>
 
-          <section className="fam-card" style={{ flex: "1 1 480px" }} aria-label="Voice performance">
-            <h2>Voice performance</h2>
-            <VoicePerformance metrics={data.voiceMetrics} />
-          </section>
-
-          <section className="fam-card" style={{ flex: "1 1 320px" }} aria-label="Cough trend">
-            <h2>Sound events</h2>
-            <p className="fam-note">{data.soundEvents?.enabled ? `Cough events, last 7 days · ${data.soundEvents.total_coughs} total` : "Detection is off"}</p>
-            <div style={{ display: "flex", alignItems: "end", gap: 8, minHeight: 72 }} aria-label="Daily cough counts">
-              {(data.soundEvents?.days ?? []).map((day) => {
-                const peak = Math.max(1, ...(data.soundEvents?.days ?? []).map((item) => item.cough_count));
-                return <div key={day.date} title={`${day.date}: ${day.cough_count}`} style={{ flex: 1, textAlign: "center" }}>
-                  <span style={{ display: "block", height: `${Math.max(4, (day.cough_count / peak) * 48)}px`, background: "#b5c9b9", borderRadius: 6 }} />
-                  <small>{day.cough_count}</small>
-                </div>;
-              })}
-            </div>
-          </section>
-
-          <section className="fam-card" style={{ flex: "1 1 480px" }} aria-label="आजचा दिवस">
-            <h2>आजचा दिवस</h2>
-            <p className="fam-note" style={{ marginTop: 0 }}>
-              {data.user.daily_checkins ? dayCardSummary(data.dayCard) : "Day check-ins are switched off (Settings)."}
-            </p>
-            {dayCardRows(data.dayCard).map((r) => (
-              <div className="timeline-row" key={r.key}>
-                <span className="time">{r.time}</span>
-                <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-                  <span className="label">{r.title}</span>
+          <div className="fam-stack">
+            <section className="fam-card" aria-label="Requests and alerts">
+              <h2>Requests and alerts</h2>
+              {data.requests.length + data.notes.length === 0 && <p>None.</p>}
+              <ul className="fam-list">
+                {data.requests.map((n) => (
+                  <li key={`r${n.id}`}>Request: {n.message}</li>
+                ))}
+                {data.notes.map((n) => (
+                  <li key={`n${n.id}`}>
+                    {n.kind}: {n.body}
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section className="fam-card">
+              <h2>Spoken reminders and medicines</h2>
+              {deliveryRows(data.deliveries).length === 0 && <p className="fam-note">Nothing was due today.</p>}
+              {deliveryRows(data.deliveries).map((r) => (
+                <div className="timeline-row" key={r.id}>
+                  <span className="time">{clock(parse(r.dueAt))}</span>
+                  <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                    <span className="label">{r.title}</span>
+                    <span className="detail">{r.kind}</span>
+                  </div>
+                  <span className={`status${r.tone === "ok" ? " ok" : ""}`}>{r.text}</span>
                 </div>
-                <span className="status" title={r.words} aria-label={r.words}>
-                  {r.mark}
-                </span>
-              </div>
-            ))}
-            <p className="fam-note">
-              ✅ done, ❌ not done, — asked but no answer, … asked and waiting, ○ later today, · never asked. These are what Aaji told
-              Arjun (self-reported). Her words are never shown here. How she is feeling appears above only if she
-              agreed to share it.
-            </p>
-          </section>
-
-          <section className="fam-card" style={{ flex: "1 1 480px" }}>
-            <h2>Spoken reminders and medicines</h2>
-            {deliveryRows(data.deliveries).length === 0 && <p className="fam-note">Nothing was due today.</p>}
-            {deliveryRows(data.deliveries).map((r) => (
-              <div className="timeline-row" key={r.id}>
-                <span className="time">{clock(parse(r.dueAt))}</span>
-                <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-                  <span className="label">{r.title}</span>
-                  <span className="detail">{r.kind}</span>
-                </div>
-                <span className={`status${r.tone === "ok" ? " ok" : ""}`}>{r.text}</span>
-              </div>
-            ))}
-            <p className="fam-note">
-              "Spoken" means Arjun finished saying it, not that Aaji heard it. "Taken" is what Aaji told Arjun. "Not
-              delivered" means it did not reach Aaji by voice (no open session, or the speech was interrupted or failed
-              3 times); it stays on her screen until she taps OK.
-            </p>
-          </section>
-
-          <section className="fam-card" style={{ flex: "1 1 480px" }}>
-            <h2>Requests and alerts</h2>
-            {data.requests.length + data.notes.length === 0 && <p>None.</p>}
-            <ul className="fam-list">
-              {data.requests.map((n) => (
-                <li key={`r${n.id}`}>Request: {n.message}</li>
               ))}
-              {data.notes.map((n) => (
-                <li key={`n${n.id}`}>
-                  {n.kind}: {n.body}
-                </li>
-              ))}
-            </ul>
-          </section>
+              <p className="fam-note">
+                "Spoken" means Arjun finished saying it, not that Aaji heard it. "Taken" is what Aaji told Arjun. "Not
+                delivered" means it did not reach Aaji by voice (no open session, or the speech was interrupted or failed
+                3 times); it stays on her screen until she taps OK.
+              </p>
+            </section>
+
+          </div>
         </div>
           </>
         )}
@@ -754,6 +712,31 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           onDelete={(id) => run(() => api.deleteMedicine(userId, id))}
         />
 
+        {data.user.daily_checkins && (
+            <section className="fam-card" aria-label="आजचा दिवस">
+              <h2>आजचा दिवस</h2>
+              <p className="fam-note" style={{ marginTop: 0 }}>
+                {data.user.daily_checkins ? dayCardSummary(data.dayCard) : "Day check-ins are switched off (Settings)."}
+              </p>
+              {dayCardRows(data.dayCard).map((r) => (
+                <div className="timeline-row" key={r.key}>
+                  <span className="time">{r.time}</span>
+                  <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                    <span className="label">{r.title}</span>
+                  </div>
+                  <span className="status" title={r.words} aria-label={r.words}>
+                    {r.mark}
+                  </span>
+                </div>
+              ))}
+              <p className="fam-note">
+                ✅ done, ❌ not done, — asked but no answer, … asked and waiting, ○ later today, · never asked. These are what Aaji told
+                Arjun (self-reported). Her words are never shown here. How she is feeling appears above only if she
+                agreed to share it.
+              </p>
+            </section>
+
+        )}
           </>
         )}
 
@@ -886,6 +869,30 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
 
         </div>
+        <details className="fam-card fam-tech">
+          <summary>For the team: voice speed and sound events</summary>
+          <div className="fam-cols">
+            <section className="fam-card" aria-label="Voice performance">
+              <h2>Voice performance</h2>
+              <VoicePerformance metrics={data.voiceMetrics} />
+            </section>
+
+            <section className="fam-card" aria-label="Cough trend">
+              <h2>Sound events</h2>
+              <p className="fam-note">{data.soundEvents?.enabled ? `Cough events, last 7 days · ${data.soundEvents.total_coughs} total` : "Detection is off"}</p>
+              <div style={{ display: "flex", alignItems: "end", gap: 8, minHeight: 72 }} aria-label="Daily cough counts">
+                {(data.soundEvents?.days ?? []).map((day) => {
+                  const peak = Math.max(1, ...(data.soundEvents?.days ?? []).map((item) => item.cough_count));
+                  return <div key={day.date} title={`${day.date}: ${day.cough_count}`} style={{ flex: 1, textAlign: "center" }}>
+                    <span style={{ display: "block", height: `${Math.max(4, (day.cough_count / peak) * 48)}px`, background: "#b5c9b9", borderRadius: 6 }} />
+                    <small>{day.cough_count}</small>
+                  </div>;
+                })}
+              </div>
+            </section>
+
+          </div>
+        </details>
           </>
         )}
 
