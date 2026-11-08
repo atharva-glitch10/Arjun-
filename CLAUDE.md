@@ -70,6 +70,10 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
 12. **Secrets**: ONE root `.env` (only `.env.example` is tracked). `LLM_API_KEY` is read only by reasoning. `GNANI_API_KEY` and LiveKit keys
     are read only by voice-agent (it loads just `GNANI_*`/`LIVEKIT_*`/`ARJUN_*`) and by core-api's
     future LiveKit token endpoint. Never in React code, never in Git, never logged, never printed.
+    **Exception (2026-11-08, voice cloning, PROPOSED - team to confirm):** core-api reads `GNANI_API_KEY` in ONE
+    place, `voices.create_embedding`, to send the consented reference clip to Gnani's voice-clone embeddings API
+    once. Nowhere else in core-api; `tests/test_voices.py::test_gnani_key_only_in_create_embedding` enforces it.
+    Alternative if rejected: move that call into voice-agent behind an internal endpoint.
     `CORE_API_KEY` is required: core-api refuses to start without it (tests use ARJUN_TESTING=1).
 13. **Never invent numbers.** Report only what was measured, in `eval/results/RESULTS.md`.
 14. **Never claim delivery that didn't happen.** Until T8, reminders/medicine prompts/openers are

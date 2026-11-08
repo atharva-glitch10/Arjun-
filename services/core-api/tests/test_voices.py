@@ -87,3 +87,16 @@ def test_other_elders_voice_is_not_reachable(client, uid):
     v = add(client, uid).json()
     other = client.post("/users", json={"name": "Other", "interests": []}).json()["id"]
     assert client.delete(f"/users/{other}/voices/{v['id']}").status_code == 404
+
+
+def test_gnani_key_only_in_create_embedding():
+    """CLAUDE.md rule 12 exception: GNANI_API_KEY is read in core-api only inside voices.create_embedding."""
+    import ast
+    import pathlib
+
+    root = pathlib.Path(voices.__file__).parent
+    users = [p.name for p in root.glob("*.py") if "GNANI_API_KEY" in p.read_text(encoding="utf-8")]
+    assert users == ["voices.py"]
+    src = pathlib.Path(voices.__file__).read_text(encoding="utf-8")
+    fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "create_embedding")
+    assert src.count("GNANI_API_KEY") == (ast.get_source_segment(src, fn) or "").count("GNANI_API_KEY") > 0
