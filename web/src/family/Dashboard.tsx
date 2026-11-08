@@ -4,6 +4,7 @@ import { api } from "../api";
 import { activityLine } from "./activity";
 import { AppLinksCard } from "./AppLinksCard";
 import { KnownFactsCard } from "./KnownFactsCard";
+import { VoicesCard } from "./VoicesCard";
 import { alarmState, enableAlarm, popup, startAlarm, stopAlarm } from "./alarm";
 import { recentEmergencies } from "./alerts";
 import { loadAcked, needsPopup, saveAcked, startEmergencyWatch, unacknowledged } from "./emergencyWatch";
@@ -905,6 +906,8 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             onAdd={(body) => run(() => api.addAppLink(userId, body))}
             onDelete={(id) => run(() => api.deleteAppLink(userId, id))}
           />
+
+          <VoicesCard userId={userId} name={name} />
 
           <KnownFactsCard userId={userId} consent={data.user.consent_distress_alert} name={name} />
 

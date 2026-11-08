@@ -20,6 +20,8 @@ services:
       ARJUN_AUTH: ${ARJUN_AUTH:-0}
       ARJUN_VOICE_TURNLOG_PATH: /app/eval/results/turns.jsonl
       ARJUN_SOUND_EVENTS: ${ARJUN_SOUND_EVENTS:-0}
+      GNANI_API_KEY: ${GNANI_API_KEY:-}
+      VOICE_CLONE_KEY: ${VOICE_CLONE_KEY:-}
     volumes:
       - ./eval/results:/app/eval/results:ro
     depends_on:

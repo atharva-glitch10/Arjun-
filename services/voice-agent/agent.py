@@ -13,7 +13,9 @@ import sys
 import time
 from pathlib import Path
 
+import aiohttp
 import applog
+import clonedvoice
 import httpx
 import voiceprovider
 from audiowarm import warm_audio_resampler
@@ -46,6 +48,7 @@ from livekit.agents import (
     APIStatusError,
     StopResponse,
     room_io,
+    utils,
 )
 from livekit.agents import tts as lk_tts
 from livekit.plugins import gnani, silero
@@ -54,7 +57,13 @@ try:  # TESTING switch (voiceprovider.py). Imported here: a plugin must be regis
     from livekit.plugins import sarvam
 except ImportError:  # the Gnani path does not need it
     sarvam = None
-from livekit.plugins.gnani.tts import SSEChunkedStream
+from livekit.plugins.gnani.tts import (
+    RESTChunkedStream,
+    SSEChunkedStream,
+    _build_headers,
+    _build_payload,
+    _mime_type,
+)
 from media import (
     ATTR_MEDIA,
     ATTR_VIDEO_CALL,
@@ -82,7 +91,15 @@ from soundevents import (
 from ttsgate import TtsGate
 from turnlog import TurnLog
 from usermeta import user_id_from_metadata
-from voice import slower_text, stt_options, tts_choice, tts_language_for, tts_text, tts_voice_for
+from voice import (
+    slower_text,
+    strip_tags,
+    stt_options,
+    tts_choice,
+    tts_language_for,
+    tts_text,
+    tts_voice_for,
+)
 
 logger = logging.getLogger("arjun.agent")
 
@@ -166,6 +183,40 @@ class SseTimbre(gnani.TTS):
 
     def synthesize(self, text, *, conn_options=DEFAULT_API_CONNECT_OPTIONS):  # type: ignore[no-untyped-def]
         return _GatedSse(tts=self, input_text=text, conn_options=conn_options)
+
+
+class _ClonedRest(RESTChunkedStream):
+    """Gnani Voice Cloned TTS REST (POST /api/v1/tts/inference with speaker_embedding), one request at a time."""
+
+    async def _run(self, output_emitter) -> None:  # type: ignore[no-untyped-def]
+        async def once() -> None:
+            payload = clonedvoice.cloned_payload(_build_payload(self._opts, self._input_text), self._tts.cloned)
+            async with self._tts._ensure_session().post(
+                url=f"{self._opts.base_url}/api/v1/tts/inference", json=payload, headers=_build_headers(self._opts),
+                timeout=aiohttp.ClientTimeout(total=self._conn_options.timeout),
+            ) as res:
+                if res.status != 200:
+                    raise APIStatusError(message=f"Gnani cloned TTS error {res.status}", status_code=res.status,
+                                         body=(await res.text())[:200])
+                audio = await res.read()
+                output_emitter.initialize(request_id=utils.shortuuid(), sample_rate=self._tts.sample_rate,
+                                          num_channels=self._tts.num_channels, mime_type=_mime_type(self._opts))
+                output_emitter.push(audio)
+                output_emitter.flush()
+
+        await TTS_GATE.run(once, _timbre_busy)
+
+
+class ClonedTimbre(gnani.TTS):
+    """Speaks one companion reply in the family-approved cloned voice (consent recorded in core-api)."""
+
+    def __init__(self, cloned: "clonedvoice.ClonedVoice", **kw) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(synthesize_method="rest", **kw)
+        self.cloned = cloned
+        self._capabilities = lk_tts.TTSCapabilities(streaming=False)
+
+    def synthesize(self, text, *, conn_options=DEFAULT_API_CONNECT_OPTIONS):  # type: ignore[no-untyped-def]
+        return _ClonedRest(tts=self, input_text=text, conn_options=conn_options)
 
 
 def make_tts(model: str, voice: str, language: str | None = None):  # type: ignore[no-untyped-def]
@@ -362,12 +413,24 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         text = tts_text(reply.text, reply.speech, active_model)
         if (reply.speech_style or {}).get("rate") == "slow":
             text = slower_text(text)
+        cloned = cloned_voices.get() if not use_sarvam and clonedvoice.allowed(reply) else None
         async with speech_lock:
             before = state.speaking_count
+            if cloned is not None:
+                # Familiar voice for companion talk only; plain text (Timbre v3 emotion tags are not for VC).
+                handle = session.say(strip_tags(reply.speech or reply.text),
+                                     tts=ClonedTimbre(cloned, model=TTS["fallback_model"], voice=TTS["fallback_voice"]))
+                await handle
+                if handle.exception() is None:
+                    asyncio.get_running_loop().run_in_executor(None, clonedvoice.report_used, user_id, cloned.voice_id)
+                    return not handle.interrupted and state.speaking_count > before
+                logger.warning("cloned voice synthesis failed (%s); speaking as Arjun", type(handle.exception()).__name__)
+                cloned_voices.forget()
             handle = session.say(text, tts=plugin)
             await handle
             return not handle.interrupted and handle.exception() is None and state.speaking_count > before
 
+    cloned_voices = clonedvoice.VoiceSource(user_id)  # family-approved voice, re-checked every minute
     state = SessionState()
     policy = IdlePolicy()
     speech_lock = asyncio.Lock()  # one line at a time: a reply, a reminder and the closing line never overlap

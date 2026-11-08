@@ -178,7 +178,7 @@ def _device(request: Request, db: Session, user_id: int, *, touch: bool = True) 
 def _is_elder_route(method: str, path: str) -> bool:
     """Mirror ELDER_ROUTES in web/server/access.ts."""
     elder = (
-        ("GET", r"/users/\d+/(?:deliveries/open|day|reminders|appointments/next|contacts|medicines/due)"),
+        ("GET", r"/users/\d+/(?:deliveries/open|day|reminders|appointments/next|contacts|medicines/due|voice-label)"),
         ("POST", r"/users/\d+/medicine-doses/\d+/(?:taken|snooze)"),
         ("POST", r"/users/\d+/deliveries/\d+/ack"),
         ("POST", r"/users/\d+/calls"),
@@ -200,6 +200,10 @@ def _is_family_route(method: str, path: str) -> bool:
         ("PATCH", r"/users/\d+/medicines/\d+"),
         ("GET", r"/users/\d+/appointments/next"),
         ("GET", r"/users/\d+/facts"),
+        ("GET", r"/users/\d+/voices(?:/audit)?"),
+        ("POST", r"/users/\d+/voices"),
+        ("POST", r"/users/\d+/voices/\d+/(?:activate|deactivate)"),
+        ("DELETE", r"/users/\d+/voices/\d+"),
         ("DELETE", r"/users/\d+/facts/\d+"),
         ("GET", r"/users/\d+/(?:memory-book|caregiver-requests|notifications|activity|wellbeing/today|bp-readings|watch-samples/latest|medicine-doses|checkins/card|deliveries|feed)"),
     )

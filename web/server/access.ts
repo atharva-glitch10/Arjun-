@@ -34,7 +34,7 @@ const route = (method: string, path: string): Route => ({ method, path: new RegE
 
 /** What the elder page calls (web/src/elder/*, voice/*): read her day, answer a dose, ack a delivery, join voice. */
 export const ELDER_ROUTES: Route[] = [
-  route("GET", `/users/${ID}/(?:deliveries/open|day|reminders|appointments/next|contacts|medicines/due)`),
+  route("GET", `/users/${ID}/(?:deliveries/open|day|reminders|appointments/next|contacts|medicines/due|voice-label)`),
   route("POST", `/users/${ID}/medicine-doses/${ID}/(?:taken|snooze)`),
   route("POST", `/users/${ID}/deliveries/${ID}/ack`),
   route("POST", "/livekit/token"),
@@ -55,6 +55,10 @@ export const FAMILY_ROUTES: Route[] = [
   route("GET", `/users/${ID}/appointments/next`),
   route("GET", `/users/${ID}/facts`), // "अर्जुनला माहीत असलेल्या गोष्टी": core-api hides it without the consent flag
   route("DELETE", `/users/${ID}/facts/${ID}`),
+  route("GET", `/users/${ID}/voices(?:/audit)?`),
+  route("POST", `/users/${ID}/voices`),
+  route("POST", `/users/${ID}/voices/${ID}/(?:activate|deactivate)`),
+  route("DELETE", `/users/${ID}/voices/${ID}`),
   route("GET", "/media/status"),
   route(
     "GET",

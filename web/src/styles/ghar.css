@@ -269,3 +269,26 @@ h1, h2, p { margin: 0; }
 .elder-shell:has(.volume) .screen { padding-bottom: 96px; }
 .volume { left: 16px; right: 16px; justify-content: center; max-width: 488px; margin: 0 auto; }
 .volume input[type="range"] { flex: 1; width: auto; }
+
+/* ---- Familiar (cloned) voice: elder chip + family card (2026-11-08) ---- */
+.voice-chip { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 8px;
+  align-items: center; padding: 8px 18px; border-radius: 999px; background: var(--ghar-surface); color: var(--ghar-indigo);
+  border: 2px solid var(--ghar-haldi); font-size: 20px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+.voice-chip span { color: #E86A33; }
+.voices-card .voice-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.voices-card .voice-on { margin-left: 10px; padding: 2px 10px; border-radius: 999px; background: var(--ghar-haldi);
+  color: var(--ghar-indigo); font-size: 14px; font-weight: 700; }
+.voices-card .voice-actions { display: flex; gap: 8px; }
+.voices-card .voice-form { display: flex; gap: 12px; flex-wrap: wrap; }
+.voices-card .voice-form label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; font-weight: 600; }
+.voices-card .voice-consent label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.voices-card input:not([type]), .voices-card input[type="text"] { min-height: 44px; font-size: 17px; padding: 0 12px; border-radius: 10px; border: 1.5px solid #C9BFAE; }
+.voices-card .voice-consent { display: flex; flex-direction: column; gap: 12px; margin: 14px 0; }
+.voices-card .voice-consent label:first-child { flex-direction: row; align-items: flex-start; gap: 10px; font-weight: 500; line-height: 1.45; }
+.voices-card .voice-consent input[type="checkbox"] { width: 24px; height: 24px; flex: 0 0 auto; margin-top: 2px; }
+.voices-card .voice-record { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.voices-card .voice-upload { font-size: 15px; }
+.voices-card button { min-height: 44px; }
+.voices-card button.danger { border-color: #B3261E; color: #B3261E; }
+.voices-card button.primary { background: var(--ghar-indigo); color: #fff; padding: 0 20px; border-radius: 12px; }
+.voices-card button:disabled { opacity: .5; }

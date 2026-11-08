@@ -33,6 +33,7 @@ from .readings import router as readings_router
 from .recurrence import next_occurrence
 from .video_calls import router as video_calls_router
 from .voice_metrics import load_voice_metrics
+from .voices import router as voices_router
 from .wellbeing import router as wellbeing_router
 
 
@@ -821,6 +822,7 @@ app.include_router(livekit_router)
 app.include_router(family_router)
 app.include_router(activity_router)
 app.include_router(readings_router)
+app.include_router(voices_router)
 app.include_router(wellbeing_router)
 app.include_router(applinks_router)
 app.include_router(media_router)
