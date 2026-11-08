@@ -23,7 +23,7 @@ import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHa
 import { useArjunVoice } from "../voice/useArjunVoice";
 import { LinkPrompt, MediaScreen } from "./MediaScreen";
 import { VideoCallScreen } from "./VideoCallScreen";
-import { elderLanguage, elderText } from "./i18n";
+import { elderLanguage, elderText, timeGreeting } from "./i18n";
 import { useAppActions } from "./useAppActions";
 import {
   dateLine,
@@ -599,8 +599,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <HomeScreen
             evening={evening}
-            greeting={`${elderText(displayLanguage).greeting}, ${HONORIFIC}`}
-            dateLine={evening ? `${weekday(now)} · ${periodOfDay(now.getHours())}` : dateLine(now)}
+            greeting={`${timeGreeting(elderLanguage(displayLanguage), now.getHours())}, ${HONORIFIC}`}
+            dateLine={dateLine(now)}
             clock={timeLabel(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`)}
             items={items}
             medicine={

@@ -1,5 +1,12 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Elder UI "ad look" (2026-11-08 22:20)
+- Elder screens restyled to match the Arjun ad: always bright (dark evening/listening backgrounds removed), warm haldi
+  glow, one glowing "बोला" button with the Listening Heart mark, 42-52 px headings, 32 px reply/said text, big
+  आज काय? / मदत buttons. Home shows at most 2 upcoming items. Greeting now follows the time of day (was "शुभ सकाळ"
+  at 22:19) and the date line no longer repeats the period. Checked in the design gallery (11 screens) and the live
+  start/home screens in headless Chromium; not yet seen on the laptop.
+
 ## Live on the laptop, 2026-11-08 22:00 (what was actually heard)
 - **Verified live:** Marathi, Hindi and Hinglish speech -> Prisma v3 (`GNANI_STT_IMPL=v3`, `indic-auto`) detects
   hi-IN / mr-IN per sentence -> reply in the same language -> spoken in the family's cloned voice (REST); replies
