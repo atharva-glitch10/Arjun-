@@ -659,7 +659,7 @@ export function StartScreen(p: { onStart: () => void }) {
       </button>
       <div className="ad-greeting">
         <h1>नमस्कार! मी {companionLabel}.</h1>
-        <span>माझ्याशी बोलण्यासाठी एकदा दाबा</span>
+        <span>चला, गप्पा मारूया!</span>
       </div>
       <button className="btn ad-stop" style={{ width: "100%", maxWidth: 520 }} onClick={p.onStart}>
         <SpeakerIcon size={38} />
