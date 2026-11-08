@@ -463,3 +463,41 @@ class UserFact(Base):
     confidence: Mapped[float] = mapped_column(default=0.7)
     source: Mapped[str] = mapped_column(String(10), default="auto")  # auto | explicit
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ClonedVoice(Base):
+    """A family member's voice, cloned with Gnani's voice-clone API, ONLY with their recorded consent.
+
+    The reference recording is never stored: it goes to Gnani once, and only the returned speaker embedding is kept,
+    encrypted (Fernet, VOICE_CLONE_KEY). Deleting the row deletes Arjun's copy; Gnani documents no voice-id or remote
+    delete, so its retention of the uploaded clip is not something we claim (docs/GNANI_FEATURES.md). Arjun uses it
+    only for companion chat, never for safety, medicine or reminders."""
+
+    __tablename__ = "cloned_voices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)  # the elder who hears it
+    name: Mapped[str] = mapped_column(String(80))  # how the elder knows them: "Rahul"
+    relation: Mapped[str] = mapped_column(String(40), default="")  # "son"
+    consent_by: Mapped[str] = mapped_column(String(120))  # who confirmed consent (the voice owner, typed name)
+    consent_text: Mapped[str] = mapped_column(Text)  # the exact statement they agreed to
+    consented_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    embedding_enc: Mapped[bytes] = mapped_column(LargeBinary)
+    shape: Mapped[list[int]] = mapped_column(JSON, default=list)
+    dtype: Mapped[str] = mapped_column(String(40), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    use_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ClonedVoiceAudit(Base):
+    """Every add / activate / deactivate / delete / spoken use of a cloned voice. Kept after the voice is deleted
+    (no foreign key on purpose), so the family can always see when a cloned voice was used."""
+
+    __tablename__ = "cloned_voice_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    voice_id: Mapped[int] = mapped_column(Integer)
+    voice_name: Mapped[str] = mapped_column(String(80))
+    event: Mapped[str] = mapped_column(String(16))  # added | activated | deactivated | deleted | used
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

@@ -13,7 +13,7 @@ the protocol; they do not prove that this account has Prisma v3, Timbre v3, or W
 | Warp | Not used. No Warp endpoint/client/configuration exists in the repository. | No Warp references in runtime source; current agent builds a Prisma + Timbre LiveKit pipeline at [`agent.py`](../services/voice-agent/agent.py#L268). |
 | Evon | Generic OpenAI-compatible client is present, but Evon is not the default provider. Runtime selection prefers `LLM_*`, then Sarvam when configured, and only then `EVON_*`. | [`config.py`](../services/reasoning/reasoning_svc/config.py#L24) describes provider choice; [`config.py`](../services/reasoning/reasoning_svc/config.py#L52) implements precedence; [`evon.py`](../services/reasoning/reasoning_svc/evon.py#L456) is the compatible client; [`turn.py`](../services/reasoning/reasoning_svc/turn.py#L242) accepts it optionally. |
 | User language | Preferred languages can store all ten documented locale families; the elder UI provides Marathi/Hindi/English labels and English fallback. Reasoning carries detected language to Evon/TTS; existing fixed action/safety templates remain primarily mr/hi/en. | [`models.py`](../services/core-api/core_api/models.py#L42), [`schemas.py`](../services/core-api/core_api/schemas.py#L10), [`turn.py`](../services/reasoning/reasoning_svc/turn.py#L345), [`i18n.ts`](../web/src/elder/i18n.ts#L1). |
-| Voice cloning | Not used. No consent, embedding storage, cloned TTS, audit, or deletion UI/routes exist. | No voice-clone references in service or web runtime source. |
+| Voice cloning | Used, consent-first. Family dashboard records 10–45 s + typed consent; core-api calls Voice Clone Embeddings once, stores only the Fernet-encrypted embedding (`VOICE_CLONE_KEY`), one active voice per elder, audit log. Voice-agent speaks companion chat only through Voice Cloned TTS REST (`vachana-vc-v1` + `speaker_embedding`); safety/medicine/reminder/confirm/action/fallback replies always use Arjun's Timbre voice; on any cloned-TTS error it falls back to Timbre. Elder screen shows whose voice is speaking. | [`voices.py`](../services/core-api/core_api/voices.py), [`clonedvoice.py`](../services/voice-agent/clonedvoice.py), [`agent.py`](../services/voice-agent/agent.py) `ClonedTimbre`, [`VoicesCard.tsx`](../web/src/family/VoicesCard.tsx). |
 
 ### Installed LiveKit plugin 1.8.6 check
 
@@ -80,9 +80,10 @@ they recommend 5–30 seconds of clean reference audio. The response is a `speak
 `torch.bfloat16`) which can be passed to cloned TTS REST, SSE, or WebSocket requests. The docs describe reusing
 the embedding, but no remote voice-ID create/list/delete endpoint is documented. Consequently this is not a
 Gnani-side persistent `voice_id` workflow and the public contract does not provide a remote deletion operation.
-Arjun does not currently use cloning. Phase 4 cannot claim remote deletion; it will need provider confirmation
-before we promise that consent can revoke/delete the provider-side artifact. Local encrypted storage and local
-deletion alone cannot establish provider deletion or retention behavior.
+Arjun now uses cloning (Phase 4, see the table above). The reference clip is sent once and never stored by Arjun;
+deleting a voice deletes Arjun's encrypted embedding and stops all use within a minute. We still do NOT claim
+provider-side deletion or retention behaviour: that needs Gnani's confirmation, and user-facing copy says only that
+Arjun deletes its copy.
 
 ## Warp v2.0 — what it is and why it is not integrated
 

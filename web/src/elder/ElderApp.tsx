@@ -79,6 +79,18 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const [items, setItems] = useState<UpcomingItem[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [displayLanguage, setDisplayLanguage] = useState("mr");
+  // Whose voice Arjun may chat in (a family-approved cloned voice); shown so she always knows. Re-checked each minute.
+  const [clonedName, setClonedName] = useState<string | null>(null);
+  useEffect(() => {
+    const check = () =>
+      void api
+        .voiceLabel(userId)
+        .then((v) => setClonedName(v.name))
+        .catch(() => setClonedName(null));
+    check();
+    const id = window.setInterval(check, 60_000);
+    return () => window.clearInterval(id);
+  }, [userId]);
   const [error, setError] = useState("");
   const [due, setDue] = useState<DueNow>({ current: [], next: null });
   const [medState, setMedState] = useState<"due" | "taken" | "snoozed">("due");
@@ -583,6 +595,11 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           <span className="hf-dot" aria-hidden /> मी ऐकतोय · कधीही बोला
         </div>
       )}
+      {clonedName && !["safety", "confirm"].includes(shown as string) && (
+        <div className="voice-chip" role="status">
+          <span aria-hidden>♥</span> {voiceChipText(displayLanguage, clonedName)}
+        </div>
+      )}
       {voice.family && (
         <div className="family-call-banner" role="status" aria-live="polite">
           <span className="family-call-dot" aria-hidden />
@@ -648,4 +665,10 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       )}
     </div>
   );
+}
+
+function voiceChipText(language: string, name: string): string {
+  if (language === "hi") return `${name} की आवाज़ में बात`;
+  if (language === "en") return `Talking in ${name}'s voice`;
+  return `${name}च्या आवाजात गप्पा`;
 }

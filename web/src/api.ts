@@ -300,6 +300,26 @@ export interface VideoCall {
   created_at: string;
 }
 
+export interface ClonedVoice {
+  id: number;
+  name: string;
+  relation: string;
+  consent_by: string;
+  consented_at: string;
+  active: boolean;
+  use_count: number;
+  last_used_at: string | null;
+}
+
+export interface ClonedVoiceInput {
+  name: string;
+  relation: string;
+  consent: boolean;
+  consent_by: string;
+  audio_base64: string;
+  mime: string;
+}
+
 async function call<T>(base: string, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${base}${path}`, {
     ...init,
@@ -344,6 +364,12 @@ export const api = {
   contacts: (id: number) => core<Contact[]>(`/users/${id}/contacts`),
   addContact: (id: number, name: string, relation: string, phone: string) =>
     core<Contact>(`/users/${id}/contacts`, post({ name, relation, phone })),
+  voices: (id: number) => core<ClonedVoice[]>(`/users/${id}/voices`),
+  addVoice: (id: number, body: ClonedVoiceInput) => core<ClonedVoice>(`/users/${id}/voices`, post(body)),
+  setVoiceActive: (id: number, voiceId: number, on: boolean) =>
+    core<ClonedVoice>(`/users/${id}/voices/${voiceId}/${on ? "activate" : "deactivate"}`, { method: "POST" }),
+  deleteVoice: (id: number, voiceId: number) => core<void>(`/users/${id}/voices/${voiceId}`, { method: "DELETE" }),
+  voiceLabel: (id: number) => core<{ name: string | null; relation: string | null }>(`/users/${id}/voice-label`),
   appLinks: (id: number) => core<AppLink[]>(`/users/${id}/app-links`),
   mediaStatus: () => core<MediaStatus>("/media/status"),
   addAppLink: (id: number, body: AppLinkInput) => core<AppLink>(`/users/${id}/app-links`, post(body)),
