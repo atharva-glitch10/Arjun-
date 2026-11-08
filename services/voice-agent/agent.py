@@ -413,7 +413,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         text = tts_text(reply.text, reply.speech, active_model)
         if (reply.speech_style or {}).get("rate") == "slow":
             text = slower_text(text)
-        cloned = cloned_voices.get() if not use_sarvam and clonedvoice.allowed(reply) else None
+        # Off the event loop: the lookup is a (cached) HTTP call and must never stall live audio.
+        cloned = await asyncio.to_thread(cloned_voices.get) if not use_sarvam and clonedvoice.allowed(reply) else None
         async with speech_lock:
             before = state.speaking_count
             if cloned is not None:
@@ -421,11 +422,17 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 handle = session.say(strip_tags(reply.speech or reply.text),
                                      tts=ClonedTimbre(cloned, model=TTS["fallback_model"], voice=TTS["fallback_voice"]))
                 await handle
-                if handle.exception() is None:
+                spoke = state.speaking_count > before
+                if handle.interrupted:  # she started talking: that is a real turn, not a failure
+                    return False
+                if handle.exception() is None and spoke:
                     asyncio.get_running_loop().run_in_executor(None, clonedvoice.report_used, user_id, cloned.voice_id)
-                    return not handle.interrupted and state.speaking_count > before
-                logger.warning("cloned voice synthesis failed (%s); speaking as Arjun", type(handle.exception()).__name__)
+                    return True
+                # An error OR silence (no audio played, no exception) both fall back, so Arjun is never mute.
+                cause = type(handle.exception()).__name__ if handle.exception() is not None else "no audio"
+                logger.warning("cloned voice synthesis failed (%s); speaking as Arjun", cause)
                 cloned_voices.forget()
+                before = state.speaking_count
             handle = session.say(text, tts=plugin)
             await handle
             return not handle.interrupted and handle.exception() is None and state.speaking_count > before
