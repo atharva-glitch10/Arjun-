@@ -662,7 +662,9 @@ class TurnEngine:
         address_as = str(user.get("address_as") or "").strip()
         if not address_as:
             first = name.split()[0] if name else ""
-            address_as = "आजी" if user.get("age") is not None and int(user["age"]) >= 60 else f"{first}बाई"
+            # "हीराबाई" already carries बाई: never "हीराबाईबाई" (heard on the laptop 2026-11-08).
+            honorific = first if first.endswith("बाई") else f"{first}बाई"
+            address_as = "आजी" if user.get("age") is not None and int(user["age"]) >= 60 else honorific
         if name:
             parts.append(f"Name: {name}; address her as {address_as}")
         try:
