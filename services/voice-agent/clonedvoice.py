@@ -17,8 +17,10 @@ from typing import Any, Callable
 import httpx
 
 ENABLED = os.environ.get("ARJUN_CLONED_VOICE", "1").strip() != "0"
-# How the cloned voice is fetched from Gnani: "sse" (default, starts playing on the first chunk) or "rest" (one file).
-METHOD = os.environ.get("ARJUN_CLONED_VOICE_METHOD", "sse").strip().lower()
+# How the cloned voice is fetched from Gnani: "rest" (default: one complete WAV, heard clean on the laptop) or "sse"
+# (streamed chunks). SSE produced loud noise on the laptop (2026-11-08 21:41) and did not start sooner (~3.3 s either
+# way), so it is opt-in until the chunk format is confirmed with Gnani.
+METHOD = os.environ.get("ARJUN_CLONED_VOICE_METHOD", "rest").strip().lower()
 # Languages the cloned voice may speak, e.g. "hi,en" (prefix of the detected code). Empty = every language. Gnani's
 # voice-clone API takes no language field, so Marathi text can come out Hindi-sounding; the family can keep Marathi
 # in Arjun's own Timbre voice by leaving "mr" out.

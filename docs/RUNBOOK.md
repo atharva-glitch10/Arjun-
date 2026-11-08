@@ -45,7 +45,7 @@ Never change it later (saved voices stop working) and never share it. Dashboard:
 - Record 20-30 s of the person speaking **Marathi** naturally in a quiet room: the clone copies the sample's accent.
 - Gnani's voice-clone API has no language field. If Marathi still sounds Hindi-like, set
   `ARJUN_CLONED_VOICE_LANGUAGES=hi,en` in `.env` and restart: Marathi replies then use Arjun's Timbre voice.
-- `ARJUN_CLONED_VOICE_METHOD=sse` (default) streams the cloned voice; `rest` waits for the whole clip.
+- `ARJUN_CLONED_VOICE_METHOD=rest` (default) fetches the whole clip; `sse` is experimental (loud noise on the laptop).
 
 ## Checks before a demo
 `pytest` in services/core-api, reasoning, voice-agent, scheduler; `ruff check .`; in web `npx tsc --noEmit` and

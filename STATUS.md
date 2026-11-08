@@ -10,8 +10,8 @@
   `say()` has no `tts`; every reply raised TypeError. Fixed with `say(audio=tts_audio(...))`;
   `test_say_signature.py` guards it. **Verified live on the laptop:** a Marathi turn was heard (Prisma, mr-IN),
   answered in ~2 s and spoken in the cloned voice (21:29). User feedback: the clone's Marathi sounds Hindi-like.
-- Cloned voice now streams over Gnani SSE by default (`ARJUN_CLONED_VOICE_METHOD`); REST took ~3 s before audio.
-  SSE path verified against a fake Gnani SSE server only. `ARJUN_CLONED_VOICE_LANGUAGES` limits which detected
+- Cloned-voice SSE streaming exists but is OFF by default: on the laptop (21:41) it produced loud noise and started no
+  sooner than REST (~3.3 s). Default `ARJUN_CLONED_VOICE_METHOD=rest` (clean audio heard at 21:29). `ARJUN_CLONED_VOICE_LANGUAGES` limits which detected
   languages may use the clone (Gnani's voice-clone API documents no language field).
 
 ## Voice cloning, voice diagnostics, single session (2026-11-08)
