@@ -219,6 +219,36 @@ class _ClonedRest(RESTChunkedStream):
         await TTS_GATE.run(once, _timbre_busy)
 
 
+class _ClonedSse(RESTChunkedStream):
+    """Gnani Voice Cloned TTS streaming (POST /api/v1/tts/sse, vachana-vc-v1 + speaker_embedding): audio is pushed
+    chunk by chunk, so the familiar voice starts speaking without waiting for the whole file. One request at a time."""
+
+    async def _run(self, output_emitter) -> None:  # type: ignore[no-untyped-def]
+        async def once() -> None:
+            payload = clonedvoice.cloned_payload(_build_payload(self._opts, self._input_text), self._tts.cloned)
+            async with self._tts._ensure_session().post(
+                url=f"{self._opts.base_url}/api/v1/tts/sse", json=payload, headers=_build_headers(self._opts),
+                timeout=aiohttp.ClientTimeout(total=self._conn_options.timeout), read_bufsize=10 * 1024 * 1024,
+            ) as res:
+                if res.status != 200:
+                    raise APIStatusError(message=f"Gnani cloned TTS SSE error {res.status}", status_code=res.status,
+                                         body=(await res.text())[:200])
+                output_emitter.initialize(request_id=utils.shortuuid(), sample_rate=self._tts.sample_rate,
+                                          num_channels=self._tts.num_channels, mime_type=_mime_type(self._opts))
+                parser = clonedvoice.SseParser()
+                async for raw in res.content:
+                    for chunk in parser.feed(raw.decode("utf-8")):
+                        output_emitter.push(chunk)
+                    if parser.done:
+                        break
+                output_emitter.flush()
+
+        try:
+            await TTS_GATE.run(once, _timbre_busy)
+        except clonedvoice.SseError as exc:
+            raise APIStatusError(message=f"Gnani cloned TTS SSE error: {exc}", status_code=500, body=str(exc)) from exc
+
+
 class ClonedTimbre(gnani.TTS):
     """Speaks one companion reply in the family-approved cloned voice (consent recorded in core-api)."""
 
@@ -228,7 +258,8 @@ class ClonedTimbre(gnani.TTS):
         self._capabilities = lk_tts.TTSCapabilities(streaming=False)
 
     def synthesize(self, text, *, conn_options=DEFAULT_API_CONNECT_OPTIONS):  # type: ignore[no-untyped-def]
-        return _ClonedRest(tts=self, input_text=text, conn_options=conn_options)
+        stream = _ClonedRest if clonedvoice.METHOD == "rest" else _ClonedSse
+        return stream(tts=self, input_text=text, conn_options=conn_options)
 
 
 def make_tts(model: str, voice: str, language: str | None = None):  # type: ignore[no-untyped-def]
@@ -441,7 +472,11 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if (reply.speech_style or {}).get("rate") == "slow":
             text = slower_text(text)
         # Off the event loop: the lookup is a (cached) HTTP call and must never stall live audio.
-        cloned = await asyncio.to_thread(cloned_voices.get) if not use_sarvam and clonedvoice.allowed(reply) else None
+        cloned = (
+            await asyncio.to_thread(cloned_voices.get)
+            if not use_sarvam and clonedvoice.allowed(reply) and clonedvoice.language_allowed(detected)
+            else None
+        )
         vlog("reply voice: %s (%d chars)", f"cloned {cloned.name}" if cloned else active_model, len(text))
         async with speech_lock:
             before = state.speaking_count

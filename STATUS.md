@@ -1,5 +1,14 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Arjun speaks again; cloned voice heard live (2026-11-08 evening)
+- Root cause of "answers on screen, never speaks": `session.say(text, tts=...)` (since 66e76d0) - LiveKit 1.8.6
+  `say()` has no `tts`; every reply raised TypeError. Fixed with `say(audio=tts_audio(...))`;
+  `test_say_signature.py` guards it. **Verified live on the laptop:** a Marathi turn was heard (Prisma, mr-IN),
+  answered in ~2 s and spoken in the cloned voice (21:29). User feedback: the clone's Marathi sounds Hindi-like.
+- Cloned voice now streams over Gnani SSE by default (`ARJUN_CLONED_VOICE_METHOD`); REST took ~3 s before audio.
+  SSE path verified against a fake Gnani SSE server only. `ARJUN_CLONED_VOICE_LANGUAGES` limits which detected
+  languages may use the clone (Gnani's voice-clone API documents no language field).
+
 ## Voice cloning, voice diagnostics, single session (2026-11-08)
 - **Voice cloning (consent-first)** merged (#2-#4): family dashboard "A familiar voice"; Gnani voice-clone embeddings
   called once by core-api (CLAUDE.md rule 12 exception, PROPOSED); only the Fernet-encrypted embedding is stored
