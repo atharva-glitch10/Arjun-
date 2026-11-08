@@ -5,7 +5,9 @@ import { Dashboard } from "./family/Dashboard";
 import { JoinCall } from "./family/JoinCall";
 import { ElderApp } from "./elder/ElderApp";
 import { Gallery } from "./ghar/Gallery";
+import { UiGallery } from "./preview/UiGallery";
 import "./styles/ghar.css";
+import "./styles/ui.css";
 
 type View = "elder" | "caregiver";
 
@@ -69,5 +71,5 @@ function App() {
 const root = document.getElementById("root");
 if (root) {
   const join = params.get("view") === "join";
-  createRoot(root).render(join ? <JoinCall /> : params.has("preview") ? <Gallery /> : <App />);
+  createRoot(root).render(join ? <JoinCall /> : params.get("ui") === "1" ? <UiGallery /> : params.has("preview") ? <Gallery /> : <App />);
 }

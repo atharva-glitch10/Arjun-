@@ -24,3 +24,16 @@ export function timeGreeting(language: ElderLanguage, hour: number): string {
   };
   return (words[language] ?? words.mr)[slot];
 }
+
+export type OrbLabelState = "idle" | "connecting" | "listening" | "thinking" | "speaking";
+
+/** What the orb is doing, in words (screen readers and captions). */
+export const ORB_LABELS: Record<ElderLanguage, Record<OrbLabelState, string>> = {
+  mr: { idle: "अर्जुन तयार आहे", connecting: "जोडत आहे", listening: "मी ऐकतोय", thinking: "विचार करतोय", speaking: "अर्जुन बोलतोय" },
+  hi: { idle: "अर्जुन तैयार है", connecting: "जुड़ रहा है", listening: "मैं सुन रहा हूँ", thinking: "सोच रहा हूँ", speaking: "अर्जुन बोल रहा है" },
+  en: { idle: "Arjun is ready", connecting: "Connecting", listening: "Listening", thinking: "Thinking", speaking: "Arjun is speaking" },
+};
+
+export function orbLabel(language: string | undefined, state: OrbLabelState): string {
+  return ORB_LABELS[elderLanguage(language)][state];
+}

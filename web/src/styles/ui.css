@@ -1,0 +1,79 @@
+/* The new UI layer's stylesheet: fonts, tokens, Tailwind. Import once (main.tsx). */
+@import "@fontsource-variable/noto-sans-devanagari";
+@import "./ui-tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Scoped stand-in for Tailwind's preflight (off globally so the old screens do not change). Zero specificity. */
+  :where(.ui-root),
+  :where(.ui-root *),
+  :where(.ui-root *)::before,
+  :where(.ui-root *)::after {
+    box-sizing: border-box;
+    border: 0 solid var(--border);
+  }
+  :where(.ui-root) {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  :where(.ui-root) :where(button, input, textarea, select) {
+    font: inherit;
+    color: inherit;
+  }
+  :where(.ui-root) :where(button) {
+    background: none;
+    cursor: pointer;
+  }
+  :where(.ui-root) :where(h1, h2, h3, p) {
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* Orb: soft amber sphere with a slow breathing glow. State comes from data-state (see components/Orb.tsx). */
+  .orb {
+    --orb-size: 16rem;
+    width: var(--orb-size);
+    height: var(--orb-size);
+    border-radius: 9999px;
+    background: radial-gradient(circle at 35% 30%, var(--orb-1), var(--orb-2) 55%, var(--orb-3));
+    box-shadow: var(--shadow-orb-glow);
+    animation: orb-breathe 6s ease-in-out infinite;
+  }
+  .orb[data-state="idle"] { animation-duration: 7s; opacity: 0.92; }
+  .orb[data-state="listening"] { animation-name: orb-listen; animation-duration: 3.2s; }
+  .orb[data-state="thinking"] { animation-name: orb-think; animation-duration: 1.8s; }
+  .orb[data-state="speaking"] { animation-name: orb-speak; animation-duration: 1.2s; }
+  .orb[data-state="connecting"] { animation-duration: 2.4s; opacity: 0.7; }
+}
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 50px 8px rgb(242 162 70 / 0.28); }
+  50% { transform: scale(1.03); box-shadow: 0 0 70px 14px rgb(242 162 70 / 0.38); }
+}
+@keyframes orb-listen {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 60px 12px rgb(242 162 70 / 0.35); }
+  50% { transform: scale(1.06); box-shadow: 0 0 90px 24px rgb(242 162 70 / 0.5); }
+}
+@keyframes orb-think {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(0.97); filter: brightness(1.06); }
+}
+@keyframes orb-speak {
+  0%, 100% { transform: scale(1); }
+  30% { transform: scale(1.05); }
+  60% { transform: scale(1.02); }
+}
+
+/* Motion off: the OS setting, or the family "reduce motion" switch (html.no-motion, set in main.tsx). */
+@media (prefers-reduced-motion: reduce) {
+  .orb { animation: none; }
+}
+.no-motion .orb { animation: none; }

@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { createAccess } from "./server/access";
@@ -9,6 +11,7 @@ const apiKey = process.env.CORE_API_KEY ?? "";
 const access = createAccess({ code: (process.env.ARJUN_ACCESS_CODE ?? "").trim(), apiKey });
 
 export default defineConfig({
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   plugins: [
     react(),
     {

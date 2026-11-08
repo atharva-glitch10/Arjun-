@@ -1,0 +1,57 @@
+/* Arjun UI tokens: the SINGLE source for the new UI layer (components, screens).
+   Hex values live ONLY in this file. tailwind.config.ts and the shadcn components read the variables below,
+   so a colour change is one edit here. The older Ghar screens still use tokens.css until they are retired.
+
+   Palette: white ground, cream cards, navy text, soft amber accent. Red appears ONLY on the emergency screen. */
+
+:root {
+  /* 1. Palette (raw) */
+  --ui-white: #ffffff;
+  --ui-cream: #fbf4e6;
+  --ui-cream-border: #f0e2c4;
+  --ui-navy: #1c2541;
+  /* Navy at 70% on white (60% measured 4.2:1 on white, below the 4.5:1 AA floor). */
+  --ui-navy-muted: #60667a;
+  /* Navy at 50%: the border of form fields and outlined controls (needs 3:1 on white). */
+  --ui-navy-line: #8e92a0;
+  --ui-amber-light: #f9c877;
+  --ui-amber: #f2a246;
+  --ui-amber-deep: #e98b35;
+  --ui-red: #c62828;
+
+  /* 2. shadcn theme mapping (primary = amber, card = cream, foreground = navy) */
+  --background: var(--ui-white);
+  --foreground: var(--ui-navy);
+  --card: var(--ui-cream);
+  --card-foreground: var(--ui-navy);
+  --popover: var(--ui-white);
+  --popover-foreground: var(--ui-navy);
+  --primary: var(--ui-amber);
+  --primary-hover: var(--ui-amber-deep);
+  --primary-foreground: var(--ui-navy);
+  --secondary: var(--ui-cream);
+  --secondary-foreground: var(--ui-navy);
+  --muted: var(--ui-cream);
+  --muted-foreground: var(--ui-navy-muted);
+  --accent: var(--ui-cream);
+  --accent-foreground: var(--ui-navy);
+  --border: var(--ui-cream-border);
+  --input: var(--ui-navy-line);
+  --ring: var(--ui-navy);
+  --emergency: var(--ui-red);
+  --emergency-foreground: var(--ui-white);
+
+  /* 3. Orb */
+  --orb-1: var(--ui-amber-light);
+  --orb-2: var(--ui-amber);
+  --orb-3: var(--ui-amber-deep);
+  --shadow-orb-glow: 0 0 60px 12px rgb(242 162 70 / 0.35);
+  --shadow-card: 0 1px 3px rgb(28 37 65 / 0.06);
+
+  /* 4. Shape, size, type */
+  --radius: 20px;
+  --touch-min: 56px; /* every tap target is at least this tall and wide */
+  --font-ui: "Noto Sans Devanagari Variable", "Noto Sans Devanagari", system-ui, sans-serif;
+  --text-body: 20px; /* elder body text floor */
+  --text-heading: 28px; /* elder heading floor */
+}
