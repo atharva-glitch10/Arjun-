@@ -3,7 +3,6 @@ import {
   CalendarIcon,
   CheckIcon,
   ClockIcon,
-  Diya,
   HeartPulseIcon,
   ImageIcon,
   ListIcon,
@@ -503,7 +502,7 @@ export function KahaniScreen(p: KahaniProps) {
   return (
     <div className="screen kahani">
       <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#fff" }}>
-        <Diya size={36} />
+        <HeartMark size={40} />
         <h1 className="h-display" style={{ fontSize: 32 }}>
           आजीची वही
         </h1>
@@ -580,7 +579,9 @@ export function ConnectingScreen(p: { onStop: () => void }) {
         अर्जुन तयार होतोय…
       </h1>
       <div className="center-block" style={{ minHeight: 250 }}>
-        <Diya size={150} detailed label="अर्जुन तयार होत आहे" />
+        <div className="ad-orb listening" role="img" aria-label="अर्जुन तयार होत आहे">
+          <HeartMark size={110} />
+        </div>
       </div>
       <p style={{ fontSize: 24, lineHeight: 1.5, textAlign: "center" }} aria-live="polite">
         थोडं थांबा
@@ -646,7 +647,9 @@ export function StartScreen(p: { onStart: () => void }) {
   return (
     <div className="screen centered-end" style={{ gap: 22 }}>
       <div className="center-block">
-        <Diya size={150} detailed label="अर्जुन" />
+        <div className="ad-orb" role="img" aria-label="अर्जुन">
+          <HeartMark size={120} />
+        </div>
         <h1 className="h-display" style={{ fontSize: 38, lineHeight: 1.4 }}>
           अर्जुन
         </h1>

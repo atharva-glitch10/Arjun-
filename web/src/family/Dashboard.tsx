@@ -36,7 +36,8 @@ import type {
   SoundEventTrend,
   WatchSample,
 } from "../api";
-import { CheckIcon, ClockIcon, CrossIcon, Diya } from "../ghar/Motifs";
+import { CheckIcon, ClockIcon, CrossIcon } from "../ghar/Motifs";
+import { HeartMark } from "../ghar/Screens";
 
 interface Data {
   user: User;
@@ -398,7 +399,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           )}
         </div>
         <div className="fam-topbar">
-          <Diya size={44} />
+          <HeartMark size={48} />
           <div style={{ display: "flex", flexDirection: "column" }}>
             <h1 className="h-display" style={{ fontSize: 34, lineHeight: 1.25 }}>
               {name}'s day
