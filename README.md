@@ -131,6 +131,8 @@ the script reports that limitation while seeding the other requested data.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
+- Emergency auto-calls need a Twilio account (`CALLS_ENABLED=1`); untested with a real call. Trial Twilio accounts can
+  only call verified numbers. Arjun never dials 112; live location works only if the browser grants location.
 - **Arjun silent on one laptop (2026-11-08, open):** mic audio reached the agent but no transcript came back. Run with
   `ARJUN_DEBUG_VOICE=1` (default) and read `logs/voice-agent.app.log` lines starting `voice:`; see docs/RUNBOOK.md.
 - **Voice cloning:** adding a voice is verified live; hearing a cloned reply is not yet. Gnani documents no remote

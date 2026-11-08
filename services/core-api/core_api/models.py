@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -500,4 +501,45 @@ class ClonedVoiceAudit(Base):
     voice_id: Mapped[int] = mapped_column(Integer)
     voice_name: Mapped[str] = mapped_column(String(80))
     event: Mapped[str] = mapped_column(String(16))  # added | activated | deactivated | deleted | used
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class EmergencySettings(Base):
+    """Family-set emergency escalation (team decision 2026-11-08): who Arjun phones when an emergency is detected
+    and she does not answer. `help_phone` is a number the FAMILY chose (old-age-home nurse desk, warden, a nearby
+    hospital's emergency line, a private ambulance). Arjun never dials 112 by itself."""
+
+    __tablename__ = "emergency_settings"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    help_label: Mapped[str] = mapped_column(String(80), default="")  # "Sunrise Home nurse desk"
+    help_phone: Mapped[str] = mapped_column(String(20), default="")
+    address: Mapped[str] = mapped_column(String(300), default="")  # read out on the help call
+    call_family: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class EmergencyLocation(Base):
+    """The elder device's location, captured ONLY during an active physical emergency (never tracked otherwise)."""
+
+    __tablename__ = "emergency_locations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    accuracy_m: Mapped[float] = mapped_column(Float, default=0.0)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class EmergencyCall(Base):
+    """Every escalation call Arjun tried, with its honest outcome (boundary 14: never claim a call that did not
+    happen). status: placed | failed | skipped_disabled | skipped_no_number."""
+
+    __tablename__ = "emergency_calls"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    stage: Mapped[str] = mapped_column(String(10))  # family | help
+    target: Mapped[str] = mapped_column(String(120))  # "Rahul (son)" / "Sunrise Home nurse desk"
+    phone_tail: Mapped[str] = mapped_column(String(8), default="")  # last 4 digits only
+    status: Mapped[str] = mapped_column(String(20))
+    detail: Mapped[str] = mapped_column(String(200), default="")
     at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

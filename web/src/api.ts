@@ -320,6 +320,23 @@ export interface ClonedVoiceInput {
   mime: string;
 }
 
+export interface EmergencySettings {
+  help_label: string;
+  help_phone: string;
+  address: string;
+  call_family: boolean;
+  calls_enabled?: boolean;
+}
+
+export interface EmergencyCallRow {
+  stage: "family" | "help";
+  target: string;
+  phone_tail: string;
+  status: "placed" | "failed" | "skipped_disabled" | "skipped_no_number";
+  detail: string;
+  at: string;
+}
+
 async function call<T>(base: string, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${base}${path}`, {
     ...init,
@@ -364,6 +381,12 @@ export const api = {
   contacts: (id: number) => core<Contact[]>(`/users/${id}/contacts`),
   addContact: (id: number, name: string, relation: string, phone: string) =>
     core<Contact>(`/users/${id}/contacts`, post({ name, relation, phone })),
+  emergencySettings: (id: number) => core<EmergencySettings>(`/users/${id}/emergency-settings`),
+  saveEmergencySettings: (id: number, body: EmergencySettings) =>
+    core<EmergencySettings>(`/users/${id}/emergency-settings`, { method: "PUT", body: JSON.stringify(body) }),
+  emergencyCalls: (id: number) => core<EmergencyCallRow[]>(`/users/${id}/emergency/calls`),
+  emergencyLocation: (id: number, body: { lat: number; lon: number; accuracy_m: number }) =>
+    core<{ kept: boolean }>(`/users/${id}/emergency/location`, post(body)),
   voices: (id: number) => core<ClonedVoice[]>(`/users/${id}/voices`),
   addVoice: (id: number, body: ClonedVoiceInput) => core<ClonedVoice>(`/users/${id}/voices`, post(body)),
   setVoiceActive: (id: number, voiceId: number, on: boolean) =>

@@ -4,6 +4,7 @@ import { api } from "../api";
 import { activityLine } from "./activity";
 import { AppLinksCard } from "./AppLinksCard";
 import { KnownFactsCard } from "./KnownFactsCard";
+import { EmergencyCard } from "./EmergencyCard";
 import { VoicesCard } from "./VoicesCard";
 import { alarmState, enableAlarm, popup, startAlarm, stopAlarm } from "./alarm";
 import { recentEmergencies } from "./alerts";
@@ -758,6 +759,8 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
         {tab === "settings" && (
           <>
+        <EmergencyCard userId={userId} name={name} />
+
         <section className="fam-card">
           <h2>Her day (family-set times)</h2>
           <div className="fam-form" aria-label="Speech preferences">

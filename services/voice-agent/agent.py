@@ -17,6 +17,7 @@ from pathlib import Path
 import aiohttp
 import applog
 import clonedvoice
+import emergencycall
 import httpx
 import voiceprovider
 from audiowarm import warm_audio_resampler
@@ -497,6 +498,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     async def say_reply(reply) -> bool:  # type: ignore[no-untyped-def]
         """Synthesize this reply in Prisma's detected language using the verified session model/voice."""
+        if emergencycall.is_emergency(reply) and (emergency_task[0] is None or emergency_task[0].done()):
+            # The fixed emergency template is about to be spoken: call family now, then the 10-second check.
+            emergency_task[0] = asyncio.create_task(run_emergency_escalation(), name="emergency-escalation")
         detected = reply.language or transcript_languages.get("__current__", STT_LANGUAGE)
         language = tts_language_for(detected, TTS_LANGUAGE)
         voice = TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"]
@@ -552,6 +556,21 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     sound_check_task: list[asyncio.Task[None] | None] = [None]
     sound_monitor: list[SoundEventMonitor | None] = [None]
     sound_check = SoundCheckWindow()
+    emergency_window = SoundCheckWindow(emergencycall.WAIT_S)
+    emergency_task: list[asyncio.Task[None] | None] = [None]
+
+    async def run_emergency_escalation() -> None:
+        family_res = await asyncio.to_thread(emergencycall.escalate, user_id, "family")
+        vlog("emergency: family calls placed %s", family_res.get("placed"))
+        await say_locked(emergencycall.ASK_OK)  # queued behind the fixed emergency template (speech_lock)
+        emergency_window.start(time.monotonic())
+        await asyncio.sleep(emergencycall.WAIT_S)
+        if emergency_window.should_escalate(time.monotonic()) and state.user != "speaking":
+            help_res = await asyncio.to_thread(emergencycall.escalate, user_id, "help")
+            vlog("emergency: no answer in %.0f s, help calls placed %s", emergencycall.WAIT_S, help_res.get("placed"))
+            await say_locked(emergencycall.SAID_HELP_CALLED if help_res.get("placed") else emergencycall.SAID_NO_CALL)
+        else:
+            vlog("emergency: she answered within %.0f s, no help call", emergencycall.WAIT_S)
 
     async def handle_sound_event(event: SoundEvent) -> None:
         if not event.check_in:
@@ -726,6 +745,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         state.on_user_state(ev.new_state)
         if ev.new_state == "speaking":
             sound_check.answered()
+            emergency_window.answered()
             turns.user_started_speaking(ev.created_at)
             user_started.set()
             if media.playing:

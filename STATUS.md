@@ -1,5 +1,14 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+
+## Emergency escalation + live location (2026-11-08 23:30)
+- Emergency reply -> Telegram + dashboard alarm -> family phoned (max 2) -> "तुम्ही ठीक आहात का?" -> 10 s with no
+  speech -> family-saved help number phoned with her address; second urgent Telegram alert. Never dials 112.
+- Elder device sends GPS once when the emergency screen opens; kept only within 15 min of an emergency alert; map
+  link on dashboard + Telegram button. Family "Emergency help" card in Settings (help number, address, call log).
+- Verified by tests only (core-api 312, voice-agent 368, web 146 + build). **Not verified live:** no Twilio account
+  is configured yet, so no real call has been placed; location not yet tried on a phone.
+
 ## Elder UI "ad look" (2026-11-08 22:20)
 - Elder screens restyled to match the Arjun ad: always bright (dark evening/listening backgrounds removed), warm haldi
   glow, one glowing "बोला" button with the Listening Heart mark, 42-52 px headings, 32 px reply/said text, big

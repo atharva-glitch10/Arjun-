@@ -43,6 +43,12 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
      distress-alert consent is off.** The alert is a prominent dashboard banner (a notification of kind
      "emergency") that names the configured family contacts. It is a dashboard alert ONLY: no call, SMS or
      WhatsApp is sent (telephony is frozen), and the alert text says so (boundary 14).
+     **CHANGED 2026-11-08 (team decision): emergency auto-calls.** On an emergency reply Arjun phones the family
+     contacts (max 2), asks "तुम्ही ठीक आहात का?" and waits `ARJUN_EMERGENCY_WAIT_S` (10 s). No speech -> it phones
+     the FAMILY-SAVED help number (nurse desk / warden / hospital) and reads the saved address. It NEVER dials 112
+     itself. Calls run only with `CALLS_ENABLED=1` + Twilio keys (core-api only); each call is logged honestly
+     (placed / failed / skipped). The elder device sends its live location ONLY while an emergency is open
+     (core-api drops it otherwise); it goes to the dashboard + Telegram as a map link.
    - **Emotional distress** -> stop the story, respond gently, offer a family call, mention
      Elderline 14567 (8 AM-8 PM), alert caregiver ONLY per consent (unchanged).
    - **Family view (2026-10-31)**: per conversation a seriousness level (normal / watch / urgent / emergency),
@@ -138,7 +144,7 @@ MVP: voice reminders, "aaj kay aahe", mark done, family-call reminders, help req
 reminders (meal-anchored), story listening, interest openers, Memory Book, safety, family dashboard.
 **Frozen until after Nov 10** (do not build without asking): BP/sugar readings, meal/walk check-ins,
 Export for doctor, medicine-strip photos, RSS news, full pgvector RAG, login/roles, migrations,
-nginx replicas, S3 cache, multi-elder accounts, telephony, SMS/WhatsApp, Evon fine-tuning.
+nginx replicas, S3 cache, multi-elder accounts, telephony (except the 2026-11-08 emergency calls), SMS/WhatsApp, Evon fine-tuning.
 
 ## Open questions (unresolved; do not assume answers)
 1. Does Prisma support Marathi in *streaming*? If not, push-to-talk (T5).

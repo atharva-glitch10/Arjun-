@@ -425,6 +425,30 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const evening = forceEvening ?? isEvening(now);
   const shownDose = dueDose ?? lastDose.current;
   // The familiar-voice chip only where Arjun may actually chat in that voice: never on medicine, safety or confirm.
+  // Emergency screen: share the device's location ONCE for this emergency. core-api keeps it only if a physical
+  // emergency was just recorded (emotional distress: discarded) and sends the family a map link. Never tracked.
+  const sharedLocation = useRef(false);
+  useEffect(() => {
+    if (shown !== "safety") {
+      sharedLocation.current = false;
+      return;
+    }
+    if (sharedLocation.current || !("geolocation" in navigator)) return;
+    sharedLocation.current = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        void api
+          .emergencyLocation(userId, {
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            accuracy_m: Math.round(pos.coords.accuracy || 0),
+          })
+          .catch(() => undefined),
+      () => undefined, // refused / unavailable: the family alert and calls still happen without it
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
+    );
+  }, [shown, userId]);
+
   const chipScreen =
     ["listen", "reply", "story"].includes(shown as string) || (shown === "home" && !(medicineOpen && shownDose));
   if (dueDose) lastDose.current = dueDose;
