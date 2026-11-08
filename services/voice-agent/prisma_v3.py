@@ -124,9 +124,10 @@ class PrismaV3Stream(stt.RecognizeStream):
             "x-sample-rate": str(self._prisma.sample_rate),
         }
         if self._prisma.keyterms:
-            headers["keyterms"] = json.dumps(self._prisma.keyterms, ensure_ascii=False)
+            # Gnani: non-ASCII keyterms JSON must be escaped in headers (raw Devanagari broke the handshake on the laptop).
+            headers["keyterms"] = json.dumps(self._prisma.keyterms, ensure_ascii=True)
         if self._prisma.speaker_names:
-            headers["speaker_names"] = json.dumps(self._prisma.speaker_names, ensure_ascii=False)
+            headers["speaker_names"] = json.dumps(self._prisma.speaker_names, ensure_ascii=True)
         try:
             async with websockets.connect(
                 self._prisma.base_url,
@@ -136,9 +137,15 @@ class PrismaV3Stream(stt.RecognizeStream):
                 close_timeout=10,
                 open_timeout=self._conn_options.timeout,
             ) as ws:
-                first = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                raw_first = await asyncio.wait_for(ws.recv(), timeout=10)
+                try:
+                    first = json.loads(raw_first)
+                except (TypeError, ValueError):
+                    first = {}
                 if first.get("type") != "connected":
-                    raise APIConnectionError("Prisma v3 stream did not confirm connection")
+                    # Say WHY (Gnani's own message, never our headers/key) so the log is actionable.
+                    reason = str(first.get("message") or first.get("error") or first.get("type") or raw_first)[:200]
+                    raise APIConnectionError(f"Prisma v3 stream did not confirm connection: {reason}")
                 sender = asyncio.create_task(self._send_audio(ws))
                 receiver = asyncio.create_task(self._receive(ws))
                 try:

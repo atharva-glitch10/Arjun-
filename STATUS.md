@@ -1,5 +1,10 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Prisma v3 handshake refused on the laptop (2026-11-08 21:52)
+- `GNANI_STT_IMPL=v3` failed every connection ("did not confirm connection"); laptop reverted to `plugin`. Likely
+  cause: Devanagari keyterms/speaker names sent raw in WS headers (`ensure_ascii=False`); Gnani's docs require
+  escaping. Now ASCII-escaped, and a refused handshake logs Gnani's own reason. Unit-tested; not yet verified live.
+
 ## Hinglish answered in Marathi; "हीराबाईबाई" (2026-11-08 21:46, laptop)
 - With the plugin STT locked to mr-IN, Hindi/Hinglish was transcribed fine but labelled mr-IN, so replies stayed
   Marathi. Prisma v3 (`GNANI_STT_IMPL=v3`) now hints the elder's languages + hi-IN + en-IN (`GNANI_STT_LANGUAGE_HINTS`).
