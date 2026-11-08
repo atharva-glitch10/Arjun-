@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Callable
 from urllib.parse import quote
@@ -181,6 +181,25 @@ def _same_word(said: str, card: str) -> bool:
 # arbitrary first row. `_FAMILY_FALLBACK` is used when nothing fits.
 _SON_WORDS = ("son", "मुलगा")
 _DOCTOR_WORDS = ("doctor", "डॉक")
+# Used only when the companion would say exactly what it said a moment ago.
+def companion_name(user: dict[str, Any] | None) -> str:
+    """What she calls Arjun: the family can rename him (Settings); blank = Arjun."""
+    style = (user or {}).get("speech_style") or {}
+    return str(style.get("companion_name") or "").strip() or "Arjun"
+
+
+def rename_companion(text: str, name: str) -> str:
+    if name == "Arjun":
+        return text
+    return text.replace("अर्जुन", name).replace("Arjun", name)
+
+
+_VARIED = {
+    "mr": ["हं, सांगा ना, मी ऐकतोय.", "बरं. मग पुढे काय झालं?", "अच्छा! जरा अजून सांगा.", "हो का? मग?"],
+    "hi": ["हाँ, बताइए, मैं सुन रहा हूँ।", "अच्छा। फिर क्या हुआ?", "अरे वाह! थोड़ा और बताइए।", "हम्म, फिर?"],
+    "en": ["I'm listening, go on.", "Oh? Then what happened?", "Tell me a little more.", "Mm, and then?"],
+}
+
 _FAMILY_FALLBACK = {"mr": "तुमच्या घरच्यांना", "hi": "आपके घरवालों को", "en": "your family"}
 
 
@@ -297,6 +316,7 @@ class TurnEngine:
         # USER CONTEXT for the LLM: built from core-api, cached per user for five minutes, never persisted.
         self._context_cache: dict[int, tuple[float, str]] = {}
         self._last_arjun_reply: dict[int, str] = {}
+        self._recent_replies: dict[int, list[str]] = {}
         self._last_reply_simplifiable: dict[int, bool] = {}
         self._repeat_times: dict[int, deque[float]] = {}
 
@@ -326,6 +346,7 @@ class TurnEngine:
         finally:
             self._local.depth = depth
         if depth == 0:
+            res = self._vary_repeat(user_id, res)
             try:
                 self._record_turn(user_id, text, res)
             except Exception as exc:  # noqa: BLE001 - memory must never break the turn
@@ -333,6 +354,19 @@ class TurnEngine:
             if res.intent not in ("REPEAT", "SPEAK_SLOWER", "SPEAK_LOUDER", "SPEAK_NORMAL") and res.reply:
                 self._last_arjun_reply[user_id] = res.reply
                 self._last_reply_simplifiable[user_id] = res.intent == "CHAT" and res.mode == "companion"
+        return res
+
+    def _vary_repeat(self, user_id: int, res: TurnResult) -> TurnResult:
+        """A companion chat line never repeats one of Arjun's last 3 lines word for word (heard live 2026-11-08: the
+        same sentence four times sounded like a machine). Safety and care templates are never touched."""
+        recent = self._recent_replies.setdefault(user_id, [])
+        if res.mode == "companion" and res.intent in ("CHAT", "UNKNOWN") and res.reply and res.reply in recent:
+            pool = _VARIED.get(res.language, _VARIED["mr"])
+            fresh = next((x for x in pool if x not in recent), pool[len(recent) % len(pool)])
+            res = replace(res, reply=fresh)
+        if res.reply:
+            recent.append(res.reply)
+            del recent[:-3]
         return res
 
     def _handle(self, user_id: int, text: str, language_code: str | None = None) -> TurnResult:
@@ -393,7 +427,8 @@ class TurnEngine:
         style = user.get("speech_style") or {"rate": "normal", "volume": "normal", "simple": False}
         norm_text = normalize(text)
         if any(x in norm_text for x in ("नेहमीसारखं बोल", "नेहमी सारखं बोल", "normal bol")):
-            style = {"rate": "normal", "volume": "normal", "simple": False}
+            style = {"rate": "normal", "volume": "normal", "simple": False,
+                     "companion_name": str(style.get("companion_name") or "")}  # the family-set name stays
             self._save_speech_style(user_id, style)
             return TurnResult("ठीक आहे, नेहमीसारखं बोलतो.", "SPEAK_NORMAL", "care", lang, speech_style=style)
         if any(x in norm_text for x in ("हळू बोल", "हळू बोला", "slow bol", "मोठ्याने बोल", "मोठ्याने बोला", "नीट ऐकू येत नाही")):
@@ -447,7 +482,8 @@ class TurnEngine:
 
         # 2. AI disclosure
         if has_any(normalize(text), _AI_QUESTIONS):
-            return TurnResult(r["ai_disclosure"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
+            return TurnResult(rename_companion(r["ai_disclosure"], companion_name(user)), "UNKNOWN", "care", lang,
+                              trace=self._t(trace, t0))
 
         offered = self._family_offer_answer(user_id, text, lang, trace, t0, llm)
         if offered is not None:
@@ -682,6 +718,7 @@ class TurnEngine:
             address_as = "आजी" if user.get("age") is not None and int(user["age"]) >= 60 else honorific
         if name:
             parts.append(f"Name: {name}; address her as {address_as}")
+        parts.append(f"your name: {companion_name(user)}")
         try:
             contacts = self.core.contacts(uid) or []
             family = [
@@ -2616,13 +2653,13 @@ class TurnEngine:
             if lang == "mr":
                 reply = f"मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा." if alerted else f"112 वर फोन करा. {ask_call}"
             elif lang == "hi":
-                reply = f"मैंने {family_obj} को तुरंत बता दिया है। 112 पर कॉल करें।" if alerted else f"112 पर कॉल करें। {ask_call}"
+                reply = f"मैंने {family_obj} तुरंत बता दिया है। 112 पर कॉल करें।" if alerted else f"112 पर कॉल करें। {ask_call}"
             else:
                 reply = f"I alerted {family_obj}. Call 112 now." if alerted else f"Call 112 now. {ask_call}"
         elif alerted and lang == "mr":
             reply = f"कुठे त्रास होतोय, सांगा. मी {family_obj} कळवलं आहे."
         elif alerted and lang == "hi":
-            reply = f"कहाँ परेशानी हो रही है, बताइए। मैंने {family_obj} को बता दिया है।"
+            reply = f"कहाँ परेशानी हो रही है, बताइए। मैंने {family_obj} बता दिया है।"
         elif alerted:
             reply = f"Tell me what is troubling you. I alerted {family_obj}."
         else:

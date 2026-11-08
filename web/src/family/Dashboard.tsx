@@ -5,6 +5,7 @@ import { activityLine } from "./activity";
 import { AppLinksCard } from "./AppLinksCard";
 import { KnownFactsCard } from "./KnownFactsCard";
 import { EmergencyCard } from "./EmergencyCard";
+import { NamesCard } from "./NamesCard";
 import { VoicesCard } from "./VoicesCard";
 import { alarmState, enableAlarm, popup, startAlarm, stopAlarm } from "./alarm";
 import { recentEmergencies } from "./alerts";
@@ -742,6 +743,8 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
         {tab === "settings" && (
           <>
+        <NamesCard user={user} onSave={(patch) => run(() => api.patchUser(userId, patch))} />
+
         <EmergencyCard userId={userId} name={name} />
 
         <section className="fam-card">
@@ -794,16 +797,6 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               onSave={(v) =>
                 run(() => api.patchUser(userId, { conditions: v.split(",").map((s) => s.trim()).filter(Boolean) }))
               }
-            />
-            <TextField
-              label="How Arjun addresses her (blank = her name)"
-              initial={user.honorific}
-              onSave={(v) => run(() => api.patchUser(userId, { honorific: v.trim() }))}
-            />
-            <TextField
-              label="Address form (आजी, ताई, हीराबाई)"
-              initial={user.address_as}
-              onSave={(v) => run(() => api.patchUser(userId, { address_as: v.trim() }))}
             />
           </div>
         </section>

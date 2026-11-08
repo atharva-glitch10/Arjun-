@@ -14,6 +14,8 @@ class SpeechStyle(BaseModel):
     rate: Literal["normal", "slow"] = "normal"
     volume: Literal["normal", "loud"] = "normal"
     simple: bool = False
+    # What she calls Arjun (family-set, Settings). Blank = "Arjun". Letters in any script, spaces, dots only.
+    companion_name: str = Field(default="", max_length=24, pattern=r"^[^\d<>{}\[\]@#$%^&*=+|\\/~`\"]*$")
 
 
 def _check_hhmm(v: str | None) -> str | None:

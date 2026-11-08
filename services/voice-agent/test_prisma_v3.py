@@ -23,7 +23,7 @@ def test_context_fetch_only_uses_bias_fields(monkeypatch):
     monkeypatch.setenv("CORE_API_URL", "https://core.invalid")
     monkeypatch.setattr(prisma_v3.httpx, "Client", lambda **kw: _MockContextClient(route))
     terms, speakers = user_context_terms(7)
-    assert terms == ["Bhajan", "Family One", "Medicine A", "Music", "songs"]
+    assert terms == ["Arjun", "Bhajan", "Family One", "Medicine A", "Music", "songs"]
     assert speakers == ["Family One"]
     assert len(terms) <= 200 and len(speakers) <= 4
 

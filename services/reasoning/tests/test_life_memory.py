@@ -33,7 +33,7 @@ class Provider:
             content = "छान वाटलं ऐकून."
         return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
-    def last_system(self, marker: str = "You are Arjun") -> str:
+    def last_system(self, marker: str = "You are a warm, practical male voice companion") -> str:
         return next(b["messages"][0]["content"] for b in reversed(self.bodies) if marker in b["messages"][0]["content"])
 
 

@@ -335,10 +335,10 @@ def test_repeat_auto_switch_and_voice_style_reset(engine, core_http, uid):
     assert engine.handle(uid, "समजलं नाही").intent == "REPEAT"
     assert engine.handle(uid, "परत सांग").intent == "REPEAT"
     profile = core_http.get(f"/users/{uid}").json()["speech_style"]
-    assert profile == {"rate": "slow", "volume": "normal", "simple": True}
+    assert profile == {"rate": "slow", "volume": "normal", "simple": True, "companion_name": ""}
     result = engine.handle(uid, "नेहमीसारखं बोल")
     assert result.intent == "SPEAK_NORMAL"
-    assert core_http.get(f"/users/{uid}").json()["speech_style"] == {"rate": "normal", "volume": "normal", "simple": False}
+    assert core_http.get(f"/users/{uid}").json()["speech_style"] == {"rate": "normal", "volume": "normal", "simple": False, "companion_name": ""}
 
 
 def test_explicit_speech_style_controls(engine, core_http, uid):

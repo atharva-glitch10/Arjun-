@@ -16,6 +16,7 @@ import {
   SafetyScreen,
   StartScreen,
   TouchToHearScreen,
+  setCompanionLabel,
 } from "../ghar/Screens";
 import type { UpcomingItem } from "../ghar/Screens";
 import { FAILURE_TEXT, shownFor } from "../voice/state";
@@ -39,8 +40,8 @@ import {
   weekday,
 } from "./format";
 
-// How the elder is addressed in headings. A family setting later; "आजी" is the design default.
-const HONORIFIC = "आजी";
+// How the elder is addressed in headings: the family's "what should Arjun call her" (Settings), else "आजी".
+const DEFAULT_ADDRESS = "आजी";
 
 const hhmmOf = (iso: string): string => iso.slice(11, 16);
 
@@ -79,6 +80,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const [items, setItems] = useState<UpcomingItem[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [displayLanguage, setDisplayLanguage] = useState("mr");
+  const [addressAs, setAddressAs] = useState(DEFAULT_ADDRESS);
   // Whose voice Arjun may chat in (a family-approved cloned voice); shown so she always knows. Re-checked each minute.
   const [clonedName, setClonedName] = useState<string | null>(null);
   useEffect(() => {
@@ -222,6 +224,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         api.getUser(userId),
       ]);
       setDisplayLanguage(elderLanguage(user.preferred_languages?.[0] || user.language));
+      setAddressAs(user.address_as?.trim() || DEFAULT_ADDRESS);
+      setCompanionLabel(user.speech_style?.companion_name);
       setContacts(people);
       const t = clockNow();
       const upcoming: { at: Date; item: UpcomingItem }[] = [];
@@ -623,7 +627,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <HomeScreen
             evening={evening}
-            greeting={`${timeGreeting(elderLanguage(displayLanguage), now.getHours())}, ${HONORIFIC}`}
+            greeting={`${timeGreeting(elderLanguage(displayLanguage), now.getHours())}, ${addressAs}`}
             dateLine={dateLine(now)}
             clock={timeLabel(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`)}
             items={items}

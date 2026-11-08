@@ -48,7 +48,8 @@ def user_context_terms(user_id: int) -> tuple[list[str], list[str]]:
             contacts = client.get(f"/users/{user_id}/contacts").json()
             medicines = client.get(f"/users/{user_id}/medicines").json()
             apps = client.get(f"/users/{user_id}/app-links").json()
-        terms = list(user.get("interests") or [])
+        terms = [str((user.get("speech_style") or {}).get("companion_name") or "").strip() or "Arjun"]
+        terms += list(user.get("interests") or [])
         terms += [row.get("name", "") for row in contacts if isinstance(row, dict)]
         terms += [row.get("name", "") for row in medicines if isinstance(row, dict)]
         for row in apps:
