@@ -413,3 +413,6 @@ h1, h2, p { margin: 0; }
 .emergency-card .fam-form label.check { flex-direction: row; align-items: center; gap: 10px; font-size: 16px; }
 .emergency-card .fam-form label.check input { width: 22px; height: 22px; }
 .emergency-card > .fbtn { align-self: flex-start; }
+
+/* Elder view: the page behind the screen keeps the same warm glow (no beige band under it). */
+body:has(.elder-shell) { background: #FFD25E; }

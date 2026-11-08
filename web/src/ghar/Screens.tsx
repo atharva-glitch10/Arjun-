@@ -651,22 +651,21 @@ export function SafetyScreen(p: { text: string; onOk: () => void }) {
 /* ---- T8: start tap, delivered reminder, touch to hear ------------------------------------------------ */
 /** The one-time tap on a fresh page. Browsers allow sound only after a tap, so Arjun cannot speak a reminder before it. */
 export function StartScreen(p: { onStart: () => void }) {
+  // One tap is needed because browsers keep audio off until the page is touched; say it simply.
   return (
-    <div className="screen centered-end" style={{ gap: 22 }}>
-      <div className="center-block">
-        <div className="ad-orb" role="img" aria-label="अर्जुन">
-          <HeartMark size={120} />
-        </div>
-        <h1 className="h-display" style={{ fontSize: 38, lineHeight: 1.4 }}>
-          अर्जुन
-        </h1>
-        <p style={{ fontSize: 26, lineHeight: 1.5 }}>आठवणी आणि औषधं सांगण्यासाठी एकदा दाबा</p>
+    <div className="screen ad-home" style={{ justifyContent: "center" }}>
+      <button className="ad-orb" onClick={p.onStart} aria-label={`${companionLabel} सुरू करा`}>
+        <HeartMark size={130} />
+      </button>
+      <div className="ad-greeting">
+        <h1>नमस्कार! मी {companionLabel}.</h1>
+        <span>माझ्याशी बोलण्यासाठी एकदा दाबा</span>
       </div>
-      <button className="btn primary" style={{ minHeight: 100, fontSize: 34 }} onClick={p.onStart}>
+      <button className="btn ad-stop" style={{ width: "100%", maxWidth: 520 }} onClick={p.onStart}>
         <SpeakerIcon size={38} />
         सुरू करा
       </button>
-      <p className="footnote">{AI_DISCLOSURE}</p>
+      <p className="footnote">{companionLabel} — तुमचा AI सोबती</p>
     </div>
   );
 }
