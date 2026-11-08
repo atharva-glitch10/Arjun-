@@ -67,37 +67,54 @@ export interface HomeProps {
   onHelp: () => void;
 }
 
-export function HomeScreen(p: HomeProps) {
+/** Arjun's "Listening Heart" mark (same as the app icon and the ad's end card). */
+export function HeartMark({ size = 40 }: { size?: number }) {
   return (
-    <div className={`screen${p.evening ? " night" : ""}`} style={p.evening ? undefined : { padding: 0 }}>
-      {!p.evening && <Toran />}
-      <div
-        style={{
-          flexGrow: 1,
-          display: "flex",
-          flexDirection: "column",
-          gap: 18,
-          padding: p.evening ? 0 : "8px 22px 24px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <h1 className="h-display" style={{ fontSize: p.evening ? 34 : 36 }}>
-              {p.greeting}
-            </h1>
-            <span className="t-muted" style={{ fontSize: 22, lineHeight: 1.4 }}>
-              {p.dateLine}
-            </span>
-            {p.clock && (
-              <span aria-label={`आत्ता ${p.clock}`} style={{ fontSize: 34, lineHeight: 1.25, fontWeight: 800 }}>
-                {p.clock}
-              </span>
-            )}
-          </div>
-          {p.evening ? <MoonIcon /> : <SunriseIcon />}
-        </div>
+    <svg width={size} height={size} viewBox="0 0 512 512" aria-hidden="true">
+      <g fill="none" stroke="#F28C28" strokeLinecap="round">
+        <path d="M170 170 A120 120 0 0 0 170 342" strokeWidth="26" />
+        <path d="M342 170 A120 120 0 0 1 342 342" strokeWidth="26" />
+        <path d="M118 128 A180 180 0 0 0 118 384" strokeWidth="18" opacity=".45" />
+        <path d="M394 128 A180 180 0 0 1 394 384" strokeWidth="18" opacity=".45" />
+      </g>
+      <path
+        d="M256 318 c-44 -32 -74 -58 -74 -88 c0 -22 17 -38 38 -38 c16 0 28 9 36 21 c8 -12 20 -21 36 -21 c21 0 38 16 38 38 c0 30 -30 56 -74 88 z"
+        fill="#E8590C"
+      />
+    </svg>
+  );
+}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+function Brand() {
+  return (
+    <div className="ad-brand">
+      <HeartMark size={40} />
+      <span>अर्जुन</span>
+    </div>
+  );
+}
+
+export function HomeScreen(p: HomeProps) {
+  // Ad look (2026-11-08): always bright, one glowing button, very large text. No dark evening variant.
+  const upcoming = p.items.slice(0, 2);
+  return (
+    <div className="screen ad-home">
+      <Brand />
+      <div className="ad-greeting">
+        <h1>{p.greeting}</h1>
+        <span>
+          {p.clock ? `${p.clock} · ` : ""}
+          {p.dateLine}
+        </span>
+      </div>
+
+      <button className="ad-orb" onClick={p.onSpeak} disabled={p.busy} aria-label="अर्जुनशी बोला">
+        <HeartMark size={112} />
+        <b>बोला</b>
+      </button>
+
+      {(p.medicine || upcoming.length > 0) && (
+        <div className="ad-next">
           {p.medicine && (
             <div className="card-row">
               <div className="avatar leaf" style={{ color: "var(--ghar-leaf)" }}>
@@ -109,55 +126,27 @@ export function HomeScreen(p: HomeProps) {
               </div>
             </div>
           )}
-          {p.items.map((it) => (
+          {upcoming.map((it) => (
             <UpcomingCard key={it.key} item={it} />
           ))}
         </div>
+      )}
 
-        <div className="center-block" style={{ gap: 22 }}>
-          {p.evening ? (
-            <button className="speak-diya" onClick={p.onSpeak} disabled={p.busy} aria-label="अर्जुनशी बोला">
-              <div className="halo" />
-              <div className="core">
-                <Diya size={54} flame="var(--ghar-kumkum)" />
-                <span>बोला</span>
-              </div>
-            </button>
-          ) : (
-            <button className="speak breathe" onClick={p.onSpeak} disabled={p.busy} aria-label="अर्जुनशी बोला">
-              <MicIcon />
-              <span>बोला</span>
-            </button>
-          )}
-          <span className="t-muted" style={{ fontSize: 22, lineHeight: 1.4 }}>
-            {p.evening ? "गप्पा मारूया?" : "दाबा आणि बोला"}
-          </span>
-        </div>
+      {p.error && (
+        <p className="error-note" role="alert">
+          {p.error}
+        </p>
+      )}
 
-        {p.error && (
-          <p className="error-note" role="alert">
-            {p.error}
-          </p>
-        )}
-
-        <div className="btn-row">
-          <button className="btn outline-indigo" onClick={p.onToday}>
-            {!p.evening && <ListIcon />}
-            आज काय?
-          </button>
-          <button className="btn help" onClick={p.onHelp}>
-            {!p.evening && <PhoneIcon />}
-            मदत
-          </button>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          {!p.evening && <Diya size={26} />}
-          <span className="t-muted" style={{ fontSize: 18, lineHeight: 1.4 }}>
-            {AI_DISCLOSURE}
-          </span>
-        </div>
+      <div className="ad-actions">
+        <button className="ad-today" onClick={p.onToday}>
+          आज काय?
+        </button>
+        <button className="ad-help" onClick={p.onHelp}>
+          मदत
+        </button>
       </div>
+      <p className="ad-foot">{AI_DISCLOSURE}</p>
     </div>
   );
 }
@@ -171,25 +160,12 @@ export function ListenScreen(p: {
   onType?: { value: string; set: (v: string) => void; send: () => void };
 }) {
   return (
-    <div className="screen listen">
-      <h1 className="h-display" style={{ fontSize: 38, textAlign: "center" }}>
-        मी ऐकतोय…
-      </h1>
-      <div style={{ height: 250, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div
-          className="halo"
-          style={{
-            position: "absolute",
-            width: 230,
-            height: 230,
-            borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(242,182,50,.55) 0%, rgba(242,182,50,0) 70%)",
-          }}
-        />
-        <div style={{ position: "relative" }}>
-          <Diya size={150} detailed label="अर्जुन ऐकत आहे" />
-        </div>
+    <div className="screen listen ad-listen">
+      <Brand />
+      <div className="ad-orb listening" role="img" aria-label="अर्जुन ऐकत आहे">
+        <HeartMark size={120} />
       </div>
+      <h1 className="ad-big">मी ऐकतोय…</h1>
       <div className="said-card" aria-live="polite">
         <span className="t-muted" style={{ fontSize: 20, lineHeight: 1.4 }}>
           तुम्ही म्हणालात
@@ -225,7 +201,7 @@ export function ListenScreen(p: {
             झालं, पुढे
           </button>
         )}
-        <button className="btn outline-white" onClick={p.onStop}>
+        <button className="btn ad-stop" onClick={p.onStop}>
           थांबा
         </button>
       </div>
@@ -303,17 +279,13 @@ export function ReplyScreen(p: {
   onOk: () => void;
 }) {
   return (
-    <div className="screen" style={{ gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Diya size={44} />
-        <h1 className="h-display" style={{ fontSize: 32 }}>
-          अर्जुन
-        </h1>
+    <div className="screen ad-reply" style={{ gap: 20 }}>
+      <Brand />
+      <div className="ad-orb small" aria-hidden="true">
+        <HeartMark size={90} />
       </div>
-      <div className="big-card">
-        <div className="body" style={{ padding: "22px 22px 26px" }} aria-live="polite">
-          <p style={{ fontSize: 28, lineHeight: 1.5, fontWeight: 600 }}>{p.reply}</p>
-        </div>
+      <div className="ad-reply-card" aria-live="polite">
+        <p>{p.reply}</p>
       </div>
       <div className="stack-end">
         {p.ask === "yesno" && (
