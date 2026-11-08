@@ -108,6 +108,20 @@ class PrismaV3STT(stt.STT):
         return None
 
 
+DEFAULT_TOPIC = (
+    "An elderly Indian person talking at home with a voice companion: daily routine, meals, festivals, family members, "
+    "medicine names, reminders, prayers and old songs. Speech may mix Marathi, Hindi and English and may be slow."
+)
+
+
+def stt_topic() -> str:
+    raw = os.environ.get("GNANI_STT_TOPIC", "").strip()
+    if raw.lower() == "off":
+        return ""
+    text = raw or DEFAULT_TOPIC
+    return text.encode("ascii", "ignore").decode()[:1600]
+
+
 class PrismaV3Stream(stt.RecognizeStream):
     def __init__(self, *, stt: PrismaV3STT, conn_options: APIConnectOptions, sample_rate: int):
         super().__init__(stt=stt, conn_options=conn_options, sample_rate=sample_rate)
@@ -125,6 +139,11 @@ class PrismaV3Stream(stt.RecognizeStream):
             "format": "codemix",
             "x-sample-rate": str(self._prisma.sample_rate),
         }
+        # Gnani `topic` context hint (<= 1,600 chars, fixed per connection): tells Prisma what this audio is about.
+        # Plain ASCII only, like every header (GNANI_STT_TOPIC overrides; "off" disables).
+        topic = stt_topic()
+        if topic:
+            headers["topic"] = topic
         if self._prisma.keyterms:
             # Gnani: non-ASCII keyterms JSON must be escaped in headers (raw Devanagari broke the handshake on the laptop).
             headers["keyterms"] = json.dumps(self._prisma.keyterms, ensure_ascii=True)
