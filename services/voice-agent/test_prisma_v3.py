@@ -178,3 +178,16 @@ def test_single_hint_is_sent_as_that_locale(monkeypatch):
     captured, run = _capture_headers(monkeypatch, language_hints=["mr-IN"])
     asyncio.run(run())
     assert captured["additional_headers"]["language_code"] == "mr-IN"
+
+
+def test_topic_hint_is_sent_ascii_and_can_be_turned_off(monkeypatch):
+    monkeypatch.delenv("GNANI_STT_TOPIC", raising=False)
+    captured, run = _capture_headers(monkeypatch)
+    asyncio.run(run())
+    topic = captured["additional_headers"]["topic"]
+    topic.encode("ascii")
+    assert "elderly" in topic and len(topic) <= 1600
+    monkeypatch.setenv("GNANI_STT_TOPIC", "off")
+    captured, run = _capture_headers(monkeypatch)
+    asyncio.run(run())
+    assert "topic" not in captured["additional_headers"]
