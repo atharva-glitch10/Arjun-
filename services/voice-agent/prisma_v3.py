@@ -119,7 +119,9 @@ class PrismaV3Stream(stt.RecognizeStream):
         headers = {
             "x-api-key-id": self._prisma.api_key,
             "model": "prisma-v3.0",
-            "language_code": ",".join(self._prisma.language_hints) if self._prisma.language_hints else "indic-auto",
+            # Gnani (live, 2026-11-08): "exactly one locale is required ... Received: mr-IN, hi-IN, en-IN". One hint =
+            # that locale; several or none = indic-auto (automatic language identification per utterance).
+            "language_code": self._prisma.language_hints[0] if len(self._prisma.language_hints) == 1 else "indic-auto",
             "format": "codemix",
             "x-sample-rate": str(self._prisma.sample_rate),
         }

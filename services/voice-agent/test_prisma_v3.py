@@ -114,7 +114,8 @@ def test_preferred_languages_are_sent_as_locale_hints(monkeypatch):
         await adapter.stream()._run()
 
     asyncio.run(run())
-    assert captured["additional_headers"]["language_code"] == "ta-IN,en-IN"
+    # Gnani refuses a comma list ("exactly one locale is required"); several languages -> automatic identification.
+    assert captured["additional_headers"]["language_code"] == "indic-auto"
 
 
 def test_old_plugin_compatibility_no_extra_prisma_headers():
@@ -171,3 +172,9 @@ def test_refused_handshake_reports_gnanis_reason(monkeypatch):
     _, run = _capture_headers(monkeypatch, first_message='{"type":"error","message":"invalid language_code"}')
     with pytest.raises(APIConnectionError, match="invalid language_code"):
         asyncio.run(run())
+
+
+def test_single_hint_is_sent_as_that_locale(monkeypatch):
+    captured, run = _capture_headers(monkeypatch, language_hints=["mr-IN"])
+    asyncio.run(run())
+    assert captured["additional_headers"]["language_code"] == "mr-IN"
