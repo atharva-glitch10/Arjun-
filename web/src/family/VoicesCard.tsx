@@ -9,6 +9,35 @@ const CONSENT =
 const MIN_S = 10;
 const MAX_S = 45;
 
+/** Any browser recording (Chrome records WebM/Opus) -> 16-bit mono WAV at 24 kHz, a format Gnani documents.
+ * Decoding happens locally in the browser; nothing leaves the page until the family clicks Create. */
+async function toWav(blob: Blob): Promise<Blob> {
+  const RATE = 24000;
+  const decoded = await new AudioContext().decodeAudioData(await blob.arrayBuffer());
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * RATE), RATE);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start();
+  const pcm = (await offline.startRendering()).getChannelData(0);
+  const out = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const text = (o: number, t: string) => [...t].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
+  text(0, "RIFF");
+  out.setUint32(4, 36 + pcm.length * 2, true);
+  text(8, "WAVEfmt ");
+  out.setUint32(16, 16, true);
+  out.setUint16(20, 1, true);
+  out.setUint16(22, 1, true);
+  out.setUint32(24, RATE, true);
+  out.setUint32(28, RATE * 2, true);
+  out.setUint16(32, 2, true);
+  out.setUint16(34, 16, true);
+  text(36, "data");
+  out.setUint32(40, pcm.length * 2, true);
+  pcm.forEach((v, i) => out.setInt16(44 + i * 2, Math.max(-1, Math.min(1, v)) * 0x7fff, true));
+  return new Blob([out], { type: "audio/wav" });
+}
+
 /** Read a Blob as plain base64 (no data: prefix). */
 function toBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -98,13 +127,19 @@ export function VoicesCard({ userId, name }: { userId: number; name: string }) {
     setBusy(true);
     setError("");
     try {
+      let wav: Blob;
+      try {
+        wav = await toWav(clip);
+      } catch {
+        throw new Error("Could not read this recording. Please record again, or upload a WAV or MP3 file.");
+      }
       await api.addVoice(userId, {
         name: who.trim(),
         relation: relation.trim(),
         consent: true,
         consent_by: consentBy.trim(),
-        audio_base64: await toBase64(clip),
-        mime: clip.type || "audio/webm",
+        audio_base64: await toBase64(wav),
+        mime: "audio/wav",
       });
       setWho("");
       setRelation("");
