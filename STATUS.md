@@ -1,5 +1,15 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Live on the laptop, 2026-11-08 22:00 (what was actually heard)
+- **Verified live:** Marathi, Hindi and Hinglish speech -> Prisma v3 (`GNANI_STT_IMPL=v3`, `indic-auto`) detects
+  hi-IN / mr-IN per sentence -> reply in the same language -> spoken in the family's cloned voice (REST); replies
+  start ~1-2 s after the transcript. Medicine card stuck states cleared. Address fixed to "हीराबाई" (demo data).
+- Laptop `.env` tuning (not in git): `ARJUN_COMPANION_MIN_ENDPOINTING_S=2.4`, `ARJUN_MAX_ENDPOINTING_S=5.0`,
+  `ARJUN_MIN_ENDPOINTING_S=1.2` so pauses between sentences no longer split a turn (user: "it was better").
+- **Not yet verified live:** emergency phrase -> fixed reply + dashboard alarm; spoken medicine reminder; video call
+  by voice; YouTube by voice; daily Telegram briefing; phone via tunnel. Laptop CPU: Silero VAD ran up to ~1.8 s
+  behind real time under load.
+
 ## Prisma v3 handshake refused on the laptop (2026-11-08 21:52)
 - `GNANI_STT_IMPL=v3` failed every connection. Gnani reason (now logged, 21:55): "exactly one locale is required" for
   `language_code`; several languages now send `indic-auto`. Earlier also fixed: likely
