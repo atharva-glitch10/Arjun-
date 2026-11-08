@@ -186,6 +186,17 @@ class SseTimbre(gnani.TTS):
         return _GatedSse(tts=self, input_text=text, conn_options=conn_options)
 
 
+async def tts_audio(tts_obj, text: str):  # type: ignore[no-untyped-def]
+    """Synthesize `text` with a specific TTS and yield its audio frames.
+
+    LiveKit Agents 1.8.6 `AgentSession.say()` has NO `tts=` argument (it raised TypeError, so every reply that
+    picked a per-language or cloned voice was silent). It does take `audio=`: we synthesize with the chosen TTS here
+    and hand the frames over, so the text and the voice stay exactly what we chose."""
+    async with tts_obj.synthesize(text) as stream:
+        async for ev in stream:
+            yield ev.frame
+
+
 class _ClonedRest(RESTChunkedStream):
     """Gnani Voice Cloned TTS REST (POST /api/v1/tts/inference with speaker_embedding), one request at a time."""
 
@@ -436,8 +447,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             before = state.speaking_count
             if cloned is not None:
                 # Familiar voice for companion talk only; plain text (Timbre v3 emotion tags are not for VC).
-                handle = session.say(strip_tags(reply.speech or reply.text),
-                                     tts=ClonedTimbre(cloned, model=TTS["fallback_model"], voice=TTS["fallback_voice"]))
+                plain = strip_tags(reply.speech or reply.text)
+                cloned_tts = ClonedTimbre(cloned, model=TTS["fallback_model"], voice=TTS["fallback_voice"])
+                handle = session.say(plain, audio=tts_audio(cloned_tts, plain))
                 await handle
                 spoke = state.speaking_count > before
                 if handle.interrupted:  # she started talking: that is a real turn, not a failure
@@ -450,7 +462,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 logger.warning("cloned voice synthesis failed (%s); speaking as Arjun", cause)
                 cloned_voices.forget()
                 before = state.speaking_count
-            handle = session.say(text, tts=plugin)
+            handle = session.say(text, audio=tts_audio(plugin, text))
             await handle
             return not handle.interrupted and handle.exception() is None and state.speaking_count > before
 
@@ -466,7 +478,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             language = tts_language_for(detected, TTS_LANGUAGE)
             voice = tts_voice_for(detected, language, TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"])
             plugin = make_tts(active_model, voice, language)
-            await session.say(text, tts=plugin)
+            await session.say(text, audio=tts_audio(plugin, text))
 
     sound_check_task: list[asyncio.Task[None] | None] = [None]
     sound_monitor: list[SoundEventMonitor | None] = [None]
