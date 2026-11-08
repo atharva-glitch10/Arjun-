@@ -76,7 +76,7 @@ export function EmergencyCard({ userId, name }: { userId: number; name: string }
             maxLength={20}
           />
         </label>
-        <label style={{ flexBasis: "100%" }}>
+        <label style={{ gridColumn: "1 / -1" }}>
           Address read out on the call
           <input
             value={form.address}
@@ -94,7 +94,7 @@ export function EmergencyCard({ userId, name }: { userId: number; name: string }
           Also phone the family contacts first
         </label>
       </div>
-      <button className="fbtn" onClick={() => void save()}>
+      <button className="fbtn solid" onClick={() => void save()}>
         Save emergency settings
       </button>
       {note && <p className="fam-note">{note}</p>}

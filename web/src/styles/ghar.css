@@ -362,3 +362,54 @@ h1, h2, p { margin: 0; }
 .ad-greeting span { font-size: 24px; }
 .ad-orb.listening { width: 236px; height: 236px; margin-top: 18px; }
 .ad-big { margin-top: 14px; font-size: 48px; }
+
+/* ======================================================================================================
+   Family dashboard in the elder "ad look" (2026-11-09): same warm haldi glow, white rounded cards, dark ink,
+   bold sans headings. Layout: header -> tabs -> hero (how is she + before you call) -> tiles -> two columns.
+   ====================================================================================================== */
+.family { background: linear-gradient(180deg, #FFE7A3 0%, #FFF1CC 420px, #FFF7E2 100%); color: #2B1B05; }
+.family .timeline-row { padding: 9px 14px; }
+.family-inner { gap: 20px; }
+.fam-header { padding: 18px 22px; border-radius: 26px; background: rgba(255, 255, 255, .78);
+  box-shadow: 0 8px 30px rgba(180, 110, 20, .14); gap: 12px; }
+.fam-brand { font-size: 15px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #B4470D; }
+.fam-title { margin: 0; font-size: 34px; line-height: 1.2; font-weight: 800; color: #2B1B05; }
+.fam-alarm { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 16px; border-radius: 18px;
+  background: rgba(255, 255, 255, .6); color: #5C4210; }
+.family .fam-card { border-radius: 24px; padding: 22px 24px; background: #FFFFFF; box-shadow: 0 6px 24px rgba(180, 110, 20, .12); }
+.family .fam-card h2 { font-family: inherit; font-size: 24px; font-weight: 800; color: #2B1B05; }
+.family .fam-note, .family .t-muted { color: #5C4210; }
+.family .tile { border-radius: 22px; background: #FFFFFF; box-shadow: 0 6px 24px rgba(180, 110, 20, .12); padding: 18px 20px; }
+.family .tile.empty { background: rgba(255, 255, 255, .55); box-shadow: none; }
+.family .tile .label { color: #5C4210; }
+.family .tile .value { color: #2B1B05; }
+.family .timeline-row, .family .fam-list li { background: #FFF8E6; border-radius: 16px; }
+.family .status { background: #FFE6A8; color: #5C3A06; }
+.family .status.ok { background: var(--ghar-leaf-soft); color: var(--ghar-leaf-deep); }
+.family .fbtn { border-radius: 999px; border-color: #2B1B05; color: #2B1B05; background: #FFFFFF; min-height: 48px; padding: 8px 20px; }
+.family .fbtn.solid { background: #2B1B05; color: #FFFFFF; }
+.family .fbtn.danger { border-color: #D32F2F; color: #B3261E; }
+.family .fam-input, .family .fam-form input, .family .fam-form select, .family .fam-form textarea {
+  border-radius: 14px; border: 2px solid #E2C27A; background: #FFFDF6; }
+.family .fam-tabs { background: transparent; padding: 4px 0; }
+.family .fam-tabs button { border: none; background: rgba(255, 255, 255, .7); color: #2B1B05; min-height: 52px; padding: 0 22px; font-size: 18px; }
+.family .fam-tabs button.on { background: #2B1B05; color: #FFFFFF; box-shadow: 0 4px 14px rgba(43, 27, 5, .25); }
+.family .call-card { border-left: 10px solid #F28C28; }
+.family .pill { background: #FFFFFF; }
+
+.fam-hero { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }
+.fam-hero > * { margin: 0; }
+.fam-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.fam-stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+@media (max-width: 900px) { .fam-hero, .fam-cols { grid-template-columns: 1fr; } }
+.fam-seen { align-self: flex-start; padding: 6px 14px; border-radius: 999px; font-size: 16px; font-weight: 700;
+  background: #FFF1CC; color: #5C3A06; }
+.fam-seen.ok { background: var(--ghar-leaf-soft); color: var(--ghar-leaf-deep); }
+.fam-tech summary { cursor: pointer; font-size: 18px; font-weight: 800; color: #5C4210; }
+.fam-tech[open] summary { margin-bottom: 14px; }
+.emergency-card .fam-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: end; }
+.emergency-card .fam-form label { display: flex; flex-direction: column; gap: 6px; font-size: 15px; font-weight: 700; color: #5C4210; }
+.emergency-card .fam-form input:not([type="checkbox"]) { min-height: 48px; padding: 8px 12px; font-size: 17px; font-family: inherit; color: #2B1B05; }
+.emergency-card .fam-form label.check { flex-direction: row; align-items: center; gap: 10px; font-size: 16px; }
+.emergency-card .fam-form label.check input { width: 22px; height: 22px; }
+.emergency-card > .fbtn { align-self: flex-start; }
