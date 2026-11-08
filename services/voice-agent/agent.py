@@ -162,6 +162,23 @@ def _fetch_user_languages(user_id: int) -> dict:
     return response.json()
 
 
+def prisma_language_hints(preferred: list[str]) -> list[str]:
+    """Prisma v3 language hints (max 4): the elder's own languages first, then Hindi and English, because elders
+    switch into Hinglish mid-sentence; with only "mr-IN" Prisma labelled Hindi speech as Marathi (laptop 2026-11-08)
+    and Arjun answered in Marathi. GNANI_STT_LANGUAGE_HINTS="mr-IN,hi-IN" overrides; "auto" = indic-auto."""
+    override = os.environ.get("GNANI_STT_LANGUAGE_HINTS", "").strip()
+    if override.lower() == "auto":
+        return []
+    codes = [c.strip() for c in override.split(",") if c.strip()] if override else [
+        f"{str(c).split('-')[0].lower()}-IN" for c in preferred if str(c).strip()
+    ] + ["hi-IN", "en-IN"]
+    out: list[str] = []
+    for code in codes:
+        if code not in out:
+            out.append(code)
+    return out[:4]
+
+
 def _timbre_busy(exc: Exception) -> bool:
     return isinstance(exc, APIStatusError) and exc.status_code == 429
 
@@ -418,7 +435,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             keyterms, speakers = await asyncio.to_thread(user_context_terms, user_id)
             try:
                 user = await asyncio.to_thread(_fetch_user_languages, user_id)
-                language_hints = [f"{code}-IN" for code in (user.get("preferred_languages") or [user.get("language", "mr")])]
+                language_hints = prisma_language_hints(user.get("preferred_languages") or [user.get("language", "mr")])
             except Exception:
                 language_hints = []
             stt_plugin = PrismaV3STT(

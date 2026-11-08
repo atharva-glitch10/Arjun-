@@ -1,5 +1,11 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Hinglish answered in Marathi; "हीराबाईबाई" (2026-11-08 21:46, laptop)
+- With the plugin STT locked to mr-IN, Hindi/Hinglish was transcribed fine but labelled mr-IN, so replies stayed
+  Marathi. Prisma v3 (`GNANI_STT_IMPL=v3`) now hints the elder's languages + hi-IN + en-IN (`GNANI_STT_LANGUAGE_HINTS`).
+  Unit-tested; v3 on the laptop not yet verified live.
+- Address fallback added "बाई" to a name already ending in "बाई". Fixed in reasoning `turn.py`.
+
 ## Held sentence never answered (2026-11-08 21:36, laptop)
 - "नमस्कार अर्जुन" (2 words) was held for more speech; the next speech produced no words, so no turn ever completed
   and the held text was never answered. Now a held part is answered after `ARJUN_HELD_ANSWER_S` (default 4 s) with no
