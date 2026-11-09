@@ -23,6 +23,7 @@ export default defineConfig({
     },
   ],
   server: {
+    headers: { "Referrer-Policy": "strict-origin-when-cross-origin" },
     allowedHosts: [".trycloudflare.com", ".ts.net"],
     proxy: {
       "/core": {

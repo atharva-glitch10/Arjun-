@@ -1,5 +1,24 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## YouTube player fix (2026-11-09)
+- **Symptom:** the elder media screen showed YouTube's "Your browser can't play this video" (dark video area, our buttons worked).
+- **Diagnosis (code review; NOT reproduced live, the Chrome extension was not connected):** the iframe used `www.youtube.com` with
+  `autoplay=1` in the URL (autoplay before any tap), no `referrerpolicy`, `allow` without `picture-in-picture`; no site header or meta
+  set a Referrer-Policy, CSP, COOP/COEP or X-Frame-Options (so nothing there breaks embeds). News used `eventType=live` searches and
+  `embed/live_stream?channel=` for channels, which fail whenever the channel is not live; search used `videoEmbeddable=true` but nothing
+  verified it per video and there was no recovery from a player error: the box stayed dark. Dev page `/?debug=yt` logs onReady/onError/
+  onStateChange so the exact code can be read on the phone.
+- **Fix:** `web/src/elder/ytPlayer.ts` (pure, tested) + `MediaScreen.tsx`: IFrame Player API on `youtube-nocookie.com`, `referrerpolicy=
+  strict-origin-when-cross-origin` set before `src`, full `allow` list, no autoplay before a tap (big **सुरू करा**), an error (2/5/100/101/
+  150/153 or 12 s with no ready) tries up to 3 other search results then shows a one-tap **YouTube मध्ये उघडा** (Android intent / youtu.be),
+  missing MSE/H.264 goes straight to that link, a channel plays as its uploads playlist (never /live_stream). `index.html` meta + Vite
+  header carry `Referrer-Policy: strict-origin-when-cross-origin`. core-api news search = newest uploads of 3 days, not `eventType=live`.
+  Player labels are Marathi (पुढचा, कमी, जास्त, बंद करा, सुरू करा) with hi/en variants and the other seven languages.
+- **Tests:** `ytPlayer.test.ts` (URL, channel, codec check, app link, alternates, each error code, 3-try limit, API load failure, labels).
+  Manual phone checklist: `docs/MEDIA_PLAYER_CHECKLIST.md`.
+- **Not verified:** playback on a real phone / the tunnel / an Android WebView (no browser was available here). The production Referrer-Policy
+  header for a real proxy (Cloudflare/Tailscale/nginx) is not set by this repo: only the Vite dev server and the page meta.
+
 ## All ten Gnani languages (2026-11-09)
 - **Languages:** mr, hi, en + bn, gu, kn, ml, pa, ta, te. Set per elder in Settings > Names and language; the elder screens, the fixed
   replies and the voice (Prisma hint + Timbre language) follow it. Script detection (`textutil.script_language`) picks bn/gu/kn/ml/pa/ta/te

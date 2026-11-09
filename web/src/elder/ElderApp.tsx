@@ -448,6 +448,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     }
   };
 
+  const fetchAlternates = useCallback((q: string) => api.youtubeSearch(userId, q), [userId]);
   const yes = () => void voice.sendText(tr("yes"));
   const no = () => void voice.sendText(tr("no"));
 
@@ -737,6 +738,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           onReport={apps.reportMedia}
           onClosed={apps.onMediaClosed}
           ducked={voice.mediaDuck}
+          fetchAlternates={fetchAlternates}
         />
       )}
       {apps.blocked && shown !== "safety" && (

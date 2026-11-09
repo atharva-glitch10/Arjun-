@@ -431,6 +431,9 @@ export const api = {
   voiceLabel: (id: number) => core<{ name: string | null; relation: string | null }>(`/users/${id}/voice-label`),
   appLinks: (id: number) => core<AppLink[]>(`/users/${id}/app-links`),
   mediaStatus: () => core<MediaStatus>("/media/status"),
+  /** Other embeddable videos for a title: the player's next candidates when one will not play here. */
+  youtubeSearch: (userId: number, q: string) =>
+    core<{ video_id: string; title: string; channel: string }[]>(`/media/youtube/search?user_id=${userId}&q=${encodeURIComponent(q)}`),
   addAppLink: (id: number, body: AppLinkInput) => core<AppLink>(`/users/${id}/app-links`, post(body)),
   deleteAppLink: (id: number, linkId: number) => core<void>(`/users/${id}/app-links/${linkId}`, { method: "DELETE" }),
   // Caregiver view: ONLY stories the elder explicitly shared. Never calls /stories.

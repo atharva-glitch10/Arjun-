@@ -1,8 +1,19 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 
-import { embedSrc, idleMedia, mediaReducer, reportableMediaState, shouldHeartbeatMedia } from "../voice/action";
+import { idleMedia, mediaReducer, reportableMediaState, shouldHeartbeatMedia } from "../voice/action";
 import type { ArjunAction, ControlKind, MediaState, PlayerState } from "../voice/action";
 import { t } from "./strings";
+import {
+  IFRAME_ALLOW,
+  REFERRER_POLICY,
+  appLink,
+  createRecovery,
+  embedTarget,
+  embedUrl,
+  supportsPlayback,
+  whenApiReady,
+} from "./ytPlayer";
+import type { Recovery } from "./ytPlayer";
 
 // The little part of the YouTube IFrame Player API we use (loaded from youtube.com/iframe_api, no key in the browser).
 interface YtPlayer {
@@ -10,13 +21,15 @@ interface YtPlayer {
   pauseVideo(): void;
   nextVideo(): void;
   previousVideo(): void;
+  loadVideoById(id: string): void;
+  cueVideoById(id: string): void;
   setVolume(v: number): void;
   destroy(): void;
 }
 interface YtApi {
   Player: new (
     el: HTMLIFrameElement,
-    opts: { events: { onReady?: () => void; onStateChange?: (e: { data: number }) => void; onError?: () => void; onAutoplayBlocked?: () => void } },
+    opts: { events: { onReady?: () => void; onStateChange?: (e: { data: number }) => void; onError?: (e: { data: number }) => void; onAutoplayBlocked?: () => void } },
   ) => YtPlayer;
 }
 declare global {
@@ -54,7 +67,7 @@ function playerStateOf(code: number): PlayerState | null {
   return null;
 }
 
-const BLOCKED_AFTER_MS = 5000; // still not playing after this long: autoplay with sound was refused
+const STUCK_AFTER_MS = 12_000; // still no 'ready' after this long: the box would stay dark, so treat it as a player error
 
 export interface MediaControlEvent {
   kind: ControlKind;
@@ -69,49 +82,114 @@ export function MediaScreen({
   onReport,
   onClosed,
   ducked,
+  fetchAlternates,
 }: {
   action: ArjunAction;
   control: MediaControlEvent | null;
   onReport: (state: "playing" | "stopped") => void;
   onClosed: () => void;
   ducked: boolean;
+  /** Other search results for a title, used when a video will not play here (the elder screen passes the core-api search). */
+  fetchAlternates?: (query: string) => Promise<{ video_id?: string }[]>;
 }) {
   const [state, dispatch] = useReducer(mediaReducer, undefined, () => mediaReducer(idleMedia(), { t: "open", action }));
-  const iframe = useRef<HTMLIFrameElement | null>(null);
+  const holder = useRef<HTMLDivElement | null>(null);
   const player = useRef<YtPlayer | null>(null);
+  const recovery = useRef<Recovery | null>(null);
+  const [notice, setNotice] = useState<"retry" | "unsupported" | null>(null);
+  const [fallbackLink, setFallbackLink] = useState<string | null>(null);
   const seen = useRef(0);
   const stateRef = useRef<MediaState>(state);
   stateRef.current = state;
 
-  // one iframe per opened action
+  // one player per opened action: the YouTube IFrame Player API on youtube-nocookie.com, an explicit referrer policy,
+  // and NO autoplay before a tap (the big "start" button below). A video that will not play -> the next search result
+  // (up to 3) -> a one-tap "open in YouTube" link. Never a dead dark box.
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
-      if (stateRef.current.phase === "loading") dispatch({ t: "player", state: "blocked" });
-    }, BLOCKED_AFTER_MS);
-    void loadYouTubeApi()
-      .then((YT) => {
-        if (cancelled || !iframe.current) return;
-        player.current = new YT.Player(iframe.current, {
+    setNotice(null);
+    setFallbackLink(null);
+    const kind = action.type === "open" ? action.kind : "";
+    const target = kind === "youtube_video" || kind === "youtube_playlist" || kind === "youtube_channel_live" ? embedTarget(kind, action.value) : null;
+    const ua = navigator.userAgent;
+    const link =
+      kind === "youtube_playlist" ? `https://www.youtube.com/playlist?list=${action.value}`
+      : kind === "youtube_channel_live" ? `https://www.youtube.com/channel/${action.value}`
+      : appLink(action.value, ua);
+    const giveUp = (why: "retry" | "unsupported") => {
+      if (cancelled) return;
+      setNotice(why);
+      setFallbackLink(link);
+      dispatch({ t: "player", state: "fallback" });
+    };
+    if (!target || !holder.current) {
+      giveUp("retry");
+      return;
+    }
+    if (!supportsPlayback(window as unknown as Parameters<typeof supportsPlayback>[0])) {
+      giveUp("unsupported");
+      return;
+    }
+    const stuck = window.setTimeout(() => {
+      if (stateRef.current.phase === "loading") void recovery.current?.onError(5);
+    }, STUCK_AFTER_MS);
+    recovery.current = createRecovery({
+      title: action.title,
+      firstId: target.videoId ?? null,
+      fetchAlternates: fetchAlternates ?? (() => Promise.resolve([])),
+      load: (id, autoplay) => {
+        if (cancelled) return;
+        if (autoplay) player.current?.loadVideoById(id);
+        else {
+          player.current?.cueVideoById(id);
+          dispatch({ t: "player", state: "blocked" });
+        }
+      },
+      notice: () => !cancelled && setNotice("retry"),
+      giveUp: () => giveUp("retry"),
+    });
+    void whenApiReady(
+      loadYouTubeApi,
+      (YT) => {
+        if (cancelled || !holder.current) return;
+        holder.current.innerHTML = "";
+        const frame = document.createElement("iframe");
+        frame.className = "media-frame";
+        frame.title = action.title || "YouTube";
+        frame.setAttribute("referrerpolicy", REFERRER_POLICY); // set BEFORE src: the policy is read when the load starts
+        frame.setAttribute("allow", IFRAME_ALLOW);
+        frame.allowFullscreen = true;
+        frame.src = embedUrl(target, window.location.origin);
+        holder.current.appendChild(frame);
+        player.current = new YT.Player(frame, {
           events: {
-            onReady: () => player.current?.setVolume(stateRef.current.volume),
+            onReady: () => {
+              window.clearTimeout(stuck);
+              player.current?.setVolume(stateRef.current.volume);
+              dispatch({ t: "player", state: "blocked" }); // ready: wait for her tap, never autoplay on load
+            },
             onStateChange: (e) => {
               const s = playerStateOf(e.data);
-              if (s) dispatch({ t: "player", state: s });
+              if (s) {
+                if (s === "playing") setNotice(null);
+                dispatch({ t: "player", state: s });
+              }
             },
-            onError: () => dispatch({ t: "player", state: "error" }),
+            onError: (e) => void recovery.current?.onError(e?.data ?? 5),
             onAutoplayBlocked: () => dispatch({ t: "player", state: "blocked" }),
           },
         });
-      })
-      .catch(() => dispatch({ t: "player", state: "error" }));
+      },
+      () => giveUp("retry"), // the API script itself would not load
+    );
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      window.clearTimeout(stuck);
       player.current?.destroy();
       player.current = null;
+      recovery.current = null;
     };
-  }, [action]);
+  }, [action, fetchAlternates]);
 
   // a voice command ("अर्जुन, थांबव", "आवाज कमी कर", "पुढचं गाणं"): the reducer for the screen, the player for the sound
   useEffect(() => {
@@ -159,18 +237,19 @@ export function MediaScreen({
     if (state.phase === "closed" || state.phase === "ended") onClosed();
   }, [state, onReport, onClosed]);
 
-  const src = embedSrc(action, window.location.origin);
   const volume = (delta: number) => {
     const v = Math.min(100, Math.max(10, state.volume + delta));
     dispatch({ t: "control", kind: delta > 0 ? "volume_up" : "volume_down" });
     player.current?.setVolume(v);
   };
   const start = () => {
+    recovery.current?.tapped();
     dispatch({ t: "tap" });
-    player.current?.playVideo();
+    player.current?.playVideo(); // from the tap: the browser allows sound
   };
   const toggle = () => {
     if (state.phase === "paused" || state.phase === "blocked") {
+      tapped();
       dispatch({ t: "control", kind: "resume" });
       player.current?.playVideo();
     } else {
@@ -184,25 +263,22 @@ export function MediaScreen({
     player.current?.nextVideo();
   };
   const paused = state.phase === "paused" || state.phase === "blocked";
+  const tapped = () => recovery.current?.tapped();
 
   return (
     <div className="media-screen" role="dialog" aria-label={state.title || t("video_word")}>
-      {src && (
-        <iframe
-          ref={iframe}
-          className="media-frame"
-          src={src}
-          title={state.title || "YouTube"}
-          allow="autoplay; encrypted-media; fullscreen"
-          allowFullScreen
-        />
-      )}
+      <div ref={holder} className="media-frame-holder" hidden={state.phase === "fallback"} />
       {state.phase === "blocked" && (
         <button type="button" className="media-start" onClick={start}>
           {t("media_start")}
         </button>
       )}
-      {state.phase === "error" && <p className="media-error">{t("media_error")}</p>}
+      {notice && <p className="media-error">{t(notice === "unsupported" ? "media_unsupported" : "media_error")}</p>}
+      {state.phase === "fallback" && fallbackLink && (
+        <a className="media-start" href={fallbackLink} target="_blank" rel="noopener noreferrer">
+          {t("media_open_yt")}
+        </a>
+      )}
       <h1 className="media-title">{state.title || t("video_word")}</h1>
       <div className="media-bar">
         <button type="button" className="media-btn media-close" onClick={() => dispatch({ t: "close" })}>

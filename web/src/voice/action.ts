@@ -84,8 +84,8 @@ export function embedSrc(a: ArjunAction, origin: string): string | null {
 }
 
 // ---- the MediaScreen state machine ------------------------------------------------------------------------------
-export type MediaPhase = "closed" | "loading" | "playing" | "paused" | "blocked" | "ended" | "error";
-export type PlayerState = "playing" | "paused" | "ended" | "blocked" | "error";
+export type MediaPhase = "closed" | "loading" | "playing" | "paused" | "blocked" | "ended" | "error" | "fallback";
+export type PlayerState = "playing" | "paused" | "ended" | "blocked" | "error" | "fallback";
 
 export interface MediaState {
   phase: MediaPhase;

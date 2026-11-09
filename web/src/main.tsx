@@ -5,6 +5,7 @@ import { Dashboard } from "./family/Dashboard";
 import { JoinCall } from "./family/JoinCall";
 import { ElderApp } from "./elder/ElderApp";
 import { UiGallery } from "./preview/UiGallery";
+import { YtDebug } from "./preview/YtDebug";
 import "./styles/app.css";
 import "./styles/ui.css";
 
@@ -70,5 +71,5 @@ function App() {
 const root = document.getElementById("root");
 if (root) {
   const join = params.get("view") === "join";
-  createRoot(root).render(join ? <JoinCall /> : params.get("ui") === "1" ? <UiGallery /> : <App />);
+  createRoot(root).render(join ? <JoinCall /> : params.get("ui") === "1" ? <UiGallery /> : (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true && params.get("debug") === "yt" ? <YtDebug /> : <App />);
 }
