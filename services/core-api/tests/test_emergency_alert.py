@@ -59,7 +59,7 @@ def test_the_alert_says_so_when_no_contact_is_configured(client, uid):
 def test_the_alert_does_not_claim_a_call_or_message_was_sent(client, uid):
     client.post(f"/users/{uid}/distress", params={"kind": "emergency"})
     body = _notes(client, uid)[0]["body"].lower()
-    assert "dashboard alert only" in body and "no call or message was sent" in body  # honest: nothing else is delivered yet
+    assert "no telegram alert is set up" in body and "telegram alert sent" not in body  # honest: nothing claimed
 
 
 def test_every_emergency_is_alerted_not_deduplicated(client, uid):

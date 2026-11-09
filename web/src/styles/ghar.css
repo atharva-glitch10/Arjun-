@@ -416,3 +416,7 @@ h1, h2, p { margin: 0; }
 
 /* Elder view: the page behind the screen keeps the same warm glow (no beige band under it). */
 body:has(.elder-shell) { background: #FFD25E; }
+.family .fbtn:disabled { opacity: .45; cursor: not-allowed; }
+.family .fam-list li .fam-input { min-height: 44px; flex: 1 1 140px; }
+/* the ad look everywhere on her screen: dark ink buttons instead of the old indigo */
+.elder-shell .btn.primary { background: #2B1B05; color: #FFFFFF; border-color: #2B1B05; }

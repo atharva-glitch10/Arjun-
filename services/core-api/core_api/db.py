@@ -81,3 +81,65 @@ def ensure_columns(eng) -> list[str]:  # type: ignore[no-untyped-def]
             conn.execute(text("UPDATE users SET address_as = 'आजी' WHERE trim(address_as) = '' AND age >= 60"))
             conn.execute(text("UPDATE users SET address_as = trim(substr(name, 1, instr(name || ' ', ' ') - 1)) || 'बाई' WHERE trim(address_as) = ''"))
     return added
+
+
+def _literal(value: object, pg: bool) -> str | None:
+    if isinstance(value, bool):
+        return ("TRUE" if value else "FALSE") if pg else ("1" if value else "0")
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    return None
+
+
+def reconcile_schema(eng, metadata) -> list[str]:  # type: ignore[no-untyped-def]
+    """Bring an old database in line with the models, without migrations (live 2026-11-09: a laptop database made
+    weeks ago answered 500 on every check-in, BP and watch read because those tables had changed shape).
+
+    - a model column the table lacks is ADDED (its scalar default, else nullable), so reads work;
+    - a table with an old NOT NULL column the model no longer has (inserts would fail), or lacking a column the model
+      requires and cannot fill (old rows would be invalid), is RENAMED aside to `<table>_old_<n>` (kept, never dropped) and `create_all` then makes it fresh.
+    Returns what it did, for the startup log."""
+    insp = inspect(eng)
+    existing = set(insp.get_table_names())
+    pg = eng.dialect.name == "postgresql"
+    done: list[str] = []
+    for table in metadata.sorted_tables:
+        if table.name not in existing:
+            continue
+        cols = {c["name"]: c for c in insp.get_columns(table.name)}
+        model = {c.name: c for c in table.columns}
+        stale = [n for n, c in cols.items()
+                 if n not in model and not c.get("nullable", True) and c.get("default") is None
+                 and not c.get("autoincrement") and n not in {pk for pk in model if model[pk].primary_key}]
+        # a missing column the model requires but cannot fill (NOT NULL, no plain default): old rows would be invalid
+        missing_pk = [n for n, c in model.items() if n not in cols and (c.primary_key or (
+            not c.nullable and not (c.default is not None and getattr(c.default, "is_scalar", False))))]
+        if stale or missing_pk:
+            n = 1
+            while f"{table.name}_old_{n}" in existing:
+                n += 1
+            aside = f"{table.name}_old_{n}"
+            with eng.begin() as conn:
+                conn.execute(text(f'ALTER TABLE "{table.name}" RENAME TO "{aside}"'))
+                if not pg:  # SQLite keeps index names with the renamed table; free them for create_all
+                    for (idx,) in conn.execute(text(
+                            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=:t AND sql IS NOT NULL"),
+                            {"t": aside}).fetchall():
+                        conn.execute(text(f'DROP INDEX IF EXISTS "{idx}"'))
+            existing.add(aside)
+            done.append(f"{table.name} -> {aside} (old shape: {', '.join(stale or missing_pk)})")
+            continue
+        for name, col in model.items():
+            if name in cols:
+                continue
+            ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{name}" {col.type.compile(dialect=eng.dialect)}'
+            default = col.default.arg if col.default is not None and getattr(col.default, "is_scalar", False) else None
+            lit = _literal(default, pg) if default is not None else None
+            if lit is not None:
+                ddl += f" NOT NULL DEFAULT {lit}" if not col.nullable else f" DEFAULT {lit}"
+            with eng.begin() as conn:
+                conn.execute(text(ddl))
+            done.append(f"{table.name}.{name} added")
+    return done

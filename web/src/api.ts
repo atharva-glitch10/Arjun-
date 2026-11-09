@@ -381,6 +381,10 @@ export const api = {
   contacts: (id: number) => core<Contact[]>(`/users/${id}/contacts`),
   addContact: (id: number, name: string, relation: string, phone: string) =>
     core<Contact>(`/users/${id}/contacts`, post({ name, relation, phone })),
+  editContact: (id: number, contactId: number, name: string, relation: string, phone: string) =>
+    core<Contact>(`/users/${id}/contacts/${contactId}`, { method: "PATCH", body: JSON.stringify({ name, relation, phone }) }),
+  deleteContact: (id: number, contactId: number) =>
+    core<void>(`/users/${id}/contacts/${contactId}`, { method: "DELETE" }),
   emergencySettings: (id: number) => core<EmergencySettings>(`/users/${id}/emergency-settings`),
   saveEmergencySettings: (id: number, body: EmergencySettings) =>
     core<EmergencySettings>(`/users/${id}/emergency-settings`, { method: "PUT", body: JSON.stringify(body) }),

@@ -419,6 +419,8 @@ def say_time(hhmm: str, lang: str) -> str:
     else:
         part = r["part_night"]
     h12 = h % 12 or 12
+    if lang_or_default(lang) == "en":  # "7:00 PM", not "7:00 in the night" (live run 2026-11-09)
+        return r["at"].format(part="AM" if h < 12 else "PM", hhmm=f"{h12}:{m:02d}")
     return r["at"].format(part=part, hhmm=f"{h12}:{m:02d}")
 
 

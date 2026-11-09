@@ -239,6 +239,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           at,
           item: {
             key: `r${r.id}`,
+            at: at.getTime(),
             when: day === "आज" ? spokenTime(hhmm) : `${day} ${spokenTime(hhmm)}`,
             what: r.task,
             initials: person ? Array.from(person.name)[0] : undefined,
@@ -254,6 +255,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           at,
           item: {
             key: `a${appt.id}`,
+            at: at.getTime(),
             when: day === "आज" ? spokenTime(hhmm) : `${day} ${spokenTime(hhmm)}`,
             what: appt.title,
             kind: "appointment",
@@ -636,6 +638,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
                 ? {
                     when: `${periodOfDay(Number(hhmmOf(due.next.due_at).slice(0, 2)))} · ${timeLabel(hhmmOf(due.next.due_at)).split(" ")[1]}`,
                     name: due.next.name,
+                    at: parseNaive(due.next.due_at).getTime(),
                   }
                 : undefined
             }

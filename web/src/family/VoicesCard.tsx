@@ -186,11 +186,11 @@ export function VoicesCard({ userId, name }: { userId: number; name: string }) {
               </div>
             </div>
             <div className="voice-actions">
-              <button onClick={() => void act(() => api.setVoiceActive(userId, v.id, !v.active))}>
+              <button className="fbtn" onClick={() => void act(() => api.setVoiceActive(userId, v.id, !v.active))}>
                 {v.active ? "Stop using" : "Use this voice"}
               </button>
               <button
-                className="danger"
+                className="fbtn danger"
                 onClick={() => {
                   if (window.confirm(`Delete ${v.name}'s voice? This cannot be undone.`))
                     void act(() => api.deleteVoice(userId, v.id));
@@ -219,11 +219,11 @@ export function VoicesCard({ userId, name }: { userId: number; name: string }) {
       </p>
       <div className="voice-record">
         {!recording ? (
-          <button onClick={() => void start()} disabled={busy}>
+          <button className="fbtn" onClick={() => void start()} disabled={busy}>
             ● Record
           </button>
         ) : (
-          <button className="danger" onClick={stop}>
+          <button className="fbtn danger" onClick={stop}>
             ■ Stop ({seconds}s)
           </button>
         )}
@@ -245,7 +245,7 @@ export function VoicesCard({ userId, name }: { userId: number; name: string }) {
           <input value={consentBy} onChange={(e) => setConsentBy(e.target.value)} placeholder="Rahul Patil" maxLength={120} />
         </label>
       </div>
-      <button className="primary" disabled={!ready} onClick={() => void save()}>
+      <button className="fbtn solid" disabled={!ready} onClick={() => void save()}>
         {busy ? "Creating voice…" : "Create voice with Gnani"}
       </button>
       {error && (

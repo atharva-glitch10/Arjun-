@@ -60,11 +60,16 @@ def tick(http: httpx.Client, today: str) -> list[dict[str, object]]:
         )
     for item in meds.get("unconfirmed", []):
         log.info("medicine unconfirmed user=%s %s -> family notified", item["user_id"], item["name"])
-    checkins = http.post(f"{CORE}/internal/checkins/tick").json()
-    for item in checkins.get("asked", []):
-        log.info("check-in due, queued for delivery user=%s %s", item["user_id"], item["kind"])
-    for item in checkins.get("followed_up", []):
-        log.info("check-in follow-up, queued for delivery user=%s %s", item["user_id"], item["kind"])
+    try:  # a failing check-in tick (frozen feature) must not stop the sweep, summaries and briefings below
+        resp = http.post(f"{CORE}/internal/checkins/tick")
+        resp.raise_for_status()
+        checkins = resp.json()
+        for item in checkins.get("asked", []):
+            log.info("check-in due, queued for delivery user=%s %s", item["user_id"], item["kind"])
+        for item in checkins.get("followed_up", []):
+            log.info("check-in follow-up, queued for delivery user=%s %s", item["user_id"], item["kind"])
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("check-in tick failed: %s", e)
     try:  # retire finished items, apply the late / backlog rules, tell the family about undelivered ones
         swept = http.post(f"{CORE}/internal/deliveries/sweep")
         swept.raise_for_status()
