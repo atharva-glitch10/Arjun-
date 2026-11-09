@@ -19,7 +19,7 @@ import {
   TouchToHearScreen,
   setCompanionLabel,
 } from "../screens/ElderScreens";
-import type { UpcomingItem } from "../screens/ElderScreens";
+import type { ChatMsg, UpcomingItem } from "../screens/ElderScreens";
 import { failureText, shownFor } from "../voice/state";
 import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
@@ -136,6 +136,29 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const lastAutoStart = useRef<number | null>(null);
 
   const voice = useArjunVoice(userId);
+  // The conversation as a WhatsApp-style thread (team notes 2026-11-10): each finished reply adds her last sentence
+  // and Arjun's answer. Kept for this visit only; nothing is stored.
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const lastHeard = useRef("");
+  const chatId = useRef(0);
+  useEffect(() => {
+    if (voice.heard.trim()) lastHeard.current = voice.heard.trim();
+  }, [voice.heard]);
+  useEffect(() => {
+    const reply = (voice.reply ?? "").trim();
+    if (!reply) return;
+    const at = new Date();
+    const time = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+    setChat((c) => {
+      const add: ChatMsg[] = [];
+      const said = lastHeard.current;
+      const last = c[c.length - 1];
+      if (said && !(last && last.who === "me" && last.text === said)) add.push({ id: ++chatId.current, who: "me", text: said, time });
+      if (!(last && last.who === "arjun" && last.text === reply)) add.push({ id: ++chatId.current, who: "arjun", text: reply, time });
+      lastHeard.current = "";
+      return add.length ? [...c, ...add].slice(-40) : c;
+    });
+  }, [voice.reply]);
   const deliveredCard = cardFor(open, voice.item);
   const snapshot = { ...voice.snapshot, armed: armed || HANDS_FREE, hasCard: deliveredCard !== undefined };
   const [restedTurn, setRestedTurn] = useState(0);
@@ -519,7 +542,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       case "touch":
         return <TouchToHearScreen onTouch={() => void voice.unlockAudio()} />;
       case "card": {
-        if (!deliveredCard) return <ListenScreen heard={voice.heard} onStop={toHome} />;
+        if (!deliveredCard) return <ListenScreen heard={voice.heard} onStop={toHome} thread={chat} />;
         const dl = deliveredCard.delivery;
         if (dl.kind === "medicine") {
           const dose = due.current.find((x) => x.id === dl.ref_id);
@@ -562,7 +585,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       case "safety":
         return <SafetyScreen text={voice.reply} onOk={voice.dismissSafety} />;
       case "listen":
-        return <ListenScreen heard={voice.heard} onStop={toHome} />;
+        return <ListenScreen heard={voice.heard} onStop={toHome} thread={chat} />;
       case "confirm":
         if (card)
           return (
@@ -579,6 +602,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           return (
             <KahaniScreen
               prompt={voice.reply}
+              thread={chat}
               noteTitle={weekday(now)}
               transcript={voice.heard}
               hint={tr("hint_listen_slow")}
@@ -596,6 +620,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <ReplyScreen
             reply={voice.reply}
+            thread={chat}
             ask="yesno"
             busy={!tapOpen}
             onYes={yes}
@@ -618,6 +643,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <KahaniScreen
             prompt={voice.reply}
+              thread={chat}
             noteTitle={weekday(now)}
             transcript={voice.heard}
             hint={tr("hint_listen_slow")}
@@ -629,6 +655,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <ReplyScreen
             reply={voice.reply}
+            thread={chat}
             ask="none"
             onYes={yes}
             onNo={no}
