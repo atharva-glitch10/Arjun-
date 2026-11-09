@@ -853,3 +853,17 @@ MEMORY: dict[str, dict[str, str]] = {
 }
 for _lang, _lines in MEMORY.items():
     R[_lang].update(_lines)
+
+
+# ---- seven more Gnani languages (bn gu kn ml pa ta te), 2026-11-09 ------------------------------------------------
+# Core lines are translated in replies_langs.py (UNVERIFIED by a native speaker). Everything else in these tables
+# falls back to the English line for those languages, so a lookup never raises and never returns the wrong language.
+from . import replies_langs as _rl  # noqa: E402
+
+_rl.extend(R, _TIME)
+for _table in (_MED, AUTO, _CHECKIN, _DAY, PRONOUN, _READING, MEMORY, CHAT):
+    for _lang in _rl.LANGS:
+        _table.setdefault(_lang, _table["en"])
+for _lang in _rl.LANGS:
+    WEEKDAYS[_lang] = _TIME[_lang]["weekdays"]
+    MONTHS[_lang] = _TIME[_lang]["months"]

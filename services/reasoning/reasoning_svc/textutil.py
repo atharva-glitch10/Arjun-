@@ -78,7 +78,34 @@ def marathi_evidence(text: str) -> int:
     return sum(1 for t in tokens(normalize(text)) if t in _MR_WORDS or _MR_ENDINGS.search(t))
 
 
+# Scripts that belong to exactly one Gnani language: the script alone tells us the language.
+_SCRIPT_LANG = (
+    (0x0980, 0x09FF, "bn"), (0x0A00, 0x0A7F, "pa"), (0x0A80, 0x0AFF, "gu"), (0x0B80, 0x0BFF, "ta"),
+    (0x0C00, 0x0C7F, "te"), (0x0C80, 0x0CFF, "kn"), (0x0D00, 0x0D7F, "ml"),
+)
+
+
+def script_language(text: str) -> str | None:
+    """bn / pa / gu / ta / te / kn / ml when most of the letters are in that language's own script, else None.
+    Devanagari (mr or hi) and Latin (en or romanised) are decided by the word lists below."""
+    counts: dict[str, int] = {}
+    for ch in text:
+        cp = ord(ch)
+        for lo, hi, lang in _SCRIPT_LANG:
+            if lo <= cp <= hi:
+                counts[lang] = counts.get(lang, 0) + 1
+                break
+    if not counts:
+        return None
+    lang, n = max(counts.items(), key=lambda kv: kv[1])
+    letters = sum(1 for ch in text if ch.isalpha())
+    return lang if letters and n * 2 >= letters else None
+
+
 def detect_language(text: str, default: str) -> str:
+    own_script = script_language(text)
+    if own_script:
+        return own_script
     norm = normalize(text)
     toks = set(tokens(norm))
     mr = len(toks & set(_MR_MARKERS))

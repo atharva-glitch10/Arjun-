@@ -89,6 +89,7 @@ from .textutil import (
     normalize,
     tokens,
 )
+from . import replies_langs
 from .tools import weather, web_search
 
 
@@ -120,7 +121,14 @@ _WEB_TURN_BUDGET_S = 8.5  # whole turn, understanding + search (<=4 s) + answer;
 _WEB_ANSWER_RESERVE_S = 1.5  # kept back for the answer call when sizing the search timeout
 _WEB_BLOCK = re.compile(
     r"औषध|गोळी|गोळ्या|डोस|इंजेक्शन|दवा|दवाई|खुराक|medicine|tablet|dose|injection|pill|"
-    r"बीपी|शुगर|रक्तदाब|ब्लड|bp|sugar|diabet|मधुमेह|ताप|fever|दुखत|दर्द|pain|ऑपरेशन|surgery",
+    r"बीपी|शुगर|रक्तदाब|ब्लड|bp|sugar|diabet|मधुमेह|ताप|fever|दुखत|दर्द|pain|ऑपरेशन|surgery|"
+    r"மருந்து|மாத்திரை|வலி|காய்ச்சல்|சர்க்கரை|"  # Tamil
+    r"మందు|మాత్ర|నొప్పి|జ్వరం|చక్కెర|"  # Telugu
+    r"ಔಷಧ|ಮಾತ್ರೆ|ನೋವು|ಜ್ವರ|ಸಕ್ಕರೆ|"  # Kannada
+    r"മരുന്ന്|ഗുളിക|വേദന|പനി|പഞ്ചസാര|"  # Malayalam
+    r"ওষুধ|ট্যাবলেট|ব্যথা|জ্বর|"  # Bengali
+    r"દવા|ગોળી|દુખાવો|તાવ|"  # Gujarati
+    r"ਦਵਾਈ|ਗੋਲੀ|ਦਰਦ|ਬੁਖਾਰ",  # Punjabi
     re.IGNORECASE,
 )
 _WEATHER = re.compile(r"पाऊस|पावस|हवामान|तापमान|थंडी|उकाडा|मौसम|बारिश|तापमान|weather|mausam|temperature|rain|\bpa+u?s\b|havaman|hawaman|b(?:a+)?rish", re.IGNORECASE)
@@ -222,6 +230,8 @@ _VARIED = {
 }
 
 _FAMILY_FALLBACK = {"mr": "तुमच्या घरच्यांना", "hi": "आपके घरवालों को", "en": "your family"}
+_VARIED.update(replies_langs.VARIED)
+_FAMILY_FALLBACK.update(replies_langs.FAMILY)
 
 
 def _is_son(relation: str) -> bool:
@@ -416,6 +426,7 @@ class TurnEngine:
             self._noise_count[user_id] = 0
             language = _detected_reply_language(language_code) or "mr"
             prompt = {"mr": "आवाज नीट आला नाही, जरा जवळ येऊन सांगाल?", "hi": "आवाज़ ठीक से नहीं आई, ज़रा पास आकर बताएँगे?", "en": "I couldn't hear that clearly. Could you come a little closer and tell me?"}
+            prompt.update(replies_langs.NOISE)
             return TurnResult(prompt.get(language, prompt["mr"]), "NOISE", "companion", language)
         self._noise_count[user_id] = 0
         # 0/1. emergency, then distress: both override everything and must not depend on
@@ -2857,6 +2868,10 @@ class TurnEngine:
             alerted = bool((self.core.distress(uid, kind) or {}).get("caregiver_alerted"))
         except (CoreError, httpx.HTTPError) as exc:
             log.error("%s: could not record event / alert caregiver: %s", kind, exc)
+        local = replies_langs.safety_reply(lang, kind, alerted)  # bn gu kn ml pa ta te: fixed line in her own language
+        if local is not None:
+            return TurnResult(local, "EMERGENCY" if kind == "emergency" else "DISTRESS", "safety", lang,
+                              trace=self._t(trace, t0), screen="safety")
         lang = lang if lang in {"mr", "hi", "en"} else "en"
         family_obj = self._family_obj(uid, lang)
         ask_call = {

@@ -7,6 +7,7 @@ This is a keyword safety net, not a clinical classifier - it never diagnoses.
 import re
 import unicodedata
 
+from . import safety_langs
 from .textutil import has_any, normalize
 
 # Phrases are matched as whole tokens on normalised text (see textutil.has_any).
@@ -81,7 +82,7 @@ _PHRASES = tuple(fold(p) for p in DISTRESS_PHRASES)
 
 def is_distress(text: str) -> bool:
     folded = fold(text)
-    return has_any(folded, _PHRASES) or any(p.search(folded) for p in _PATTERNS)
+    return has_any(folded, _PHRASES) or any(p.search(folded) for p in _PATTERNS) or safety_langs.is_distress(text)
 
 
 # ---- Physical emergency (checked BEFORE emotional distress) -------------------------------------
@@ -130,7 +131,11 @@ _EMERGENCY_FOLDED = tuple(fold(p) for p in EMERGENCY_PHRASES)
 
 def _is_emergency_basic(text: str) -> bool:
     folded = fold(text)
-    return has_any(folded, _EMERGENCY_FOLDED) or any(p.search(folded) for p in _EMERGENCY_PATTERNS)
+    return (
+        has_any(folded, _EMERGENCY_FOLDED)
+        or any(p.search(folded) for p in _EMERGENCY_PATTERNS)
+        or safety_langs.is_emergency(text)  # bn gu kn ml pa ta te (UNVERIFIED lexicon)
+    )
 
 
 def is_emergency(text: str) -> bool:
