@@ -70,7 +70,24 @@ _EN_MARKERS = ("the", "is", "to", "what", "my", "remind", "me", "today", "tomorr
 # Marathi sentences hi-IN; these words never occur in Hindi, so they outrank that label.
 _MR_ENDINGS = re.compile(r"(?:तंय|तोय|तेय|लंय|लोय|लेय|ायचं|ायला|ातीत|ाऱ्या|तात|तोस|त्ये)$")
 _MR_WORDS = frozenset(_MR_MARKERS) | {"माझ्या", "माझा", "माझी", "माझं", "पडले", "पडलो", "होतंय", "छातीत", "दुखतंय",
-                                      "घेता", "येत", "नाहीये", "आहेत", "आम्ही", "मी", "बरं", "वाटतंय"}
+                                      "घेता", "येत", "नाहीये", "आहेत", "आम्ही", "मी", "बरं", "वाटतंय", "केली", "केलं", "केले",
+                                      "जाऊन", "आणि", "गेलो", "गेले", "करतो", "करते", "सांगा", "झाली", "झालं", "आलो"}
+
+
+_HI_WORDS = frozenset({"है", "हैं", "था", "थी", "थे", "मैं", "मुझे", "मेरा", "मेरी", "मेरे", "क्या", "नहीं", "हूँ", "हूं",
+                       "रहा", "रही", "गया", "गई", "कैसे", "कौन", "बताइए", "बताओ", "चाहिए", "लेकिन", "और", "में",
+                       "से", "को", "के", "यह", "वह", "बहुत", "कुछ", "अभी", "करूं", "करूँ", "हुआ", "हुई", "आज"})
+
+
+def hindi_evidence(text: str) -> int:
+    """How many words are typical of Hindi and not Marathi ("आज" is both, so it never decides alone)."""
+    return sum(1 for t in tokens(normalize(text)) if t in _HI_WORDS and t != "आज")
+
+
+def latin_share(text: str) -> float:
+    """Share of letters written in Latin script (1.0 = all English letters)."""
+    letters = [c for c in text if c.isalpha()]
+    return sum(1 for c in letters if c.isascii()) / len(letters) if letters else 0.0
 
 
 def marathi_evidence(text: str) -> int:

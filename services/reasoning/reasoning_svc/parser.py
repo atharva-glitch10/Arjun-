@@ -350,6 +350,13 @@ def _find_hour(norm: str) -> tuple[int, int, bool] | None:
     return None
 
 
+def _symptom(text: str) -> bool:
+    from .distress import (
+        symptom_category,  # local: distress imports nothing from here, but keep the parser light
+    )
+    return symptom_category(text) is not None
+
+
 def _restore_case(task: str, text: str) -> str:
     """Normalising lower-cases English; put back the casing she used ("call Chandrakant", not "call chandrakant")."""
     original = {w.casefold().strip(".,!?"): w.strip(".,!?") for w in text.split()}
@@ -514,7 +521,8 @@ def parse(
             return p
         if has_any(norm, TIME_Q):
             return done("TIME_QUERY", 0.85)
-        if has_any(norm, NEXT_Q) and not has_any(norm, ("झालं", "झाले", "झाला", "zala", "हुआ", "happened")):
+        if (has_any(norm, NEXT_Q) and not has_any(norm, ("झालं", "झाले", "झाला", "zala", "हुआ", "happened"))
+                and not _symptom(text)):  # "I have a headache, what should I do?" is a complaint
             return done("NEXT_UP", 0.75)  # "पुढे काय झालं?" is her story, not her schedule
 
     # While an action awaits its yes/no, an answer made ONLY of yes-words (or only no-words) is that answer at
@@ -563,7 +571,10 @@ def parse(
         draft = apply_text(Draft(), text, profile, now, is_followup=False)
         return done("CREATE_REMINDER", 0.8, draft)
 
-    if has_any(norm, LIST_TODAY):
+    # "I went to the temple today" tells a story; "what is on today" asks for the day
+    _told = has_any(norm, ("went", "was", "were", "did", "had", "made", "cooked", "visited", "met", "गेले", "गेलो",
+                           "होते", "होतो", "केलं", "केली", "गई थी", "गया था"))
+    if has_any(norm, LIST_TODAY) and not (_told and not has_any(norm, QUESTION)):
         p = done("LIST_TODAY", 0.8)
         p.topic = _list_day(norm, now)
         return p

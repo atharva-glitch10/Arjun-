@@ -86,6 +86,8 @@ from .textutil import (
     collapse_repeats,
     detect_language,
     has_any,
+    hindi_evidence,
+    latin_share,
     marathi_evidence,
     normalize,
     tokens,
@@ -94,10 +96,20 @@ from .tools import weather, web_search
 
 
 def _reply_language(language_code: str | None, text: str, default: str) -> str:
-    """STT's language label, except that clearly Marathi words win over a hi-IN label (Prisma confuses the two)."""
+    """Answer in the language she SPOKE (notes 2026-11-10: "it understands but does not reply in my language").
+    Prisma's label is the start; the words win when they clearly disagree (Prisma confuses mr and hi, and a fully
+    English sentence is English whatever the label says)."""
     detected = _detected_reply_language(language_code)
-    if detected in (None, "hi") and marathi_evidence(text) >= 1:
+    if detected in (None, "mr", "hi") and latin_share(text) > 0.9 and len(text.split()) >= 3:
+        # Roman letters: English only if no romanised Marathi/Hindi words ("udya sakali", "kal subah") are in it
+        words = re.findall(r"[a-z']+", text.lower())
+        if words and sum(w in _EN_COMMON for w in words) / len(words) >= 0.3 and not _ROMAN_INDIC.search(text):
+            return "en"
+    mr, hi = marathi_evidence(text), hindi_evidence(text)
+    if detected in (None, "hi", "en") and mr >= 1 and mr >= hi:
         return "mr"
+    if detected in (None, "mr", "en") and hi >= 2 and mr == 0:
+        return "hi"
     return detected or detect_language(text, default)
 
 
@@ -249,6 +261,24 @@ def rename_companion(text: str, name: str) -> str:
     if name == "Arjun":
         return text
     return text.replace("अर्जुन", name).replace("Arjun", name)
+
+
+_ROMAN_INDIC = re.compile(r"\b(?:aahe|ahe|kay|kaay|mala|majha|mazha|tumhi|udya|aaj|kal|hai|hain|mujhe|mera|meri|kya|nahi|"
+                         r"kar|karo|karna|jana|jaycha|sakali|subah|raat|ratri|vajta|baje|aushadh|goli|dawai|athvan|yaad)\b",
+                         re.I)
+_EN_COMMON = frozenset("the is i you my to a an what how today went am are have has do does please can me it in of and "
+                       "at for with this that was were will would should could your our we they he she his her not "
+                       "no yes tell show play call remind when where who why time".split())
+_MED_WORDS = re.compile(r"गोळ|औषध|दवा|दवाई|दवाइ|गोली|medicine|tablet|pill|meds\b", re.I)
+_LIST_WORDS = re.compile(r"कोणत|कुठल|कोणती|कौन|कौनसी|कौन\s*सी|which|what|list|यादी|सांग|बता|किती|कितनी|how many", re.I)
+_CHANGE_WORDS = re.compile(r"दोनदा|दुप्पट|double|twice|skip|सोड|बंद कर|जास्त|कमी|साइड|side|राहिल|रह गई|छूट|missed|"
+                           r"forgot|विसरल|का घ्य|क्यों|why|कशासाठी|किसलिए|what for|बदल|change|\bif\b|जर |अगर|happen|होईल|होगा", re.I)
+_NOW_WORDS = re.compile(r"आता|आत्ता|अभी|now|पुढच|पुढील|अगली|next|आत्ताची|घ्यायची\s+आहे\s*\?|लेनी\s+है", re.I)
+
+
+def is_med_list_question(text: str) -> bool:
+    """She asks WHICH medicines she has / which one is due, not whether to change, skip or double one."""
+    return bool(_MED_WORDS.search(text) and _LIST_WORDS.search(text) and not _CHANGE_WORDS.search(text))
 
 
 _NAME_QUESTIONS = ("तुझं नाव काय", "तुमचं नाव काय", "तुझे नाव काय", "तुझं नाव", "tujha nav", "tuza nav",
@@ -618,6 +648,8 @@ class TurnEngine:
         trace["intent_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         if parsed.intent == "DISTRESS":
             return self._distress(user_id, lang, trace, t0)
+        if pending is None and draft is None and is_med_list_question(text):
+            return self._med_list(user_id, text, lang, trace, t0, now)
         if parsed.intent == "SYMPTOM" and answerable != "MEDICINE_TAKEN":
             # A health complaint wins over whatever question was open; the pending action stays open and is
             # asked again later. "नाही" to the medicine question is handled by the rule branch above.
@@ -2987,12 +3019,54 @@ class TurnEngine:
         except (CoreError, httpx.HTTPError) as exc:
             log.warning("symptom: could not tell the family: %s", exc)
             told = False
+        # owner decision 2026-11-10: a short, fixed self-care line + "see a doctor if it does not get better"
+        care = rp.SELF_CARE.get(rp.lang_or_default(lang), rp.SELF_CARE["en"])
+        line = f"{care.get(category, care['unwell'])} {care['doctor']}"
+        if told:
+            line = f"{line} {r['symptom_noted']}"
         res = TurnResult(
-            r["symptom_noted" if told else "symptom_not_noted"], "SYMPTOM", "companion", lang,
+            line, "SYMPTOM", "companion", lang,
             trace=self._t({**trace, "symptom": category}, t0), screen="story",
         )
         self._convo_at[uid] = self._mono()  # the conversation goes on
         return res
+
+    def _med_list(
+        self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float, now: datetime
+    ) -> TurnResult:
+        """"Which medicine now?" / "what are my medicines?": answered ONLY from her list in SQL, exactly as the family
+        typed it (boundary 6). Owner decision 2026-11-10: Arjun guides her to the medicine that is due."""
+        t = rp.MED_LIST[rp.lang_or_default(lang)]
+        try:
+            items = [i for i in self.core.day(uid)["items"] if i.get("kind") == "medicine"]
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("medicine list unavailable: %s", exc)
+            return TurnResult(rp.R[rp.lang_or_default(lang)]["error"], "MED_LIST", "care", lang, trace=self._t(trace, t0))
+
+        def when(i: dict[str, Any]) -> str:
+            return rp.say_time(str(i["at"])[11:16], lang)
+
+        def taken(i: dict[str, Any]) -> bool:
+            return str(i.get("status")) == "taken"
+
+        if not items:
+            reply = t["none"]
+        elif _NOW_WORDS.search(text):
+            open_items = [i for i in items if not taken(i)]
+            soon = [i for i in open_items if datetime.fromisoformat(str(i["at"])) <= now + timedelta(minutes=60)]
+            if soon:
+                i = soon[-1]
+                reply = t["now"].format(when=when(i), name=i["label"], dose=i.get("detail") or "")
+            elif open_items:
+                i = open_items[0]
+                reply = t["later"].format(when=when(i), name=i["label"], dose=i.get("detail") or "")
+            else:
+                reply = t["done"]
+        else:
+            parts = [t["item"].format(when=when(i), name=i["label"], dose=i.get("detail") or "") + (t["taken"] if taken(i) else "")
+                     for i in items]
+            reply = t["list"].format(items="; ".join(parts))
+        return TurnResult(reply, "MED_LIST", "care", lang, trace=self._t(trace, t0))
 
     def _lonely(
         self, uid: int, text: str, lang: str, trace: dict[str, Any], t0: float, now: datetime
