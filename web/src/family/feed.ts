@@ -30,11 +30,11 @@ export const SEVERITY_LABEL: Record<Severity, string> = {
 };
 
 export const SEVERITY_STYLE: Record<Severity, { bg: string; fg: string }> = {
-  info: { bg: "var(--ghar-sand)", fg: "var(--ghar-ink)" },
-  normal: { bg: "var(--ghar-leaf)", fg: "#fff" },
-  watch: { bg: "var(--ghar-haldi-soft)", fg: "var(--ghar-ink)" },
-  urgent: { bg: "var(--ghar-kumkum)", fg: "#fff" },
-  emergency: { bg: "var(--ghar-kumkum)", fg: "#fff" },
+  info: { bg: "var(--line-soft)", fg: "var(--navy)" },
+  normal: { bg: "var(--ok-fg)", fg: "#fff" },
+  watch: { bg: "#fff1de", fg: "var(--navy)" },
+  urgent: { bg: "var(--emergency)", fg: "#fff" },
+  emergency: { bg: "var(--emergency)", fg: "#fff" },
 };
 
 const isSeverity = (s: unknown): s is Severity => typeof s === "string" && s in SEVERITY_RANK;

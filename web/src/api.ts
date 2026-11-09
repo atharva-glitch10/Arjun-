@@ -133,6 +133,33 @@ export interface Note {
   created_at: string;
 }
 
+export interface HealthProfile {
+  allergies: string[];
+  conditions: string[];
+  blood_group: string;
+  doctor_name: string;
+  doctor_contact: string;
+  prescription_notes: string;
+  emergency_notes: string;
+  updated_at: string | null;
+}
+
+/** One dose against what the elder SELF-REPORTED. Never verified, never scored. */
+export interface DoseCheck {
+  dose_id: number;
+  medicine_id: number;
+  name: string;
+  dose: string;
+  instructions: string;
+  prescribed_by: string;
+  due_at: string;
+  taken_at: string | null;
+  status: string;
+  timing: "on_time" | "late" | "pending" | "overdue" | "not_confirmed" | "said_no";
+  minutes_late: number | null;
+  self_reported: boolean;
+}
+
 export type Anchor = "fixed" | "wake" | "lunch" | "dinner";
 
 export interface Medicine {
@@ -147,6 +174,9 @@ export interface Medicine {
   window_min: number;
   photo_url: string;
   active: boolean;
+  /** From the prescription, verbatim. */
+  prescribed_by: string;
+  instructions: string;
 }
 export type MedicineInput = Omit<Medicine, "id">;
 
@@ -421,6 +451,10 @@ export const api = {
     core<Medicine>(`/users/${id}/medicines/${mid}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteMedicine: (id: number, mid: number) =>
     core<void>(`/users/${id}/medicines/${mid}`, { method: "DELETE" }),
+  healthProfile: (id: number) => core<HealthProfile>(`/users/${id}/health-profile`),
+  saveHealthProfile: (id: number, body: Omit<HealthProfile, "updated_at">) =>
+    core<HealthProfile>(`/users/${id}/health-profile`, { method: "PUT", body: JSON.stringify(body) }),
+  medicineCheck: (id: number) => core<DoseCheck[]>(`/users/${id}/medicine-check`),
   medicineDoses: (id: number, days = 7) => core<Dose[]>(`/users/${id}/medicine-doses?days=${days}`),
   dueMedicines: (id: number) => core<DueNow>(`/users/${id}/medicines/due`),
   doseTaken: (id: number, doseId: number) =>

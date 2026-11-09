@@ -139,6 +139,10 @@ class CoreClient:
     def latest_story(self, uid: int) -> dict[str, Any] | None:
         return self._req("GET", f"/users/{uid}/stories/latest")  # type: ignore[no-any-return]
 
+    def search_stories(self, uid: int, query: str, k: int = 2) -> list[dict[str, Any]]:
+        """Her own stored stories most related to `query` (local RAG in core-api). Empty when none relate."""
+        return self._req("GET", f"/users/{uid}/stories/search", params={"q": query[:300], "k": k}) or []  # type: ignore[no-any-return]
+
     def delete_story(self, uid: int, story_id: int) -> None:
         self._req("DELETE", f"/users/{uid}/stories/{story_id}")
 

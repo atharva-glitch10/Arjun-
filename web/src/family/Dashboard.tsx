@@ -5,6 +5,8 @@ import { activityLine } from "./activity";
 import { AppLinksCard } from "./AppLinksCard";
 import { KnownFactsCard } from "./KnownFactsCard";
 import { EmergencyCard } from "./EmergencyCard";
+import { HealthProfileCard } from "./HealthProfileCard";
+import { MedicineCheckCard } from "./MedicineCheckCard";
 import { NamesCard } from "./NamesCard";
 import { VoicesCard } from "./VoicesCard";
 import { alarmState, enableAlarm, popup, startAlarm, stopAlarm } from "./alarm";
@@ -783,6 +785,8 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           </div>
         </div>
 
+        <HealthProfileCard userId={userId} name={name} />
+        <MedicineCheckCard userId={userId} name={name} />
         <MedicinesCard
           medicines={data.medicines}
           onAdd={(b) => run(() => api.addMedicine(userId, b))}
@@ -1270,6 +1274,8 @@ function MedicinesCard({
     window_min: 30,
     photo_url: "",
     active: true,
+    prescribed_by: "",
+    instructions: "",
   };
   const [form, setForm] = useState<MedicineInput>(blank);
   const set = <K extends keyof MedicineInput>(k: K, v: MedicineInput[K]) => setForm({ ...form, [k]: v });
@@ -1288,6 +1294,8 @@ function MedicinesCard({
           <li key={m.id}>
             <span style={{ fontWeight: 800 }}>{m.name}</span>
             <span>{m.dose}</span>
+            {m.instructions && <span className="t-muted">{m.instructions}</span>}
+            {m.prescribed_by && <span className="t-muted">Prescribed by {m.prescribed_by}</span>}
             <span className="t-muted">
               {scheduleText(m)} · asks up to {m.max_reminders}× every {m.repeat_minutes} min
             </span>
@@ -1318,6 +1326,14 @@ function MedicinesCard({
         <label className="fam-field">
           Name (as on the strip)
           <input className="fam-input" required value={form.name} onChange={(e) => set("name", e.target.value)} />
+        </label>
+        <label className="fam-field">
+          Prescribed by (doctor)
+          <input className="fam-input" value={form.prescribed_by} onChange={(e) => set("prescribed_by", e.target.value)} />
+        </label>
+        <label className="fam-field">
+          Instructions (as on the prescription)
+          <input className="fam-input" maxLength={300} value={form.instructions} onChange={(e) => set("instructions", e.target.value)} />
         </label>
         <label className="fam-field">
           Dose (exactly as prescribed)

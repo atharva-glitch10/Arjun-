@@ -215,6 +215,8 @@ class MedicineIn(BaseModel):
     window_min: int = Field(default=30, ge=5, le=180)
     photo_url: str = Field(default="", max_length=500)
     active: bool = True
+    prescribed_by: str = Field(default="", max_length=100)
+    instructions: str = Field(default="", max_length=300)
 
     _v = field_validator("time")(_check_hhmm)
 
@@ -254,6 +256,8 @@ class MedicinePatch(BaseModel):
     window_min: int | None = Field(default=None, ge=5, le=180)
     photo_url: str | None = Field(default=None, max_length=500)
     active: bool | None = None
+    prescribed_by: str | None = Field(default=None, max_length=100)
+    instructions: str | None = Field(default=None, max_length=300)
 
     _v = field_validator("time")(_check_hhmm)
 

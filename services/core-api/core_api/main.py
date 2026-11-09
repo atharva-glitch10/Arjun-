@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import joins, telegram
+from . import joins, rag, telegram
 from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
@@ -26,6 +26,7 @@ from .facts import router as facts_router
 from .family_call import router as family_router
 from .feed import router as feed_router
 from .feed import ws_router as feed_ws_router
+from .health import router as health_router
 from .livekit_token import router as livekit_router
 from .media import router as media_router
 from .medicines import mark_snoozed, mark_taken, open_dose
@@ -301,6 +302,8 @@ def create_story(user_id: int, body: s.StoryIn, db: Session = Depends(get_db)) -
     _user(db, user_id)
     story = m.StoryMemory(user_id=user_id, summary=body.summary, share_status="private")
     db.add(story)
+    db.flush()
+    rag.index_story(db, story)
     db.commit()
     return story
 
@@ -318,6 +321,7 @@ def forget_story(user_id: int, story_id: int, db: Session = Depends(get_db)) -> 
     story = db.get(m.StoryMemory, story_id)
     if story is None or story.user_id != user_id:
         raise HTTPException(404, "story not found")
+    rag.drop_story(db, story.id)
     db.delete(story)
     db.commit()
 
@@ -477,6 +481,7 @@ def confirm(
         st = m.StoryMemory(user_id=user_id, summary=p["summary"], share_status="private")
         db.add(st)
         db.flush()
+        rag.index_story(db, st)
         done["story_id"] = st.id
     elif action.action_type in ("MEDICINE_TAKEN", "MEDICINE_SNOOZE"):
         dose = open_dose(db, user_id, p["dose_id"])
@@ -841,6 +846,8 @@ def fire_due(
 
 
 app.include_router(router)
+app.include_router(rag.router)
+app.include_router(health_router)
 app.include_router(medicines_router)
 app.include_router(day_router)
 app.include_router(checkins_router)

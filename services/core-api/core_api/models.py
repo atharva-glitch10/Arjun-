@@ -374,7 +374,25 @@ class Medicine(Base):
     window_min: Mapped[int] = mapped_column(Integer, default=30)  # "on time" window
     photo_url: Mapped[str] = mapped_column(String(500), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # From the prescription, entered by the family and shown verbatim (never paraphrased, never answered by the LLM).
+    prescribed_by: Mapped[str] = mapped_column(String(100), default="")
+    instructions: Mapped[str] = mapped_column(String(300), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class HealthProfile(Base):
+    """What the family records about her health: allergies, doctor, notes. Family-entered text, shown back verbatim.
+    Never sent to the hosted LLM and never used by Arjun to give advice (CLAUDE.md boundaries 5 and 6)."""
+
+    __tablename__ = "health_profiles"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    allergies: Mapped[list[str]] = mapped_column(JSON, default=list)
+    blood_group: Mapped[str] = mapped_column(String(10), default="")
+    doctor_name: Mapped[str] = mapped_column(String(100), default="")
+    doctor_contact: Mapped[str] = mapped_column(String(100), default="")
+    prescription_notes: Mapped[str] = mapped_column(Text, default="")
+    emergency_notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Delivery(Base):

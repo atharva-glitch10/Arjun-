@@ -37,7 +37,7 @@ Text/transcript in -> reasoning -> core-api (SQL) -> templated reply out, in Mar
 | `services/core-api` | FastAPI + SQLAlchemy. Reminders, appointments, contacts, **family-managed medicines + dose tracking (self-reported, family-only notice when unconfirmed)**, proactive check-ins, propose/confirm/reject actions, private stories + caregiver-visible Memory Book, distress events with consent gate, scheduler hook. 280 pytest tests (incl. API-key checks; core-api refuses to start without `CORE_API_KEY`). |
 | `services/reasoning` | `POST /turn`: physical-emergency check, then distress check, first on every turn -> AI disclosure -> intent -> dispatch. Rules handle care actions and the hosted LLM handles companion chat and requests rules cannot read. 976 pytest tests incl. check-in answers, distress and emergency behavior, core-api outage handling and medicine paths. |
 | `services/scheduler` | Polls core-api to queue due reminders, medicine prompts, and daily check-ins for an open voice session; fetches briefings/openers. 8 pytest tests. |
-| `web/` | Vite + React + strict TS, rebuilt to the "Ghar" design in `design/` (tokens, toran/diya motifs, Devanagari elder screens, family dashboard). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. 144 Vitest tests, TypeScript and production build pass; live phone/microphone speech is not verified. |
+| `web/` | Vite + React + strict TS, restyled to the "listens with care" design (`Arjun UI design.html`; styles in `web/src/styles/app.css`, elder screens in `web/src/screens/ElderScreens.tsx`; the old Ghar system is removed). Elder home -> listen -> confirm -> saved is wired to reasoning `/turn` + core-api pending actions. 144 Vitest tests, TypeScript and production build pass; live phone/microphone speech is not verified. |
 | `eval/` | `python eval/run_eval.py` - intent / slot / distress on 33 synthetic text cases. |
 | `services/voice-agent` | `livekit-plugins-gnani==1.8.6` exposes STT language, sample rate, `verbatim`/`transcribe`, numeral formatting and streaming. It does **not** expose explicit Prisma model selection, Auto-LID, keyterms, speaker names, previous context, `codemix`, or `transliterate`. Official Gnani docs now describe Prisma v3.0 and these features; the pinned LiveKit adapter does not pass them, and account access is not verified. Historical live evidence is a Timbre v2.5 response; a complete spoken turn and live STT on current code are unverified. The elder web app still uses **browser** speech, not Gnani. See [Prisma audit](docs/ENGINEERING.md#prisma-integration-audit-2026-11-07). |
 
@@ -256,7 +256,7 @@ the script reports that limitation while seeding the other requested data.
   `OPENER_USER_IDS` / `BRIEFING_USER_IDS` now mean every user with `daily_checkins=True`.
 - **Still not built:** BP / sugar readings, "Export for doctor", medicine-strip photo
   upload (the dashboard takes a link). The dashboard keeps "Not set up" for those; the BP screen exists in
-  `web/src/ghar/Screens.tsx` (shown at `/?preview`) but is not wired.
+  the old Ghar screens (now deleted); not wired.
 - New tables (`medicines`, `medicine_doses`) are added by `create_all`; there are no migrations, and an
   existing database is not altered otherwise.
 - The elder UI talks only through LiveKit + Gnani (T6): tap बोला -> `POST /livekit/token` (fresh room, explicit
