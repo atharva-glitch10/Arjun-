@@ -1,5 +1,27 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Call intent + invalid_json (2026-11-09)
+- **Bug 2, invalid_json (reproduced live with the real prompt):** the understanding JSON was cut off at `max_tokens=250`
+  (`finish_reason=length`): the provider escaped every Devanagari letter as `\uXXXX`, and my answer-router fields made the object longer. So
+  every turn fell back to the rules. Fix in `evon.py`: understanding gets 700 tokens (retry 1200), the contract asks for compact JSON (nulls
+  left out), `_parse_json_object` strips `<think>` + fences, takes the first balanced `{...}` and repairs trailing commas, smart quotes, raw
+  newlines and a cut-off reply, ONE automatic retry ("return ONLY valid JSON") before the rules, and `usage` counts
+  `json_invalid_first / json_retry_ok / json_invalid` (`invalid_json_rate()`); the raw bad output is logged at DEBUG (600 chars).
+- **Bug 1, calls as CHAT:** `callcmd.py` reads named-contact call requests in any word order and ending (mr/hi/en/code-mixed, "again", role
+  words son/daughter -> that relation, else the primary family member, never a doctor); negations, past tense and "remind me to call" are not
+  calls. The LLM contract lists the same examples. Behaviour change (deliberate): "मला मुलाला फोन करायचाय" / "beta ko phone karna hai" are now
+  call requests (VIDEO_CALL), not the old "good time to call X" suggestion; `eval/cases.jsonl` updated.
+- **No claims without an action:** `_claim_guard` in `turn.py`: a CHAT reply that says it is calling / playing / reminding runs the call
+  intent if a call was asked, else becomes one clarifying line (who to call / what to play / what to remember).
+- **Elder is told only after core-api placed the call:** the call handler POSTs `/users/{id}/calls` first (that queues the family alert); a 503
+  (dead join link) or any failure -> "कॉल लागला नाही, मी पुन्हा प्रयत्न करतो" and no action. 409 (no voice room / already ringing) keeps the old
+  path (the elder screen starts or reuses the call).
+- **Eval (`eval/calls_eval.jsonl`, 30 call + 8 non-call utterances; `scripts/eval_calls.py`):** rules only 34% -> 100% (13/38 -> 38/38; the last
+  forms were added after looking at this set, so it is not a blind test). Live Gemini (gemini-flash-lite-latest): intent 34% -> 100%, turns that
+  fell back with invalid_json 24% (9/38) -> 0/38, calls claimed without an action 15 -> 0. First-answer invalid JSON after the fix is still 3/38 (8%):
+  the parser repair or the retry recovered all three, so the user-visible rate is 0%, but the model's first answer is not always valid.
+- **Not verified:** a real Telegram alert for a call, real STT output for these sentences, voice-agent behaviour with the new failure line.
+
 ## Dead join-link guard (2026-11-09)
 - **Bug:** a Telegram "join call" button pointed at a dead Cloudflare quick-tunnel URL (DNS_PROBE_FINISHED_NXDOMAIN).
 - **Fix:** `core_api/baseurl.py` checks BASE_URL before any link is sent: https only, `*.trycloudflare.com` refused unless

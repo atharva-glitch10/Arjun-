@@ -110,7 +110,7 @@ def test_call_family_uses_contacts_from_sql(engine, core_http, uid):
     assert "नंबर" in engine.handle(uid, "mulila phone karaycha aahe").reply  # no contacts
     core_http.post(f"/users/{uid}/contacts", json={"name": "Rahul", "relation": "son"})
     res = engine.handle(uid, "mulila phone karaycha aahe")
-    assert res.intent == "CALL_FAMILY_REMINDER" and "Rahul" in res.reply
+    assert res.intent == "VIDEO_CALL" and res.action["title"] == "Rahul"  # a wish to call is a call request (2026-11-09)
 
 
 def test_ai_disclosure(engine, uid):

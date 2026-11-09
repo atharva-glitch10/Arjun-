@@ -11,8 +11,8 @@
 {"text": "doctor chi bhet kadhi aahe", "intent": "GET_APPOINTMENT"}
 {"text": "mera appointment kab hai", "intent": "GET_APPOINTMENT"}
 {"text": "tablet ghetli", "intent": "MED_TAKEN"}
-{"text": "mulila phone karaycha aahe", "intent": "CALL_FAMILY_REMINDER"}
-{"text": "beta ko phone karna hai", "intent": "CALL_FAMILY_REMINDER"}
+{"text": "mulila phone karaycha aahe", "intent": "VIDEO_CALL"}
+{"text": "beta ko phone karna hai", "intent": "VIDEO_CALL"}
 {"text": "राहुलला कॉल कर", "intent": "VIDEO_CALL"}
 {"text": "राहुल ला कॉल कर", "intent": "VIDEO_CALL"}
 {"text": "राहुलला कॉल कर ना", "intent": "VIDEO_CALL"}

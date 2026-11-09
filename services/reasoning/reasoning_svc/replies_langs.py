@@ -553,13 +553,35 @@ UNSURE: dict[str, str] = {
 }
 
 
+# "The call did not connect" (spoken ONLY when core-api could not queue the family alert / ring the contact) and a short
+# clarifier for a chat reply that claimed to play something. UNVERIFIED for bn..te.
+CALL_FAILED: dict[str, str] = {
+    "mr": "कॉल लागला नाही, मी पुन्हा प्रयत्न करतो.",
+    "hi": "कॉल नहीं लगा, मैं फिर कोशिश करता हूँ।",
+    "en": "The call did not connect. I will try again.",
+    "bn": "কল লাগেনি, আমি আবার চেষ্টা করছি।",
+    "gu": "કૉલ લાગ્યો નહીં, હું ફરી પ્રયત્ન કરું છું.",
+    "kn": "ಕರೆ ಸೇರಲಿಲ್ಲ, ನಾನು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸುತ್ತೇನೆ.",
+    "ml": "കോൾ കിട്ടിയില്ല, ഞാൻ വീണ്ടും ശ്രമിക്കാം.",
+    "pa": "ਕਾਲ ਨਹੀਂ ਲੱਗੀ, ਮੈਂ ਫਿਰ ਕੋਸ਼ਿਸ਼ ਕਰਦਾ ਹਾਂ।",
+    "ta": "அழைப்பு போகவில்லை, நான் மீண்டும் முயல்கிறேன்.",
+    "te": "కాల్ కలవలేదు, నేను మళ్లీ ప్రయత్నిస్తాను.",
+}
+CLAIM_PLAY: dict[str, str] = {
+    "mr": "काय लावू — भजन, बातम्या की दुसरं काही?",
+    "hi": "क्या लगाऊँ — भजन, खबरें या कुछ और?",
+    "en": "What shall I play: a bhajan, the news, or something else?",
+}
+
+
 def extend(R: dict[str, dict[str, str]], time_tables: dict[str, dict]) -> None:
     """Add the new languages to the reply tables in place. Untranslated keys fall back to English, so a lookup never
     raises KeyError and never silently returns Marathi."""
     for lang in ("mr", "hi", "en"):
         R[lang]["web_unsure"] = UNSURE[lang]
+        R[lang]["claim_play"] = CLAIM_PLAY[lang]
     for lang in LANGS:
-        R[lang] = {**R["en"], **TR[lang], "web_unsure": UNSURE[lang]}
+        R[lang] = {**R["en"], **TR[lang], "web_unsure": UNSURE[lang], "call_failed": CALL_FAILED[lang]}
         t = dict(time_tables["en"])
         t.update(weekdays=WEEKDAYS[lang], months=MONTHS[lang])
         for k in ("time_now", "date_now", "greet_morning", "greet_afternoon", "greet_evening", "greet_night"):

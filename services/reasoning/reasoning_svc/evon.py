@@ -362,6 +362,8 @@ def _system_prompt(
             '"reply": string, "confidence": number 0-1, "answer_mode": "know"|"search"|"tool"|"refuse_safe"|null, '
             '"entity": string|null, "query_en": string|null, "queries": [string]|null, "time_sensitive": true|false, '
             '"know_confidence": number 0-1}\n'
+            "KEEP THE JSON COMPACT: leave out every slot and field whose value is null or false, and write `reply` only "
+            "for chat. "
             "ANSWER ROUTER, for intent=chat QUESTIONS (null for ordinary talk): answer_mode=know = a stable fact, "
             "explanation, definition, how-to, maths, language, story, religion/culture or general advice: put the full "
             "short spoken answer in `reply`; know_confidence = how sure you are (below 0.9 it will be searched). "
@@ -376,7 +378,7 @@ def _system_prompt(
             "resolve it against 'PREVIOUS FACTUAL TOPIC' in the context and write the FULL resolved question in query_en. "
             "NEVER search, and use refuse_safe or null, for health, symptoms, medicines, doses, emergencies, feelings, "
             "family or her own stories. "
-            "Intent meanings: chat = ordinary talk or a question you can answer; video_call = start a live video call with a family contact, including direct commands like 'Rahul la call kar'; reminder_add = set a reminder; "
+            "Intent meanings: chat = ordinary talk or a question you can answer; video_call = start a live video call with a family contact: direct commands and wishes in any language or mix, e.g. 'राहुलला कॉल कर / फोन लाव / फोन जोड', 'राहुल को कॉल करो / कॉल लगाओ / फोन करो', 'राहुल से बात करनी है', 'मुलाला / बेटे को फोन लगाओ', 'call my son', 'call Rahul', also repeated ('फिर से राहुल को कॉल करो'); put the NAME or the role (son / daughter) in slots.contact; this is an action, so NEVER answer it as chat; reminder_add = set a reminder; "
             "reminder_done = she finished a task/reminder; medicine_taken = she says she took her medicine; "
             "medicine_query = a question or worry about medicines/doses/side effects; media = play/open music, "
             "bhajan, a video, a recipe, a family link or WhatsApp; news = read or play news; call_family = she "
@@ -395,6 +397,10 @@ def _system_prompt(
 
 
 _MODES = ("know", "search", "tool", "refuse_safe")
+# The understanding JSON is the longest answer Arjun asks for, and some providers escape every Devanagari letter as \uXXXX
+# (about 6 tokens a letter), so 250 tokens cut it off mid-way (invalid_json, 2026-11-09). Room for a full object + one retry.
+UNDERSTAND_MAX_TOKENS = 700
+UNDERSTAND_RETRY_MAX_TOKENS = 1200
 
 
 def _route(data: dict[str, Any], intent: str, reply: str) -> dict[str, Any]:
@@ -429,25 +435,90 @@ def _route(data: dict[str, Any], intent: str, reply: str) -> dict[str, Any]:
     }
 
 
+_FENCE = re.compile(r"^```[a-zA-Z]*\s*|\s*```$")
+_TRAILING_COMMA = re.compile(r",\s*([}\]])")
+
+
+def _first_object(text: str) -> str | None:
+    """The first balanced {...} in `text` (string-aware), or the unbalanced tail from the first "{" when it was cut off."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth, in_str, esc = 0, False, False
+    for k in range(start, len(text)):
+        c = text[k]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:k + 1]
+    return text[start:]  # never closed: a reply cut off by max_tokens
+
+
+def repair_json(text: str) -> str:
+    """Best-effort fixes for the ways models break JSON: smart quotes, trailing commas, raw newlines in strings, and a
+    reply that stopped mid-way (close the open string, drop a dangling key, close the brackets)."""
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    stack: list[str] = []
+    out: list[str] = []
+    in_str, esc = False, False
+    for c in text:
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            elif c == "\n":
+                c = "\\n"
+            out.append(c)
+            continue
+        if c == '"':
+            in_str = True
+        elif c in "{[":
+            stack.append("}" if c == "{" else "]")
+        elif c in "}]" and stack:
+            stack.pop()
+        out.append(c)
+    fixed = "".join(out)
+    if in_str:
+        fixed += '"'
+    fixed = re.sub(r',\s*"[^"]*"\s*:\s*$', "", fixed)  # a key with no value yet
+    fixed = re.sub(r',\s*"[^"]*"\s*$', "", fixed)  # a dangling key
+    fixed = re.sub(r"[,:]\s*$", "", fixed)
+    fixed += "".join(reversed(stack))
+    return _TRAILING_COMMA.sub(r"\1", fixed)
+
+
 def _parse_json_object(raw: str | None) -> dict[str, Any] | None:
-    """The first JSON object in a model reply; tolerates code fences and stray prose."""
+    """The first JSON object in a model reply. Strips <think> traces and code fences, takes the first balanced {...},
+    and repairs the usual damage (trailing commas, smart quotes, a reply cut off mid-way)."""
     if not raw:
         return None
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
-    try:
-        data = json.loads(text)
-        return data if isinstance(data, dict) else None
-    except (ValueError, TypeError):
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        try:
-            data = json.loads(text[start:end + 1])
-            return data if isinstance(data, dict) else None
-        except (ValueError, TypeError):
-            return None
+    text = _THINK.sub("", raw).strip()
+    text = _FENCE.sub("", text).strip() if text.startswith("```") else text
+    for candidate in (text, _first_object(text)):
+        if not candidate:
+            continue
+        for attempt in (candidate, repair_json(candidate)):
+            try:
+                data = json.loads(attempt)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(data, dict) and data:
+                return data
+    return None
 
 
 def trim_to_sentence(text: str) -> str:
@@ -799,13 +870,16 @@ class EvonClient:
                 timeout=timeout,
                 meta=meta,
                 top_p=config.COMPANION_TOP_P,
-                max_tokens=self.max_tokens,
+                max_tokens=max(self.max_tokens, UNDERSTAND_MAX_TOKENS),
                 response_format={"type": "json_object"},
             )
         except (ValueError, KeyError):
             return None
         # httpx errors are deliberately NOT swallowed here: the caller logs the real reason (timeout vs provider).
         data = _parse_json_object(raw)
+        self.usage["json_calls"] = self.usage.get("json_calls", 0) + 1
+        if data is None and raw and "{" in raw:
+            data, raw = self._retry_json(messages, raw, meta, timeout)
         if data is None:
             # A provider that answered in plain prose: that prose is the reply. No second call.
             prose = strip_thinking(raw)
@@ -856,6 +930,37 @@ class EvonClient:
             "finish_reason": meta.get("finish_reason"),
             **_route(data, intent, reply),
         }
+
+    def _retry_json(
+        self, messages: list[dict[str, str]], bad_raw: str, meta: dict[str, Any], timeout: float | None
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """The understanding reply was not valid JSON (live 2026-11-09: cut off at max_tokens, finish_reason=length): ONE
+        automatic retry that asks for compact valid JSON and has more room, before the caller falls back to the rules."""
+        self.usage["json_invalid_first"] = self.usage.get("json_invalid_first", 0) + 1
+        log.debug("understand: invalid JSON (finish=%s, %d chars): %r", meta.get("finish_reason"), len(bad_raw), bad_raw[:600])
+        retry = messages + [{
+            "role": "user",
+            "content": "Your last answer was not valid JSON (it may have been cut off). Return ONLY one valid, COMPACT JSON "
+                       "object for the same transcript: omit every slot and field that is null or false. No prose, no markdown.",
+        }]
+        try:
+            raw2 = self._chat(
+                retry, 0.0, purpose="understand_retry", timeout=timeout, meta=meta, top_p=config.COMPANION_TOP_P,
+                max_tokens=UNDERSTAND_RETRY_MAX_TOKENS, response_format={"type": "json_object"},
+            )
+        except (ValueError, KeyError):
+            raw2 = None
+        data = _parse_json_object(raw2)
+        key = "json_retry_ok" if data is not None else "json_invalid"
+        self.usage[key] = self.usage.get(key, 0) + 1
+        if data is None:
+            log.debug("understand: retry also invalid (finish=%s): %r", meta.get("finish_reason"), (raw2 or "")[:600])
+        return data, raw2
+
+    def invalid_json_rate(self) -> float:
+        """Understanding calls whose FIRST answer was not valid JSON (before the retry), as a share of all of them."""
+        calls = self.usage.get("json_calls", 0)
+        return self.usage.get("json_invalid_first", 0) / calls if calls else 0.0
 
     def web_answer(
         self, text: str, language: str, results: list[dict[str, Any]], timeout: float | None = None, *,

@@ -17,7 +17,8 @@ def test_video_call_named_contact_and_family_fallback_skip_doctor(auto, core_htt
     named = auto.handle(uid, "चंद्रकांतला व्हिडिओ कॉल लाव")
     assert named.action["value"] == str(son["id"])
     assert "थांबा" in named.reply and "लागला" not in named.reply
-    assert auto.handle(uid, "मुलाला फोन लाव").intent == "CALL_FAMILY_REMINDER"
+    role = auto.handle(uid, "मुलाला फोन लाव")  # a role word = the primary family member, and the call is really requested
+    assert role.intent == "VIDEO_CALL" and role.action["value"] == str(son["id"])
     assert other["id"] != son["id"]
 
 

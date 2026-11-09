@@ -1,0 +1,38 @@
+{"id":"c01","text":"राहुल को कॉल करो फिरसे राहुल से बात करनी है","expect":"call","contact":"Rahul"}
+{"id":"c02","text":"राहुल से बात करनी है राहुल को कॉल लगाओ जरा","expect":"call","contact":"Rahul"}
+{"id":"c03","text":"राहुलला कॉल कर","expect":"call","contact":"Rahul"}
+{"id":"c04","text":"राहुलला कॉल करा","expect":"call","contact":"Rahul"}
+{"id":"c05","text":"राहुलला फोन लाव","expect":"call","contact":"Rahul"}
+{"id":"c06","text":"राहुलला फोन लावा ना","expect":"call","contact":"Rahul"}
+{"id":"c07","text":"राहुलला फोन जोड","expect":"call","contact":"Rahul"}
+{"id":"c08","text":"राहुल को कॉल करो","expect":"call","contact":"Rahul"}
+{"id":"c09","text":"राहुल को कॉल लगाओ","expect":"call","contact":"Rahul"}
+{"id":"c10","text":"राहुल को फोन लगाओ","expect":"call","contact":"Rahul"}
+{"id":"c11","text":"राहुल को फोन करो","expect":"call","contact":"Rahul"}
+{"id":"c12","text":"राहुल से बात करनी है","expect":"call","contact":"Rahul"}
+{"id":"c13","text":"राहुलशी बोलायचंय","expect":"call","contact":"Rahul"}
+{"id":"c14","text":"मला राहुलला फोन करायचाय","expect":"call","contact":"Rahul"}
+{"id":"c15","text":"मुलाला फोन लावा","expect":"call","contact":"Rahul"}
+{"id":"c16","text":"बेटे को फोन लगाओ","expect":"call","contact":"Rahul"}
+{"id":"c17","text":"मुलीला फोन लाव","expect":"call","contact":"Sita"}
+{"id":"c18","text":"call my son","expect":"call","contact":"Rahul"}
+{"id":"c19","text":"call Rahul","expect":"call","contact":"Rahul"}
+{"id":"c20","text":"please call Rahul now","expect":"call","contact":"Rahul"}
+{"id":"c21","text":"i want to call Rahul","expect":"call","contact":"Rahul"}
+{"id":"c22","text":"rahul ko call lagao","expect":"call","contact":"Rahul"}
+{"id":"c23","text":"rahulla phone laav","expect":"call","contact":"Rahul"}
+{"id":"c24","text":"मला मुलाशी बोलायचंय","expect":"call","contact":"Rahul"}
+{"id":"c25","text":"राहुल को काल करो","expect":"call","contact":"Rahul"}
+{"id":"c26","text":"राहुल को कॉल कारो ना","expect":"call","contact":"Rahul"}
+{"id":"c27","text":"अरे राहुल को फिर से फोन लगा ना","expect":"call","contact":"Rahul"}
+{"id":"c28","text":"राहुलला परत फोन लाव, लागला नाही","expect":"call","contact":"Rahul"}
+{"id":"c29","text":"फिर से कॉल करो राहुल को","expect":"call","contact":"Rahul"}
+{"id":"c30","text":"राहुल को कॉल करना है जरा","expect":"call","contact":"Rahul"}
+{"id":"n01","text":"राहुलला फोन करू नको","expect":"not_call"}
+{"id":"n02","text":"राहुलने कॉल केला होता काल","expect":"not_call"}
+{"id":"n03","text":"राहुलला फोन करायची आठवण ठेव","expect":"not_call"}
+{"id":"n04","text":"remind me to call Rahul tomorrow","expect":"not_call"}
+{"id":"n05","text":"आज पाऊस पडेल का","expect":"not_call"}
+{"id":"n06","text":"माझा फोन हरवला","expect":"not_call"}
+{"id":"n07","text":"राहुल को कॉल मत करो","expect":"not_call"}
+{"id":"n08","text":"नमस्कार, कसे आहात","expect":"not_call"}

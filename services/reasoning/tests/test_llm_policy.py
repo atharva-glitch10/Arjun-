@@ -194,7 +194,7 @@ def test_a_timeout_falls_back_to_the_rules_and_logs_the_reason(core_http, uid):
     assert res.trace["route"] == "rules" and res.trace["route_reason"] == "timeout_retry"
 
 
-def test_invalid_json_falls_back_without_a_second_intent_call(core_http, uid):
+def test_invalid_json_gets_one_automatic_retry_then_falls_back_without_a_legacy_intent_call(core_http, uid):
     class Bad(Llm):
         def __call__(self, req):
             body = json.loads(req.content)
@@ -204,7 +204,7 @@ def test_invalid_json_falls_back_without_a_second_intent_call(core_http, uid):
     llm = Bad()
     res = make_engine(core_http, llm).handle(uid, "udya doctor")
     understands = [c for c in llm.calls if "response_format" in c]
-    assert len(understands) == 1  # no legacy extract_intent call after the unified call failed
+    assert len(understands) == 2  # the unified call + ONE 'return only valid JSON' retry; no legacy extract_intent call
     assert res.trace["route_reason"] == "invalid_json"
 
 
@@ -285,7 +285,7 @@ def test_only_the_last_four_exchanges_are_sent(core_http, uid):
     last = llm.last["messages"]
     assert [m["role"] for m in last] == ["system"] + ["user", "assistant"] * 4 + ["user"]
     assert last[1]["content"].endswith(" 2")  # exchanges 0-2 were dropped
-    assert llm.last["max_tokens"] == 250
+    assert llm.last["max_tokens"] == 700  # the understanding JSON gets room for a full object (was 250: cut off, invalid_json)
     assert llm.last["temperature"] == 0.5
 
 

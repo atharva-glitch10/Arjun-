@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from .appcmd import OPEN_MEDIA, media_kind, media_specific, media_topic, parse_app_command
+from .callcmd import is_call_request
 from .textutil import has_any, normalize, tokens
 
 # ---- intent keywords (roman + Devanagari) -----------------------------------------------------
@@ -491,6 +492,10 @@ def parse(
 
     # Explicit video-call phrases must be read before the short "कर" confirmation token.
     if has_any(norm, VIDEO) and (has_any(norm, CALL) or has_any(norm, FAMILY_REL) or "बोलव" in norm):
+        return done("VIDEO_CALL", 0.9)
+
+    # A named-contact call request in any word order / ending ("राहुल को कॉल करो", "राहुल से बात करनी है"): see callcmd.py
+    if is_call_request(text):
         return done("VIDEO_CALL", 0.9)
 
     # Call commands must precede the bare yes/no rules because "कर" is also a Marathi yes token.

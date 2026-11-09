@@ -38,6 +38,10 @@ class CoreClient:
     def contacts(self, uid: int) -> list[dict[str, Any]]:
         return self._req("GET", f"/users/{uid}/contacts")  # type: ignore[no-any-return]
 
+    def start_call(self, uid: int, contact_id: int) -> dict[str, Any]:
+        """Ask core-api to ring the family contact (it queues the Telegram alert; 503 = the join link is dead, 409 = no voice room)."""
+        return self._req("POST", f"/users/{uid}/calls", json={"contact_id": contact_id, "mode": "video"})  # type: ignore[no-any-return]
+
     def today(self, uid: int) -> list[dict[str, Any]]:
         return self._req("GET", f"/users/{uid}/reminders/today")  # type: ignore[no-any-return]
 

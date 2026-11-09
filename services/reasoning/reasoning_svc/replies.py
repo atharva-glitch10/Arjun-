@@ -861,6 +861,8 @@ for _lang, _lines in MEMORY.items():
 from . import replies_langs as _rl  # noqa: E402
 
 _rl.extend(R, _TIME)
+for _lang in ("mr", "hi", "en"):
+    R[_lang]["call_failed"] = _rl.CALL_FAILED[_lang]
 for _table in (_MED, AUTO, _CHECKIN, _DAY, PRONOUN, _READING, MEMORY, CHAT):
     for _lang in _rl.LANGS:
         _table.setdefault(_lang, _table["en"])

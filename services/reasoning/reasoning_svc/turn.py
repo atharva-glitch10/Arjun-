@@ -44,6 +44,7 @@ from .appcmd import (
     parse_app_command,
 )
 from .apps import label as app_label
+from .callcmd import is_call_request, relation_matches, role_of
 from .checkins import answer_for, topic_of, volunteered_topic
 from .clock import local_now
 from .core_client import CoreClient, CoreError
@@ -156,6 +157,18 @@ _FORCE_SEARCH = re.compile(
 )
 _QUESTION = re.compile(
     r"\?|कोण|किती|काय|कधी|कुठे|कोणत|कसा|कशी|कसं|\b(?:who|what|when|where|which|how|why)\b|कौन|कितना|कितने|क्या|कब|कहाँ|कहां|कैसे",
+    re.IGNORECASE,
+)
+# A reply that SAYS it is doing something. Only a handler that created the action may say so.
+_CLAIM_CALL = re.compile(r"फोन|कॉल|call|dial|ring", re.IGNORECASE)
+_CLAIM_PLAY = re.compile(r"भजन|गाण|बातम्या|व्हिडिओ|खबर|song|bhajan|video|news|music", re.IGNORECASE)
+_ACTION_CLAIM = re.compile(
+    r"(?:फोन|कॉल|फ़ोन)\s*(?:आता\s*)?(?:जोडतो|जोडते|लावतो|लावते|करतो|करते|लगाता|लगा रहा|जोड़ रहा|जोड़ता|करता हूँ|मिलाता)|"
+    r"(?:जोडतो|लावतो|जोड़ता|लगाता हूँ|लगा रहा हूँ)\s*(?:फोन|कॉल)|"
+    r"\b(?:i(?:'ll| will| am|'m)\s+(?:now\s+)?(?:call|calling|connect|connecting|dial|dialling|ring|ringing|play|playing)|calling\s+\w+\s+now|connecting you)\b|"
+    r"(?:भजन|गाणं|गाणी|बातम्या|व्हिडिओ|खबरें|भजन|गाना)\s*(?:आता\s*)?(?:लावतो|वाजवतो|चालू करतो|लगाता हूँ|चलाता हूँ|लगा रहा हूँ)|"
+    r"(?:लावतो|वाजवतो|लगाता हूँ|चलाता हूँ)\s*(?:भजन|गाणं|गाणी|बातम्या|व्हिडिओ)|"
+    r"आठवण\s*(?:ठेवतो|ठेवली|नोंदवली|नोंदवतो)|याद\s*(?:रखता हूँ|रख ली|दिला दूँगा)|\bi(?:'ll| will)\s+remind you\b|reminder\s+(?:is\s+)?(?:set|saved)",
     re.IGNORECASE,
 )
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
@@ -635,6 +648,7 @@ class TurnEngine:
         # 4. dispatch
         try:
             result = self._dispatch(user_id, text, parsed, pending, draft, profile, now, lang, llm)
+            result = self._claim_guard(user_id, text, result, pending, draft, profile, now, lang, llm)
         except CoreError as exc:
             log.warning("core error: %s", exc)
             # a half-built reminder must not swallow her next sentences (seen in the 2026-10-31 smoke run)
@@ -733,6 +747,35 @@ class TurnEngine:
         if intent not in ("chat", "unclear") and confidence < _ACTION_CONFIDENCE_FLOOR:
             return None, "low_confidence", True
         return data, "ok", True
+
+    def _claim_guard(
+        self, uid: int, text: str, result: "TurnResult", pending: Any, draft: Any, profile: Any, now: datetime, lang: str,
+        llm: dict[str, Any] | None,
+    ) -> "TurnResult":
+        """A chat reply must never CLAIM an action that no handler performed ("मी राहुलला फोन जोडतो" with no call made,
+        2026-11-09). When a CHAT reply says it is calling / playing / reminding, either run the intent that was really
+        asked (a call request -> the call handler, which places it and confirms with core-api) or replace the claim with
+        one short clarifying line. Safety / care / action results are never touched."""
+        acted = (result.action or {}).get("type") not in (None, "", "none")
+        if result.intent != "CHAT" or result.mode != "companion" or acted or not result.reply:
+            return result
+        claim = _ACTION_CLAIM.search(result.reply)
+        if claim is None:
+            return result
+        r = rp.R[rp.lang_or_default(lang)]
+        if is_call_request(text):
+            log.info("claim guard: chat reply claimed a call; running the call intent")
+            return self._dispatch(uid, text, Parsed("VIDEO_CALL", 0.9, lang), pending, draft, profile, now, lang, llm)
+        kind = "call" if _CLAIM_CALL.search(claim.group(0)) else "play" if _CLAIM_PLAY.search(claim.group(0)) else "remind"
+        log.info("claim guard: replaced an unperformed %s claim", kind)
+        if kind == "call":
+            names = ", ".join(str(c.get("name") or "") for c in self.core.contacts(uid)[:4] if c.get("name"))
+            line = r["ask_contact"].format(names=names) if names else r["no_contacts"]
+        elif kind == "play":
+            line = r.get("claim_play") or rp.R["en"]["claim_play"]
+        else:
+            line = r["ask_task"]
+        return replace(result, reply=line, source="rules")
 
     @staticmethod
     def _route_overrides(llm: dict[str, Any], text: str, lang: str) -> None:
@@ -2271,13 +2314,27 @@ class TurnEngine:
                                                          for w in ("doctor", "dr.", "डॉक", "वैद्य"))]
             named = [c for c in eligible if name_matches(c["name"], text)
                      or (p.contact_hint and name_matches(c["name"], p.contact_hint))]
-            chosen = named[0] if named else next(
+            role = role_of(text) or role_of(p.contact_hint or "")  # "मुलाला फोन लावा" / "call my son": a role, not a name
+            by_role = [c for c in eligible if role and relation_matches(c.get("relation") or "", role)]
+            chosen = named[0] if named else (by_role[0] if by_role else next(
                 (c for c in eligible if "son" in (c.get("relation") or "").casefold()
                  or "मुलग" in (c.get("relation") or "")),
                 eligible[0] if eligible else None,
-            )
+            ))
             if chosen is None:
                 return out(r["no_contacts"])
+            # The elder is told the call is going out ONLY after core-api rang the contact and queued the family alert.
+            # 503 = the join link is dead, any other failure = not queued. 409 = no voice room (a typed session) or a call
+            # already ringing: the elder screen starts / reuses the call itself, as before.
+            try:
+                self.core.start_call(uid, chosen["id"])
+            except CoreError as exc:
+                if exc.status != 409:
+                    log.warning("video call not placed (%s)", exc.status)
+                    return TurnResult(r["call_failed"], "VIDEO_CALL", "care", lang)
+            except httpx.HTTPError as exc:
+                log.warning("video call not placed (%s)", type(exc).__name__)
+                return TurnResult(r["call_failed"], "VIDEO_CALL", "care", lang)
             return TurnResult(
                 f"{chosen['name']}ला व्हिडिओ कॉल लावतो, थांबा.", "VIDEO_CALL", "care", lang,
                 action={"type": "call", "kind": "video", "value": str(chosen["id"]),

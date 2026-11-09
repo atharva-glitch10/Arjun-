@@ -299,7 +299,7 @@ def test_headlines_never_reach_an_llm(core_http, uid, household, monkeypatch):
                      schema=load_intent_schema(), provider="TestAI")
     engine(core_http, llm).handle(uid, "बातम्या ऐकवा")
     # One understanding call for the command, but the feed text itself is never sent to a model.
-    assert len(seen) == 1
+    assert len(seen) in (1, 2)  # the mock answers `{}`: one automatic JSON retry is allowed
     sent = json.dumps(seen, ensure_ascii=False)
     assert "बातमी अ1" not in sent and "बातमी ब1" not in sent
     assert "बातम्या ऐकवा" in sent
