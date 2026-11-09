@@ -396,7 +396,21 @@ async function call<T>(base: string, path: string, init?: RequestInit): Promise<
 const core = <T,>(path: string, init?: RequestInit) => call<T>("/core", path, init);
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
+export interface AccountMe {
+  account: { id: number; email: string; name: string };
+  elders: { id: number; name: string; role: string; language: string }[];
+}
+
 export const api = {
+  // ---- family accounts (ARJUN_AUTH=1): the proxy passes only core-api's own session cookie, never the key
+  authMe: () => core<AccountMe>("/auth/me", { credentials: "same-origin" }),
+  login: (email: string, password: string) =>
+    core<{ id: number }>("/auth/login", { ...post({ email, password }), credentials: "same-origin" }),
+  signup: (name: string, email: string, password: string) =>
+    core<{ id: number }>("/auth/signup", { ...post({ name, email, password }), credentials: "same-origin" }),
+  logout: () => core<void>("/auth/logout", { method: "POST", credentials: "same-origin" }),
+  addElder: (name: string, language: string) =>
+    core<{ id: number }>("/parents", { ...post({ name, language }), credentials: "same-origin" }),
   createUser: (name: string) =>
     core<User>("/users", post({ name, language: "mr", interests: ["cooking"] })),
   getUser: (id: number) => core<User>(`/users/${id}`),

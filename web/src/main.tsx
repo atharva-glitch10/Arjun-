@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 
+import { AccountGate } from "./family/AccountGate";
 import { Dashboard } from "./family/Dashboard";
 import { JoinCall } from "./family/JoinCall";
 import { ElderApp } from "./elder/ElderApp";
@@ -47,7 +48,11 @@ function App() {
 
   return (
     <>
-      {view === "elder" ? <ElderApp userId={userId} forceEvening={evening} /> : <Dashboard userId={userId} onUser={changeUser} />}
+      {view === "elder" ? <ElderApp userId={userId} forceEvening={evening} /> : (
+        <AccountGate userId={userId} onUser={changeUser}>
+          <Dashboard userId={userId} onUser={changeUser} />
+        </AccountGate>
+      )}
       <nav
         aria-label="Switch view"
         style={{ display: "flex", gap: 6, justifyContent: "flex-end", padding: 12, background: "var(--ground-app)" }}

@@ -153,8 +153,15 @@ works, motion off under prefers-reduced-motion.
 MVP: voice reminders, "aaj kay aahe", mark done, family-call reminders, help request, medicine
 reminders (meal-anchored), story listening, interest openers, Memory Book, safety, family dashboard.
 **Frozen until after Nov 10** (do not build without asking): BP/sugar readings, meal/walk check-ins,
-Export for doctor, medicine-strip photos, RSS news, full pgvector RAG, login/roles, migrations,
-nginx replicas, S3 cache, multi-elder accounts, telephony (except the 2026-11-08 emergency calls), SMS/WhatsApp, Evon fine-tuning.
+Export for doctor, medicine-strip photos, RSS news, full pgvector RAG, migrations,
+nginx replicas, S3 cache, telephony (except the 2026-11-08 emergency calls), SMS/WhatsApp, Evon fine-tuning.
+
+**Family login + multiple elders (team notes 2026-11-10):** with `ARJUN_AUTH=1` the dashboard opens on a login /
+sign-up page (`family/AccountGate.tsx`); an account sees only its own elders, can add more, and log out. The first
+account ever created owns the elders that already exist. The dev proxy passes ONLY core-api's `arjun_session` cookie
+to `/auth/*` and `/parents*` and never adds the key there. LIMITATION: the per-elder dashboard routes still go through
+the key-injecting dev proxy, so the elder picker is the boundary in the browser, not the API; production needs the
+real proxy (T14) to stop injecting the key for family sessions.
 
 ## Open questions (unresolved; do not assume answers)
 1. Does Prisma support Marathi in *streaming*? If not, push-to-talk (T5).
