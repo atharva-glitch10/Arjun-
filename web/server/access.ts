@@ -32,6 +32,18 @@ interface Route {
 }
 const route = (method: string, path: string): Route => ({ method, path: new RegExp(`^${path}$`) });
 
+/** Family ACCOUNTS (login, sign-up, "my elders"): these go to core-api with the browser's own session cookie and
+ * WITHOUT the API key, so core-api checks the password session itself (ARJUN_AUTH=1). Team notes 2026-11-10. */
+export const ACCOUNT_ROUTES: Route[] = [
+  route("POST", "/auth/(?:signup|login|logout)"),
+  route("GET", "/auth/me"),
+  route("GET", "/parents"),
+  route("POST", "/parents"),
+  route("GET", `/parents/${ID}`),
+  route("PATCH", `/parents/${ID}`),
+  route("DELETE", `/parents/${ID}`),
+];
+
 /** What the elder page calls (web/src/elder/*, voice/*): read her day, answer a dose, ack a delivery, join voice. */
 export const ELDER_ROUTES: Route[] = [
   route("GET", `/users/${ID}/(?:deliveries/open|day|reminders|appointments/next|contacts|medicines/due|voice-label)`),
@@ -190,6 +202,11 @@ export function createAccess(opts: AccessOptions) {
   };
 
   /** Decide a request for the /core proxy (HTTP or WebSocket upgrade). */
+  function isAccountRoute(req: Pick<IncomingMessage, "method" | "url">): boolean {
+    const { path } = corePath(req.url ?? "/");
+    return routeAllowed(ACCOUNT_ROUTES, (req.method ?? "GET").toUpperCase(), path);
+  }
+
   function decideCore(req: Pick<IncomingMessage, "socket" | "headers" | "method" | "url">): Verdict {
     const { path, query } = corePath(req.url ?? "/");
     const method = (req.method ?? "GET").toUpperCase();
@@ -197,6 +214,7 @@ export function createAccess(opts: AccessOptions) {
       return { ok: false, status: 400, detail: "the API key must not be sent in the URL" };
     }
     if (routeAllowed(PUBLIC_ROUTES, method, path)) return { ok: true, role: "public" };
+    if (routeAllowed(ACCOUNT_ROUTES, method, path)) return { ok: true, role: "public" }; // core-api checks the session
     if (isLocalRequest(req)) return { ok: true, role: "local" };
     const role = roleOf(req.headers);
     if (role === null) return { ok: false, status: 401, detail: "access link required" };
@@ -279,8 +297,15 @@ export function createAccess(opts: AccessOptions) {
 
   /** http-proxy `proxyReq`: add the API key only to a request that passes, and never forward the cookie. */
   function onProxyReq(proxyReq: { setHeader(n: string, v: string): void; removeHeader(n: string): void }, req: IncomingMessage): void {
-    proxyReq.removeHeader("cookie");
     proxyReq.removeHeader("x-api-key"); // whatever the browser sent is not ours
+    if (isAccountRoute(req)) {
+      // keep ONLY core-api's own session cookie; never add the key: the account session must stand on its own
+      const session = /(?:^|;\s*)(arjun_session=[^;]+)/.exec(String(req.headers.cookie ?? ""));
+      if (session?.[1]) proxyReq.setHeader("cookie", session[1]);
+      else proxyReq.removeHeader("cookie");
+      return;
+    }
+    proxyReq.removeHeader("cookie");
     if (decideCore(req).ok && opts.apiKey) proxyReq.setHeader("X-API-Key", opts.apiKey);
   }
 

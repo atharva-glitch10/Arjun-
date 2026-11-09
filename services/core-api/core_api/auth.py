@@ -346,9 +346,13 @@ def signup(body: SignupIn, request: Request, response: Response, db: Session = D
     if db.scalar(select(m.Account.id).where(m.Account.email == email)) is not None:
         raise HTTPException(409, "email unavailable")
     now = local_now()
+    first = db.scalar(select(m.Account.id).limit(1)) is None
     account = m.Account(email=email, name=body.name.strip(), password_hash=_PASSWORDS.hash(body.password), created_at=now)
     db.add(account)
     db.flush()
+    if first:  # the first family account owns the household that already exists (e.g. the seeded demo elder)
+        for (uid,) in db.execute(select(m.User.id)).all():
+            db.add(m.Membership(account_id=account.id, user_id=uid, role="owner", created_at=now))
     raw, age = _new_session(account.id, db, now)
     _set_cookie(response, request, SESSION_COOKIE, _b64(raw), age)
     response.headers["Cache-Control"] = "no-store"
