@@ -1,5 +1,20 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## All ten Gnani languages (2026-11-09)
+- **Languages:** mr, hi, en + bn, gu, kn, ml, pa, ta, te. Set per elder in Settings > Names and language; the elder screens, the fixed
+  replies and the voice (Prisma hint + Timbre language) follow it. Script detection (`textutil.script_language`) picks bn/gu/kn/ml/pa/ta/te
+  from the letters alone; Devanagari/Latin still use the word lists.
+- **Reasoning:** `replies_langs.py` translates the core fixed lines (reminders, medicine, safety, web, greetings, time) for the 7 new
+  languages; every other key falls back to ENGLISH, never to Marathi. Emergency/distress now speak a fixed line in her own language
+  (`replies_langs.safety_reply`, no family name inserted). Yes/no words and medicine/health block words added for all 7.
+- **Safety lexicon:** `safety_langs.py` (emergency + distress stems for the 7 languages), hooked into `distress.is_emergency/is_distress`.
+- **Web:** `web/src/elder/strings.ts` holds every elder-screen word in 10 languages (`t(key)`), `format.ts` has weekday/month/period
+  words per language, `ElderApp` sets the language from her profile. Tap-to-talk is unchanged (not hands-free).
+- **UNVERIFIED:** all bn..te wording, the 7-language safety lexicon and the elder UI strings were written WITHOUT a native speaker or real
+  ASR output. They must be reviewed before any public demo (same status as the mr/hi lexicons). Not done: the rule parser (times, dates,
+  reminders) and the family dashboard stay mr/hi/en/English; in the 7 new languages the LLM does the understanding and the rules only
+  guard safety and yes/no. Tests: reasoning `test_multilingual.py`, web `strings.test.ts`.
+
 ## Search provider switched to Tavily (2026-11-08)
 - The previous search provider is removed everywhere (code, tests, `.env.example`, docs); `TAVILY_API_KEY` is the only search key. Missing key or any failure still gives "आत्ता माहिती मिळाली नाही." News: `topic: news` + `include_domains` from the family's rss/link app_links; none approved = Arjun says so and does not search. Mocked tests only; no live Tavily key was run.
 

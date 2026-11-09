@@ -87,3 +87,16 @@ def test_a_reminder_question_in_her_language_is_answered_in_her_language(core_ht
     core_http.patch(f"/users/{uid}", json={"language": lang})
     res = make(core_http, Llm(_understand(web=False))).handle(uid, HARMLESS[lang], language_code=f"{lang}-IN")
     assert res.language == lang  # no KeyError, no silent switch to Marathi
+
+
+@pytest.mark.parametrize(
+    "word,yes",
+    [("ஆம்", True), ("వద్దు", False), ("అవును", True), ("ಬೇಡ", False), ("അതെ", True), ("വേണ്ട", False), ("হ্যাঁ", True),
+     ("না", False), ("હા", True), ("ના", False), ("ਹਾਂ", True), ("ਨਹੀਂ", False), ("இல்லை", False), ("ಹೌದು", True)],
+)
+def test_yes_and_no_words_of_the_new_languages_are_understood(word, yes):
+    from reasoning_svc.parser import NO, YES
+    from reasoning_svc.textutil import has_any, normalize
+
+    norm = normalize(word)
+    assert has_any(norm, YES) is yes and has_any(norm, NO) is (not yes)

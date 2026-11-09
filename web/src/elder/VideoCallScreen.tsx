@@ -4,6 +4,7 @@ import { RoomEvent, Track } from "livekit-client";
 import { api } from "../api";
 import type { VideoCall } from "../api";
 import type { Room } from "livekit-client";
+import { t } from "./strings";
 
 export function VideoCallScreen({
   call, starting, room, userId, onEnd, onMissed,
@@ -155,17 +156,17 @@ export function VideoCallScreen({
   }, [call?.id, status]);
 
   if (!call && !starting) return null;
-  const name = call?.contact_name ?? starting?.name ?? "कुटुंब";
+  const name = call?.contact_name ?? starting?.name ?? t("family_word");
   const ringing = !call || status === "ringing";
   return (
-    <main className="elder-video-call" role="dialog" aria-label="व्हिडिओ कॉल">
-      {ringing ? <div className="elder-call-wait"><video ref={local} autoPlay muted playsInline /><h1>{name}ला बोलावतोय…</h1>
-        {problem && <p>कॅमेरा किंवा कॉल उपलब्ध नाही.</p>}
+    <main className="elder-video-call" role="dialog" aria-label={t("video_call")}>
+      {ringing ? <div className="elder-call-wait"><video ref={local} autoPlay muted playsInline /><h1>{t("calling", { name })}</h1>
+        {problem && <p>{t("cam_problem")}</p>}
       </div> : <><video ref={remote} className="elder-family-video" autoPlay playsInline />
         <video ref={local} className="elder-self-video" autoPlay muted playsInline />
         <p className="elder-call-name">{name}</p>
       </>}
-      <button className="elder-call-end" type="button" onClick={() => onEnd("elder button")}>🔴 बंद करा</button>
+      <button className="elder-call-end" type="button" onClick={() => onEnd("elder button")}>{t("end_call")}</button>
     </main>
   );
 }

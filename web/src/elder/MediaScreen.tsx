@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef } from "react";
 
 import { embedSrc, idleMedia, mediaReducer, reportableMediaState, shouldHeartbeatMedia } from "../voice/action";
 import type { ArjunAction, ControlKind, MediaState, PlayerState } from "../voice/action";
+import { t } from "./strings";
 
 // The little part of the YouTube IFrame Player API we use (loaded from youtube.com/iframe_api, no key in the browser).
 interface YtPlayer {
@@ -185,7 +186,7 @@ export function MediaScreen({
   const paused = state.phase === "paused" || state.phase === "blocked";
 
   return (
-    <div className="media-screen" role="dialog" aria-label={state.title || "वीडियो"}>
+    <div className="media-screen" role="dialog" aria-label={state.title || t("video_word")}>
       {src && (
         <iframe
           ref={iframe}
@@ -198,26 +199,26 @@ export function MediaScreen({
       )}
       {state.phase === "blocked" && (
         <button type="button" className="media-start" onClick={start}>
-          ▶ सुरू करा
+          {t("media_start")}
         </button>
       )}
-      {state.phase === "error" && <p className="media-error">व्हिडिओ सुरू झाला नाही. "अर्जुन, दुसरं लाव" म्हणा किंवा बंद करा दाबा.</p>}
-      <h1 className="media-title">{state.title || "व्हिडिओ"}</h1>
+      {state.phase === "error" && <p className="media-error">{t("media_error")}</p>}
+      <h1 className="media-title">{state.title || t("video_word")}</h1>
       <div className="media-bar">
         <button type="button" className="media-btn media-close" onClick={() => dispatch({ t: "close" })}>
-          ✕ बंद करा
+          {t("media_close")}
         </button>
         <button type="button" className="media-btn media-toggle" onClick={toggle}>
-          {paused ? "▶ सुरू करा" : "⏸ थांबवा"}
+          {paused ? t("media_start") : t("media_pause")}
         </button>
         <button type="button" className="media-btn" onClick={next} disabled={!state.canNext}>
-          ⏭ पुढचं
+          {t("media_next")}
         </button>
-        <button type="button" className="media-btn" onClick={() => volume(-20)} aria-label="आवाज कमी">
-          🔉 कमी
+        <button type="button" className="media-btn" onClick={() => volume(-20)} aria-label={t("vol_down_aria")}>
+          {t("vol_down")}
         </button>
-        <button type="button" className="media-btn" onClick={() => volume(20)} aria-label="आवाज जास्त">
-          🔊 जास्त
+        <button type="button" className="media-btn" onClick={() => volume(20)} aria-label={t("vol_up_aria")}>
+          {t("vol_up")}
         </button>
       </div>
     </div>
@@ -229,10 +230,10 @@ export function LinkPrompt({ title, onOpen, onCancel }: { title: string; onOpen:
   return (
     <div className="media-screen link-prompt" role="dialog" aria-label={title}>
       <button type="button" className="media-start" onClick={onOpen}>
-        {title} उघडा
+        {t("open_x", { title })}
       </button>
       <button type="button" className="media-btn media-close" onClick={onCancel}>
-        ✕ नको
+        {t("no_x")}
       </button>
     </div>
   );

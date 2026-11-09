@@ -41,7 +41,8 @@ describe("orb labels", () => {
     }
   });
   it("fall back to English for an unknown language", () => {
-    expect(orbLabel("ta", "listening")).toBe(ORB_LABELS.en.listening);
+    expect(orbLabel("xx", "listening")).toBe(ORB_LABELS.en.listening);
+    expect(orbLabel("ta", "listening")).toBe(ORB_LABELS.ta.listening);
     expect(orbLabel("mr", "listening")).toBe("मी ऐकतोय");
   });
 });

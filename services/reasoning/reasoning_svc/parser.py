@@ -15,8 +15,13 @@ from .textutil import has_any, normalize, tokens
 # ---- intent keywords (roman + Devanagari) -----------------------------------------------------
 YES = ("ho", "hoy", "hoi", "होय", "हो", "हां", "हाँ", "haan", "han", "ha", "yes", "yeah", "ok",
        "okay", "theek", "thik", "ठीक", "बरं", "बरोबर", "kara", "कर", "kar do", "thik aahe",
-       "ठीक आहे", "ठीक है", "sahi", "सही", "ji", "जी")
-NO = ("nahi", "नाही", "nako", "नको", "no", "nahin", "नहीं", "mat", "नही", "nope")
+       "ठीक आहे", "ठीक है", "sahi", "सही", "ji", "जी",
+       # bn gu kn ml pa ta te (2026-11-09, UNVERIFIED)
+       "ஆம்", "ஆமாம்", "சரி", "అవును", "సరే", "ಹೌದು", "ಸರಿ", "അതെ", "ശരി", "ആം", "হ্যাঁ", "হাঁ", "ঠিক", "હા", "સારું", "ઠીક",
+       "ਹਾਂ", "ਜੀ", "ਠੀਕ")
+NO = ("nahi", "नाही", "nako", "नको", "no", "nahin", "नहीं", "mat", "नही", "nope",
+      "இல்லை", "வேண்டாம்", "కాదు", "వద్దు", "లేదు", "ಇಲ್ಲ", "ಬೇಡ", "അല്ല", "വേണ്ട", "ഇല്ല", "না", "নয়", "ના", "નહીં", "નથી",
+      "ਨਹੀਂ", "ਨਾ", "ਨਹੀ")
 DECLINE = ("aaj nahi", "आज नाही", "आज नको", "aaj nako", "ata nako", "आता नको", "not today",
            "baad mein", "बाद में", "aaj nahin", "आज नहीं")
 FORGET = ("he visar", "हे विसर", "visar", "विसर", "forget this", "forget it", "bhool ja",

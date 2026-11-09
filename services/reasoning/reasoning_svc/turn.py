@@ -22,7 +22,7 @@ from urllib.parse import quote
 
 import httpx
 
-from . import config
+from . import config, replies_langs
 from . import replies as rp
 from .app_replies import A
 from .appcmd import (
@@ -89,7 +89,6 @@ from .textutil import (
     normalize,
     tokens,
 )
-from . import replies_langs
 from .tools import weather, web_search
 
 

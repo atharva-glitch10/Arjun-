@@ -1,3 +1,5 @@
+import { t } from "../elder/strings";
+
 /** Which Ghar screen the elder sees. Pure on purpose: it is the part that must never be wrong, so it is tested.
  *
  * The agent publishes its state as participant attributes: LiveKit's own "lk.agent.state" and ours,
@@ -45,13 +47,17 @@ export interface VoiceSnapshot {
   audioBlocked: boolean;
 }
 
-/** Plain words for the elder; never a blank or frozen screen. */
+/** Plain words for the elder in Marathi (the default; `failureText` gives her own language). Never a blank or frozen screen. */
 export const FAILURE_TEXT: Record<Failure, string> = {
   dropped: "जोडणी तुटली, पुन्हा बोला दाबा",
   connect: "जोडणी झाली नाही, पुन्हा बोला दाबा",
   timeout: "अर्जुन अजून तयार नाही, पुन्हा बोला दाबा",
   mic: "मायक्रोफोन चालू करा, मग पुन्हा बोला दाबा",
 };
+
+const FAILURE_KEY = { dropped: "fail_dropped", connect: "fail_connect", timeout: "fail_timeout", mic: "fail_mic" } as const;
+/** The same lines in the language the elder screens are showing. */
+export const failureText = (failure: Failure): string => t(FAILURE_KEY[failure]);
 
 const SCREENS: readonly AgentScreen[] = ["reply", "story", "confirm", "saved", "safety", "reminder", "medicine", "closed"];
 const ITEM = /^(reminder|dose):\d{1,9}$/;

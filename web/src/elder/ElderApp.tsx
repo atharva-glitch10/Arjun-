@@ -20,12 +20,14 @@ import {
   setCompanionLabel,
 } from "../screens/ElderScreens";
 import type { UpcomingItem } from "../screens/ElderScreens";
-import { FAILURE_TEXT, shownFor } from "../voice/state";
+import { failureText, shownFor } from "../voice/state";
 import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
 import { LinkPrompt, MediaScreen } from "./MediaScreen";
 import { VideoCallScreen } from "./VideoCallScreen";
 import { elderLanguage, elderText, timeGreeting } from "./i18n";
+import { LANGUAGE_NAMES, setElderLang, t as tr } from "./strings";
+import type { ElderLang } from "./strings";
 import { useAppActions } from "./useAppActions";
 import {
   dateLine,
@@ -42,9 +44,7 @@ import {
 } from "./format";
 
 // How the elder is addressed in headings: the family's "what should Arjun call her" (Settings), else "आजी".
-const DEFAULT_ADDRESS = "आजी";
-
-const LANGUAGE_NAME: Record<string, string> = { mr: "मराठी", hi: "हिंदी", en: "English" };
+const defaultAddress = (lang: ElderLang): string => tr("who", undefined, lang);
 
 const hhmmOf = (iso: string): string => iso.slice(11, 16);
 
@@ -83,7 +83,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const [items, setItems] = useState<UpcomingItem[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [displayLanguage, setDisplayLanguage] = useState("mr");
-  const [addressAs, setAddressAs] = useState(DEFAULT_ADDRESS);
+  setElderLang(displayLanguage);
+  const [addressAs, setAddressAs] = useState(defaultAddress("mr"));
   // Whose voice Arjun may chat in (a family-approved cloned voice); shown so she always knows. Re-checked each minute.
   const [clonedName, setClonedName] = useState<string | null>(null);
   useEffect(() => {
@@ -243,8 +244,10 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         api.contacts(userId),
         api.getUser(userId),
       ]);
-      setDisplayLanguage(elderLanguage(user.preferred_languages?.[0] || user.language));
-      setAddressAs(user.address_as?.trim() || DEFAULT_ADDRESS);
+      const lang = elderLanguage(user.preferred_languages?.[0] || user.language);
+      setElderLang(lang); // before any time/day text below is built
+      setDisplayLanguage(lang);
+      setAddressAs(user.address_as?.trim() || defaultAddress(lang));
       setCompanionLabel(user.speech_style?.companion_name);
       setContacts(people);
       const t = clockNow();
@@ -260,7 +263,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           item: {
             key: `r${r.id}`,
             at: at.getTime(),
-            when: day === "आज" ? spokenTime(hhmm) : `${day} ${spokenTime(hhmm)}`,
+            when: day === dayWord(t, t) ? spokenTime(hhmm) : `${day} ${spokenTime(hhmm)}`,
             what: r.task,
             initials: person ? Array.from(person.name)[0] : undefined,
             kind: person ? "call" : "reminder",
@@ -276,7 +279,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           item: {
             key: `a${appt.id}`,
             at: at.getTime(),
-            when: day === "आज" ? spokenTime(hhmm) : `${day} ${spokenTime(hhmm)}`,
+            when: day === dayWord(t, t) ? spokenTime(hhmm) : `${day} ${spokenTime(hhmm)}`,
             what: appt.title,
             kind: "appointment",
           },
@@ -326,7 +329,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       void pollMedicines();
       return;
     }
-    setError("काहीतरी चुकलं. थोड्या वेळाने परत दाबा.");
+    setError(tr("err_retry"));
   };
 
   const medicineTaken = async (d: Dose) => {
@@ -429,7 +432,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       void pollMedicines();
       return;
     }
-    setError("काहीतरी चुकलं. थोड्या वेळाने परत दाबा.");
+    setError(tr("err_retry"));
   };
 
   const answerMedicineCard = async (d: Delivery, status: "taken" | "snoozed") => {
@@ -445,8 +448,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     }
   };
 
-  const yes = () => void voice.sendText("हो");
-  const no = () => void voice.sendText("नाही");
+  const yes = () => void voice.sendText(tr("yes"));
+  const no = () => void voice.sendText(tr("no"));
 
   const evening = forceEvening ?? isEvening(now);
   const shownDose = dueDose ?? lastDose.current;
@@ -496,7 +499,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           timeLabel={cardDone.time}
           name={cardDone.name}
           dose={cardDone.dose}
-          nextLine={due.next ? `पुढचं औषध ${timeLabel(hhmmOf(due.next.due_at))}` : "आज आणखी औषध नाही"}
+          nextLine={due.next ? tr("next_med_at", { t: timeLabel(hhmmOf(due.next.due_at)) }) : tr("no_more_med")}
           onTaken={() => undefined}
           onSnooze={() => undefined}
           onOk={() => setCardDone(null)}
@@ -525,9 +528,9 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
               timeLabel={timeLabel(hhmmOf(dl.due_at))}
               name={dl.label}
               dose={dl.detail}
-              mealNote={dose && (dose.anchor === "lunch" || dose.anchor === "dinner") ? "जेवण झालं ना? मग आता" : undefined}
+              mealNote={dose && (dose.anchor === "lunch" || dose.anchor === "dinner") ? tr("meal_done_q") : undefined}
               photoUrl={dose?.photo_url || undefined}
-              nextLine={due.next ? `पुढचं औषध ${timeLabel(hhmmOf(due.next.due_at))}` : "आज आणखी औषध नाही"}
+              nextLine={due.next ? tr("next_med_at", { t: timeLabel(hhmmOf(due.next.due_at)) }) : tr("no_more_med")}
               notSpoken={!deliveredCard.spoken}
               onTaken={() => void answerMedicineCard(dl, "taken")}
               onSnooze={() => void answerMedicineCard(dl, "snoozed")}
@@ -550,7 +553,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       case "failed":
         return (
           <FailedScreen
-            message={FAILURE_TEXT[voice.snapshot.failure ?? "dropped"]}
+            message={failureText(voice.snapshot.failure ?? "dropped")}
             onRetry={() => begin()}
             onStop={toHome}
           />
@@ -577,7 +580,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
               prompt={voice.reply}
               noteTitle={weekday(now)}
               transcript={voice.heard}
-              hint="ऐकतोय… सावकाश सांगा"
+              hint={tr("hint_listen_slow")}
               share={{
                 names: shareNames.map((c) => c.name),
                 initials: shareNames.map((c) => Array.from(c.name)[0] ?? ""),
@@ -604,8 +607,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         const c = lastCard.current;
         return (
           <DoneScreen
-            title="आठवण ठेवली!"
-            line={c ? `${dayWord(c.when, now)} ${periodOfDay(c.when.getHours())} मी तुम्हाला सांगेन` : voice.reply}
+            title={tr("saved_reminder")}
+            line={c ? `${dayWord(c.when, now)} ${periodOfDay(c.when.getHours())} ${tr("remind_you")}` : voice.reply}
             onOk={toHome}
           />
         );
@@ -616,7 +619,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
             prompt={voice.reply}
             noteTitle={weekday(now)}
             transcript={voice.heard}
-            hint="ऐकतोय… सावकाश सांगा"
+            hint={tr("hint_listen_slow")}
             onSpeak={() => void voice.start()}
             onBack={toHome}
           />
@@ -641,10 +644,10 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
               name={shownDose.name}
               dose={shownDose.dose}
               mealNote={
-                shownDose.anchor === "lunch" || shownDose.anchor === "dinner" ? "जेवण झालं ना? मग आता" : undefined
+                shownDose.anchor === "lunch" || shownDose.anchor === "dinner" ? tr("meal_done_q") : undefined
               }
               photoUrl={shownDose.photo_url || undefined}
-              nextLine={due.next ? `पुढचं औषध ${timeLabel(hhmmOf(due.next.due_at))}` : "आज आणखी औषध नाही"}
+              nextLine={due.next ? tr("next_med_at", { t: timeLabel(hhmmOf(due.next.due_at)) }) : tr("no_more_med")}
               snoozeUntil={undefined}
               notSpoken
               onTaken={() => void medicineTaken(shownDose)}
@@ -655,7 +658,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <HomeScreen
             evening={evening}
-            languageLabel={LANGUAGE_NAME[displayLanguage]}
+            languageLabel={LANGUAGE_NAMES[elderLanguage(displayLanguage)]}
             greeting={`${timeGreeting(elderLanguage(displayLanguage), now.getHours())}, ${addressAs}`}
             dateLine={evening ? `${weekday(now)} · ${periodOfDay(now.getHours())}` : dateLine(now)}
             clock={timeLabel(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`)}
@@ -671,8 +674,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
             }
             error={error}
             onSpeak={() => begin()}
-            onToday={() => begin("आज काय आहे")}
-            onHelp={() => begin("मदत")}
+            onToday={() => begin(tr("cmd_today"))}
+            onHelp={() => begin(tr("cmd_help"))}
             onInfo={openInfo}
           />
         );
@@ -686,7 +689,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     >
       {HANDS_FREE && live && shown === "home" && (
         <div className="hf-badge" role="status">
-          <span className="hf-dot" aria-hidden /> मी ऐकतोय · कधीही बोला
+          <span className="hf-dot" aria-hidden /> {tr("listening_any_time")}
         </div>
       )}
       {(medicineOpen || shown === "card") && error && (
@@ -702,7 +705,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       {voice.family && (
         <div className="family-call-banner" role="status" aria-live="polite">
           <span className="family-call-dot" aria-hidden />
-          {voice.family} बोलत आहेत
+          {tr("family_speaking", { name: voice.family })}
         </div>
       )}
       {live && voice.thinking && (
@@ -712,7 +715,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
             <i />
             <i />
           </span>
-          विचार करतोय…
+          {tr("thinking")}
         </div>
       )}
       {body()}
@@ -741,14 +744,14 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       )}
       {apps.link && shown !== "safety" && (
         <div className="link-bar" role="status">
-          <span>{apps.link.title} उघडलं</span>
+          <span>{tr("opened", { title: apps.link.title })}</span>
           <button type="button" className="media-btn" onClick={apps.closeLink}>
-            ◀ परत
+            ◀ {tr("back_small")}
           </button>
         </div>
       )}
       {HANDS_FREE && (
-        <label className="volume" title="आवाज">
+        <label className="volume" title={tr("volume")}>
           <span aria-hidden>🔈</span>
           <input
             type="range"
@@ -756,7 +759,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
             max={1}
             step={0.05}
             value={voice.volume}
-            aria-label="अर्जुनचा आवाज"
+            aria-label={tr("volume")}
             onChange={(e) => voice.setVolume(Number(e.target.value))}
           />
           <span aria-hidden>🔊</span>
@@ -768,6 +771,6 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
 
 function voiceChipText(language: string, name: string): string {
   if (language === "hi") return `${name} की आवाज़ में बात`;
-  if (language === "en") return `Talking in ${name}'s voice`;
-  return `${name}च्या आवाजात गप्पा`;
+  if (language === "mr") return `${name}च्या आवाजात गप्पा`;
+  return `Talking in ${name}'s voice`;
 }

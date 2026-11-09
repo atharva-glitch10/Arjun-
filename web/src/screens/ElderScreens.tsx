@@ -5,6 +5,8 @@ import type { DoseCheck, HealthProfile } from "@/api";
 
 import { Orb } from "@/components/Orb";
 import type { OrbState } from "@/components/orbState";
+import { t } from "@/elder/strings";
+import type { StringKey } from "@/elder/strings";
 
 /** Presentational elder screens ("listens with care" design). No fetching and no hard-coded user data: all props. */
 
@@ -16,7 +18,7 @@ export function setCompanionLabel(name: string | undefined): void {
   companionLabel = !n || n.toLowerCase() === "arjun" ? "अर्जुन" : n;
 }
 
-export const AI_DISCLOSURE = "अर्जुन — तुमचा AI सोबती";
+const aiDisclosure = (): string => t("ai_disclosure", { name: companionLabel });
 
 export interface UpcomingItem {
   key: string;
@@ -86,7 +88,7 @@ export function HomeScreen(p: HomeProps) {
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <span className="who">{p.dateLine}</span>
           {p.clock && (
-            <span className="sub" aria-label={`आत्ता ${p.clock}`}>
+            <span className="sub" aria-label={t("now_at", { t: p.clock ?? "" })}>
               {p.clock}
             </span>
           )}
@@ -140,7 +142,7 @@ export function HomeScreen(p: HomeProps) {
               <span className="tile">
                 <Pill size={24} />
               </span>
-              <h2>औषधं</h2>
+              <h2>{t("meds")}</h2>
             </div>
             {p.medicine ? (
               <div className="section-row">
@@ -148,10 +150,10 @@ export function HomeScreen(p: HomeProps) {
                   <span className="what">{p.medicine.name}</span>
                   <span className="when">{p.medicine.when}</span>
                 </div>
-                <span className="status-chip">पुढे</span>
+                <span className="status-chip">{t("next_chip")}</span>
               </div>
             ) : (
-              <p className="section-empty">आज आणखी औषध नाही</p>
+              <p className="section-empty">{t("no_more_med")}</p>
             )}
           </section>
           <section className="section-card">
@@ -159,23 +161,23 @@ export function HomeScreen(p: HomeProps) {
               <span className="tile">
                 <ClipboardList size={24} />
               </span>
-              <h2>आजची कामं</h2>
+              <h2>{t("todays_tasks")}</h2>
             </div>
-            {p.items.length === 0 && <p className="section-empty">आज काही ठरलेलं नाही</p>}
+            {p.items.length === 0 && <p className="section-empty">{t("nothing_planned")}</p>}
             {p.items.map((it) => (
               <div className="section-row" key={it.key}>
                 <div>
                   <span className="what">{it.what}</span>
                   <span className="when">{it.when}</span>
                 </div>
-                <span className="status-chip later">नंतर</span>
+                <span className="status-chip later">{t("later_chip")}</span>
               </div>
             ))}
           </section>
         </div>
 
         <div className="home-speak">
-          <button className="speak-orb" onClick={p.onSpeak} disabled={p.busy} aria-label="अर्जुनशी बोला">
+          <button className="speak-orb" onClick={p.onSpeak} disabled={p.busy} aria-label={t("talk_to", { name: companionLabel })}>
             <span className="orb-phone">
               <WarmOrb size="lg" pulse>
                 <Mic size={44} />
@@ -184,11 +186,11 @@ export function HomeScreen(p: HomeProps) {
             <span className="orb-laptop">
               <div className="lap-rings">
                 <div className="lap-mid">
-                  <Orb state="idle" label="अर्जुन" size="8.75rem" />
+                  <Orb state="idle" label={companionLabel} size="8.75rem" />
                 </div>
               </div>
             </span>
-            <span className="label">दाबा आणि बोला</span>
+            <span className="label">{t("tap_and_speak")}</span>
           </button>
         </div>
       </div>
@@ -202,21 +204,21 @@ export function HomeScreen(p: HomeProps) {
       <div className="btn-row actions">
         <button className="btn secondary" onClick={p.onToday}>
           <ListChecks size={24} aria-hidden />
-          आज काय?
+          {t("whats_today")}
         </button>
         <button className="btn help" onClick={p.onHelp}>
           <Phone size={24} aria-hidden />
-          मदत
+          {t("help")}
         </button>
       </div>
       {p.onInfo && (
         <button className="btn outline-white" onClick={p.onInfo}>
           <ClipboardList size={24} aria-hidden />
-          माझी औषधं आणि माहिती
+          {t("my_info_btn")}
         </button>
       )}
-      <span className="hint-chip">बोला — “भजन लाव”, “राहुलला कॉल कर”, “आज काय आहे?”</span>
-      <p className="disclosure">{AI_DISCLOSURE}</p>
+      <span className="hint-chip">{t("hint_chip")}</span>
+      <p className="disclosure">{aiDisclosure()}</p>
     </div>
   );
 }
@@ -233,15 +235,15 @@ export function ListenScreen(p: {
   return (
     <div className="screen listen">
       <div className="heading">
-        <h1 className="h1">मी ऐकतोय…</h1>
+        <h1 className="h1">{t("listening_h")}</h1>
       </div>
       <div className="orb-wrap" data-orb={state}>
-        <WarmOrb size="lg" pulse label="अर्जुन ऐकत आहे" />
-        <span className="orb-caption">अर्जुन ऐकतोय…</span>
+        <WarmOrb size="lg" pulse label={t("listening_aria", { name: companionLabel })} />
+        <span className="orb-caption">{t("listening_cap", { name: companionLabel })}</span>
       </div>
       <div className="said-card" aria-live="polite">
         <span className="t-muted" style={{ fontSize: 16 }}>
-          तुम्ही म्हणालात
+          {t("you_said")}
         </span>
         <p className="quote">{p.heard ? `“${p.heard}”` : "…"}</p>
       </div>
@@ -258,22 +260,22 @@ export function ListenScreen(p: {
             style={{ flex: 1, fontSize: 20 }}
             value={p.onType.value}
             onChange={(e) => p.onType?.set(e.target.value)}
-            aria-label="येथे लिहा"
-            placeholder="येथे लिहा"
+            aria-label={t("type_here")}
+            placeholder={t("type_here")}
           />
           <button className="fbtn" type="submit">
-            पाठवा
+            {t("send")}
           </button>
         </form>
       )}
       <div className="stack-end">
         {p.onDone && (
           <button className="btn amber" onClick={p.onDone} disabled={!p.heard.trim()}>
-            झालं, पुढे
+            {t("done_next")}
           </button>
         )}
         <button className="btn outline-white" onClick={p.onStop}>
-          थांबा
+          {t("stop")}
         </button>
       </div>
     </div>
@@ -292,7 +294,7 @@ export interface ConfirmProps {
 export function ConfirmScreen(p: ConfirmProps) {
   return (
     <div className="screen">
-      <h1 className="h1">मी असं समजलो</h1>
+      <h1 className="h1">{t("understood")}</h1>
       <div className="panel">
         <div className="tag-line">
           <span className="tag">{p.dayLabel}</span>
@@ -301,18 +303,18 @@ export function ConfirmScreen(p: ConfirmProps) {
         <span style={{ fontSize: 26, lineHeight: 1.4, fontWeight: 600 }}>{p.task}</span>
       </div>
       <p className="h2" style={{ textAlign: "center" }}>
-        बरोबर आहे का?
+        {t("correct_q")}
       </p>
       <div className="stack-end">
         <button className="btn primary big" onClick={p.onYes} disabled={p.busy}>
           <Check size={30} aria-hidden />
-          हो, बरोबर
+          {t("yes_correct")}
         </button>
         <button className="btn secondary" onClick={p.onNo} disabled={p.busy}>
-          नाही, परत सांगते
+          {t("no_again")}
         </button>
       </div>
-      <p className="foot">“हो” किंवा “नाही” बोलूनही चालेल</p>
+      <p className="foot">{t("say_yes_no")}</p>
     </div>
   );
 }
@@ -329,7 +331,7 @@ export function DoneScreen(p: { title: string; line: string; onOk: () => void; o
         <p className="lead">{p.line}</p>
       </div>
       <button className="btn primary big" onClick={p.onOk}>
-        {p.okLabel ?? "ठीक आहे"}
+        {p.okLabel ?? t("ok")}
       </button>
     </div>
   );
@@ -349,7 +351,7 @@ export function ReplyScreen(p: {
     <div className="screen">
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <WarmOrb size="md" />
-        <h1 className="h2">अर्जुन</h1>
+        <h1 className="h2">{companionLabel}</h1>
       </div>
       <div className="panel" aria-live="polite">
         <p style={{ fontSize: 27, lineHeight: 1.5, fontWeight: 600 }}>{p.reply}</p>
@@ -359,27 +361,27 @@ export function ReplyScreen(p: {
           <>
             <button className="btn primary big" onClick={p.onYes} disabled={p.busy}>
               <Check size={30} aria-hidden />
-              हो
+              {t("yes")}
             </button>
             <button className="btn secondary" onClick={p.onNo} disabled={p.busy}>
-              नाही
+              {t("no")}
             </button>
-            <p className="foot">“हो” किंवा “नाही” बोलूनही चालेल</p>
+            <p className="foot">{t("say_yes_no")}</p>
           </>
         )}
         {p.ask === "speak" && (
           <button className="btn primary big" onClick={p.onSpeak}>
             <Mic size={30} aria-hidden />
-            बोला
+            {t("speak")}
           </button>
         )}
         {p.ask === "none" && (
           <button className="btn primary big" onClick={p.onOk}>
-            ठीक आहे
+            {t("ok")}
           </button>
         )}
       </div>
-      <p className="foot">{AI_DISCLOSURE}</p>
+      <p className="foot">{aiDisclosure()}</p>
     </div>
   );
 }
@@ -404,7 +406,7 @@ export interface MedicineProps {
 
 export function MedicineScreen(p: MedicineProps) {
   if (p.status === "taken") {
-    return <DoneScreen title="छान, आजी!" line={p.nextLine ?? ""} onOk={p.onOk} />;
+    return <DoneScreen title={t("well_done")} line={p.nextLine ?? ""} onOk={p.onOk} />;
   }
   if (p.status === "snoozed") {
     return (
@@ -413,11 +415,11 @@ export function MedicineScreen(p: MedicineProps) {
           <div className="badge-done amber pop">
             <Clock size={72} aria-hidden />
           </div>
-          <h1 className="h1">ठीक आहे</h1>
-          <p className="lead">{p.snoozeUntil ? `${p.snoozeUntil} ला परत सांगतो` : "१५ मिनिटांनी परत सांगतो"}</p>
+          <h1 className="h1">{t("ok")}</h1>
+          <p className="lead">{p.snoozeUntil ? t("ok_remind_after", { t: p.snoozeUntil }) : t("remind_in_15")}</p>
         </div>
         <button className="btn primary big" onClick={p.onOk}>
-          ठीक आहे
+          {t("ok")}
         </button>
       </div>
     );
@@ -425,15 +427,15 @@ export function MedicineScreen(p: MedicineProps) {
   return (
     <div className="screen">
       <div className="topline">
-        <span className="who">आजी</span>
+        <span className="who">{t("who")}</span>
         <span className="sub">{p.timeLabel}</span>
       </div>
       <div className="panel">
         <div className="tag-line">
-          <span className="tag">औषधाची वेळ</span>
+          <span className="tag">{t("med_time")}</span>
         </div>
         {p.photoUrl && (
-          <div className="photo-slot" role="img" aria-label="औषधाच्या पाकिटाचा फोटो">
+          <div className="photo-slot" role="img" aria-label={t("med_photo")}>
             <img src={p.photoUrl} alt="" />
           </div>
         )}
@@ -448,10 +450,10 @@ export function MedicineScreen(p: MedicineProps) {
         <div className="btn-row">
           <button className="btn primary big" onClick={p.onTaken}>
             <Check size={26} aria-hidden />
-            घेतली
+            {t("dose_taken")}
           </button>
           <button className="btn secondary big" onClick={p.onSnooze} style={{ fontSize: 20 }}>
-            १५ मिनिटांनी
+            {t("in_15")}
           </button>
         </div>
       </div>
@@ -463,11 +465,11 @@ export function MedicineScreen(p: MedicineProps) {
       )}
       {p.notSpoken && (
         <p className="foot" role="note">
-          हे फक्त स्क्रीनवर आहे, अर्जुनने आवाजात सांगितलं नाही
+          {t("screen_only")}
         </p>
       )}
       <div className="stack-end" style={{ alignItems: "center" }}>
-        <p className="speech-note">औषधाबद्दल प्रश्न? डॉक्टरांना विचारा</p>
+        <p className="speech-note">{t("med_ask_doctor")}</p>
       </div>
     </div>
   );
@@ -491,7 +493,7 @@ export function KahaniScreen(p: KahaniProps) {
     <div className="screen kahani">
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <WarmOrb size="md" />
-        <h1 className="h2">आजीची वही</h1>
+        <h1 className="h2">{t("book_h")}</h1>
       </div>
       <div className="arjun-chip">
         <p>{p.prompt}</p>
@@ -519,19 +521,19 @@ export function KahaniScreen(p: KahaniProps) {
                 </div>
               ))}
             </div>
-            <p style={{ fontSize: 22, lineHeight: 1.4, fontWeight: 700 }}>{p.share.names.join(" आणि ")}ला पाठवू?</p>
+            <p style={{ fontSize: 22, lineHeight: 1.4, fontWeight: 700 }}>{t("send_to", { names: p.share.names.join(t("and")) })}</p>
           </div>
           <div className="btn-row">
             <button className="btn primary" onClick={p.share.onYes} disabled={p.share.busy}>
-              हो, पाठवा
+              {t("yes_send")}
             </button>
             <button className="btn secondary" onClick={p.share.onNo} disabled={p.share.busy}>
-              नको
+              {t("nako")}
             </button>
           </div>
           <div className="t-muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Lock size={18} aria-hidden />
-            <span style={{ fontSize: 16, lineHeight: 1.4 }}>“हो” म्हणेपर्यंत फक्त तुमच्यासाठी</span>
+            <span style={{ fontSize: 16, lineHeight: 1.4 }}>{t("only_you")}</span>
           </div>
         </div>
       ) : (
@@ -539,11 +541,11 @@ export function KahaniScreen(p: KahaniProps) {
           {p.onSpeak && (
             <button className="btn primary big" onClick={p.onSpeak}>
               <Mic size={28} aria-hidden />
-              बोला
+              {t("speak")}
             </button>
           )}
           <button className="btn outline-white" onClick={p.onBack}>
-            मागे
+            {t("back")}
           </button>
         </div>
       )}
@@ -557,17 +559,17 @@ export function ConnectingScreen(p: { onStop: () => void }) {
   return (
     <div className="screen listen">
       <div className="heading">
-        <h1 className="h1">अर्जुन तयार होतोय…</h1>
+        <h1 className="h1">{t("getting_ready")}</h1>
       </div>
       <div className="orb-wrap">
-        <WarmOrb size="lg" pulse label="अर्जुन तयार होत आहे" />
+        <WarmOrb size="lg" pulse label={t("getting_ready")} />
         <p className="lead" aria-live="polite">
-          थोडं थांबा
+          {t("please_wait")}
         </p>
       </div>
       <div className="stack-end">
         <button className="btn outline-white" onClick={p.onStop}>
-          थांबा
+          {t("stop")}
         </button>
       </div>
     </div>
@@ -585,10 +587,10 @@ export function FailedScreen(p: { message: string; onRetry: () => void; onStop: 
       </div>
       <button className="btn primary big" onClick={p.onRetry}>
         <Mic size={30} aria-hidden />
-        बोला
+        {t("speak")}
       </button>
       <button className="btn secondary" onClick={p.onStop}>
-        मागे
+        {t("back")}
       </button>
     </div>
   );
@@ -602,7 +604,7 @@ export function SafetyScreen(p: { text: string; onOk: () => void }) {
         <TriangleAlert size={56} />
       </div>
       <h1 className="h1" style={{ textAlign: "center" }}>
-        मदत
+        {t("help")}
       </h1>
       <p className="alert-text" aria-live="assertive">
         {p.text}
@@ -610,13 +612,13 @@ export function SafetyScreen(p: { text: string; onOk: () => void }) {
       <div className="stack-end">
         <a className="btn help big" href="tel:112" style={{ fontWeight: 700 }}>
           <Phone size={28} aria-hidden />
-          112 ला फोन करा
+          {t("call_112")}
         </a>
         <button className="btn ghost-white" onClick={p.onOk}>
-          ठीक आहे
+          {t("ok")}
         </button>
       </div>
-      <p className="foot">{AI_DISCLOSURE}</p>
+      <p className="foot">{aiDisclosure()}</p>
     </div>
   );
 }
@@ -627,15 +629,15 @@ export function StartScreen(p: { onStart: () => void }) {
   return (
     <div className="screen centered">
       <div className="center-block">
-        <WarmOrb size="lg" pulse label="अर्जुन" />
-        <h1 className="h1">नमस्कार! मी {companionLabel}.</h1>
-        <p className="lead">चला, गप्पा मारूया!</p>
+        <WarmOrb size="lg" pulse label={companionLabel} />
+        <h1 className="h1">{t("start_hello", { name: companionLabel })}</h1>
+        <p className="lead">{t("lets_chat")}</p>
       </div>
       <button className="btn primary big" onClick={p.onStart}>
         <Volume2 size={30} aria-hidden />
-        सुरू करा
+        {t("start_btn")}
       </button>
-      <p className="foot">{AI_DISCLOSURE}</p>
+      <p className="foot">{aiDisclosure()}</p>
     </div>
   );
 }
@@ -645,12 +647,12 @@ export function ReminderCardScreen(p: { task: string; timeLabel: string; spoken:
   return (
     <div className="screen">
       <div className="topline">
-        <span className="who">आजी</span>
-        <span className="sub">{p.late ? `${p.timeLabel} ची आठवण` : p.timeLabel}</span>
+        <span className="who">{t("who")}</span>
+        <span className="sub">{p.late ? t("reminder_late", { t: p.timeLabel }) : p.timeLabel}</span>
       </div>
       <div className="panel" aria-live="polite">
         <div className="tag-line">
-          <span className="tag">आठवण</span>
+          <span className="tag">{t("reminder_tag")}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div className="icon-tile">
@@ -660,15 +662,15 @@ export function ReminderCardScreen(p: { task: string; timeLabel: string; spoken:
         </div>
         <button className="btn primary big" onClick={p.onOk}>
           <Check size={28} aria-hidden />
-          ठीक आहे
+          {t("ok")}
         </button>
       </div>
       {!p.spoken && (
         <p className="foot" role="note">
-          हे फक्त स्क्रीनवर आहे, अर्जुनने आवाजात सांगितलं नाही
+          {t("screen_only")}
         </p>
       )}
-      <p className="foot">{AI_DISCLOSURE}</p>
+      <p className="foot">{aiDisclosure()}</p>
     </div>
   );
 }
@@ -679,26 +681,23 @@ export function TouchToHearScreen(p: { onTouch: () => void }) {
     <div className="screen centered">
       <div className="center-block">
         <h1 className="h1" style={{ lineHeight: 1.4 }}>
-          अर्जुनचा आवाज ऐकण्यासाठी दाबा
+          {t("tap_to_hear")}
         </h1>
       </div>
       <button className="btn primary big" onClick={p.onTouch}>
         <Volume2 size={30} aria-hidden />
-        ऐका
+        {t("listen")}
       </button>
     </div>
   );
 }
 
 /* ---- "My medicines and information": what the family wrote, word for word ---------------------------- */
-const DOSE_CHIP: Record<DoseCheck["timing"], string> = {
-  on_time: "घेतली",
-  late: "घेतली",
-  pending: "आता / पुढे",
-  overdue: "अजून नाही",
-  not_confirmed: "अजून नाही",
-  said_no: "नाही घेतली",
-};
+const DOSE_CHIP_KEY = {
+  on_time: "dose_taken", late: "dose_taken", pending: "dose_pending", overdue: "dose_not_yet",
+  not_confirmed: "dose_not_yet", said_no: "dose_said_no",
+} as const satisfies Record<DoseCheck["timing"], StringKey>;
+const doseChip = (timing: DoseCheck["timing"]): string => t(DOSE_CHIP_KEY[timing]);
 
 export function MyInfoScreen(p: { profile: HealthProfile | null; doses: DoseCheck[]; failed?: boolean; onBack: () => void }) {
   const pr = p.profile;
@@ -713,17 +712,17 @@ export function MyInfoScreen(p: { profile: HealthProfile | null; doses: DoseChec
     ) : null;
   return (
     <div className="screen">
-      <h1 className="h1">माझी माहिती</h1>
+      <h1 className="h1">{t("info_h")}</h1>
       {p.failed && (
         <p className="error-note" role="alert">
-          माहिती आत्ता मिळाली नाही.
+          {t("info_unavailable")}
         </p>
       )}
       <section className="panel">
         <div className="tag-line">
-          <span className="tag">आजची औषधं</span>
+          <span className="tag">{t("todays_meds")}</span>
         </div>
-        {p.doses.length === 0 && <p className="section-empty">आज औषध ठरलेलं नाही</p>}
+        {p.doses.length === 0 && <p className="section-empty">{t("no_med_today")}</p>}
         {p.doses.map((d) => (
           <div className="section-row" key={d.dose_id}>
             <div>
@@ -733,27 +732,27 @@ export function MyInfoScreen(p: { profile: HealthProfile | null; doses: DoseChec
               </span>
               <span className="when">{[d.dose, d.instructions].filter(Boolean).join(" · ")}</span>
             </div>
-            <span className={`status-chip${d.timing === "on_time" || d.timing === "late" ? " ok" : ""}`}>{DOSE_CHIP[d.timing]}</span>
+            <span className={`status-chip${d.timing === "on_time" || d.timing === "late" ? " ok" : ""}`}>{doseChip(d.timing)}</span>
           </div>
         ))}
       </section>
       <section className="panel">
         <div className="tag-line">
-          <span className="tag">घरच्यांनी लिहिलेली माहिती</span>
+          <span className="tag">{t("family_wrote")}</span>
         </div>
         {pr && !pr.allergies.length && !pr.doctor_name && !pr.conditions.length && !pr.blood_group && !pr.prescription_notes && (
-          <p className="section-empty">अजून काही लिहिलेलं नाही</p>
+          <p className="section-empty">{t("nothing_written")}</p>
         )}
-        {pr && row("अ‍ॅलर्जी", pr.allergies.join(", "))}
-        {pr && row("आजार", pr.conditions.join(", "))}
-        {pr && row("रक्तगट", pr.blood_group)}
-        {pr && row("डॉक्टर", [pr.doctor_name, pr.doctor_contact].filter(Boolean).join(" · "))}
-        {pr && row("डॉक्टरांच्या सूचना", pr.prescription_notes)}
+        {pr && row(t("allergies"), pr.allergies.join(", "))}
+        {pr && row(t("conditions"), pr.conditions.join(", "))}
+        {pr && row(t("blood_group"), pr.blood_group)}
+        {pr && row(t("doctor"), [pr.doctor_name, pr.doctor_contact].filter(Boolean).join(" · "))}
+        {pr && row(t("doctor_notes"), pr.prescription_notes)}
       </section>
-      <p className="foot">ही माहिती तुमच्या घरच्यांनी लिहिली आहे. औषधाबद्दल प्रश्न? डॉक्टरांना विचारा.</p>
+      <p className="foot">{t("info_foot")}</p>
       <div className="stack-end">
         <button className="btn primary big" onClick={p.onBack}>
-          ठीक आहे
+          {t("ok")}
         </button>
       </div>
     </div>

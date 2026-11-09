@@ -130,7 +130,8 @@ the script reports that limitation while seeding the other requested data.
 - Stories: saved only after a spoken yes, private by default, shared only after a second spoken yes;
   `/memory-book` returns shared stories only; "he visar" deletes.
 
-## Known limitations (honest list)
+## Known limitations (honest list)
+- **Ten languages (2026-11-09):** mr/hi/en plus bn, gu, kn, ml, pa, ta, te. The bn..te fixed replies, elder screens and safety words are UNVERIFIED (no native speaker); untranslated reply keys fall back to English. Times/dates in those languages are understood by the LLM only.
 - Emergency auto-calls need a Twilio account (`CALLS_ENABLED=1`); untested with a real call. Trial Twilio accounts can
   only call verified numbers. Arjun never dials 112; live location works only if the browser grants location.
 - **Arjun silent on one laptop (2026-11-08, open):** mic audio reached the agent but no transcript came back. Run with
