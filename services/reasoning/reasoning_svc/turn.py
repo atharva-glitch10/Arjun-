@@ -151,7 +151,7 @@ _FORCE_SEARCH = re.compile(
     r"वय\b|वर्षांचा|वर्षांची|वर्षाचा|किती वर्ष|कितने साल|कितने वर्ष|उम्र|\bhow old\b|\bage of\b|"
     r"भाव\b|किंमत|कीमत|\bprice\b|\brate\b|"
     r"सध्याचे|सध्याची|currently|\bcurrent\b|\blatest\b|ताजे|ताज्या|"
-    r"पंतप्रधान|मुख्यमंत्री|राष्ट्रपती|प्रधानमंत्री|राज्यपाल|गव्हर्नर|कर्णधार|\bprime minister\b|\bpresident\b|\bgovernor\b|\bcaptain\b",
+    r"पंतप्रधान|मुख्यमंत्री|राष्ट्रपती|राष्ट्राध्यक्ष|अध्यक्ष|सीईओ|मंत्री|प्रधानमंत्री|राज्यपाल|गव्हर्नर|कर्णधार|\bprime minister\b|\bpresident\b|\bgovernor\b|\bcaptain\b",
     re.IGNORECASE,
 )
 _QUESTION = re.compile(

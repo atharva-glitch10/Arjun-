@@ -282,3 +282,9 @@ def test_a_know_answer_in_the_wrong_language_is_searched_so_the_answer_is_writte
 def test_ordinary_talk_is_never_turned_into_a_search(core_http, uid, tav):
     res = make(core_http, Llm(route("know", reply="छान, बागेत फिरणं चांगलं असतं.", know=0.99))).handle(uid, "सध्या मी रोज बागेत जातो")
     assert tav.calls == [] and res.reply == "छान, बागेत फिरणं चांगलं असतं."
+
+
+def test_who_holds_an_office_is_always_searched_even_for_the_us_president(core_http, uid, tav):
+    llm = Llm(route("know", reply="जो बायडन.", know=0.99), answer="डोनाल्ड ट्रम्प.")
+    res = make(core_http, llm).handle(uid, "अमेरिकेचे राष्ट्राध्यक्ष कोण आहेत")
+    assert len(tav.calls) == 1 and "ट्रम्प" in res.reply
