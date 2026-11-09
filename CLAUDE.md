@@ -66,7 +66,7 @@ Principle: **Arjun is a bridge to people, not a replacement for them.**
     domain is one the family added (the `rss` / `link` entries in app_links); results from any other domain are
     dropped, the answer is written from the approved result alone and names that source aloud, and with no approved
     domain or result Arjun says it has no information. Non-news live facts (weather, scores, prices, who holds an
-    office, time/date) may use any search result or Open-Meteo. At most one opener per day window;
+    office, time/date) may use any search result or Open-Meteo. **Answer router (2026-11-09):** the understanding call routes each question as know / search / tool / refuse_safe; a `know` answer is used only at >= 0.9 model confidence and never for anything time-sensitive, otherwise (and whenever unsure) Arjun searches; refuse_safe is the fixed ask-your-doctor line and never searches. At most one opener per day window;
     "nako" means no more that day.
 11. **Stories are private by default**; (2026-10-31: kept privately without asking; shared only when she asks,
     "हे घरच्यांना सांग";

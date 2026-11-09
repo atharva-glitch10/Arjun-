@@ -126,7 +126,7 @@ def search(
     body: dict[str, Any] = {
         "query": query,
         "max_results": FULL_MAX_RESULTS if full else MAX_RESULTS,
-        "search_depth": "advanced" if full else "basic",
+        "search_depth": "basic",  # full mode tries "advanced" first, see the loop
         "include_answer": "basic" if full else False,
         "topic": "news" if (domains or news) else "general",  # approved domains = news, always
     }
@@ -149,8 +149,11 @@ def search(
             remaining = deadline - clock()
             if remaining <= 0.2:
                 return None
+            # "advanced" depth is the better answer but took 1-5 s live (2026-11-09): give it 2.5 s, then fall back to
+            # "basic" (same ranking, ~1 s) inside the same overall deadline.
+            body["search_depth"] = "advanced" if (full and attempt == 1) else "basic"
             try:
-                r = http.post(URL, json=body, headers=headers, timeout=remaining)
+                r = http.post(URL, json=body, headers=headers, timeout=min(remaining, 2.5) if (full and attempt == 1) else remaining)
             except httpx.TimeoutException:
                 log.info("web search timeout (attempt %d)", attempt)
                 continue

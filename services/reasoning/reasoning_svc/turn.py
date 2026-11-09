@@ -145,6 +145,19 @@ _WEB_LIKELY = re.compile(
     r"\bhow (?:many|much|old|tall)\b|किती वर्षांचा|कितने साल|\blatest\b|ताज्या|सध्या|सद्य|वर्तमान|\bcurrent\b",
     re.IGNORECASE,
 )
+# A question whose answer CHANGES (an age, who holds a role now, a price, "today", "latest") is never answered from model
+# memory, whatever the model says about its own confidence: it is searched (2026-11-09 eval: ages came out a year stale).
+_FORCE_SEARCH = re.compile(
+    r"वय\b|वर्षांचा|वर्षांची|वर्षाचा|किती वर्ष|कितने साल|कितने वर्ष|उम्र|\bhow old\b|\bage of\b|"
+    r"भाव\b|किंमत|कीमत|\bprice\b|\brate\b|"
+    r"सध्याचे|सध्याची|currently|\bcurrent\b|\blatest\b|ताजे|ताज्या|"
+    r"पंतप्रधान|मुख्यमंत्री|राष्ट्रपती|प्रधानमंत्री|राज्यपाल|गव्हर्नर|कर्णधार|\bprime minister\b|\bpresident\b|\bgovernor\b|\bcaptain\b",
+    re.IGNORECASE,
+)
+_QUESTION = re.compile(
+    r"\?|कोण|किती|काय|कधी|कुठे|कोणत|कसा|कशी|कसं|\b(?:who|what|when|where|which|how|why)\b|कौन|कितना|कितने|क्या|कब|कहाँ|कहां|कैसे",
+    re.IGNORECASE,
+)
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
 _UNDERSTAND_TIMEOUT_S = 3.0
 _ACTION_CONFIDENCE_FLOOR = 0.4  # below this an LLM action intent is ignored and the rules decide
@@ -609,6 +622,10 @@ class TurnEngine:
                 return self._lonely(user_id, text, lang, trace, t0, now)
 
         # 3c. live facts (weather, news, scores): only on the LLM's say-so, only after every safety path above
+        if pending is None and draft is None and parsed.intent == "CHAT" and llm:
+            self._route_overrides(llm, text, lang)
+            if llm.get("entity") and llm.get("mode") in ("know", "search"):  # so "and his wife?" can resolve it
+                self._topic[user_id] = (str(llm["entity"]), str(llm.get("web_query") or text), text, self._mono())
         if pending is None and draft is None and parsed.intent == "CHAT" and llm and llm.get("needs_web"):
             web = self._web_turn(user_id, text, str(llm.get("web_query") or ""), lang, trace, t0, llm=llm)
             if web is not None:
@@ -716,6 +733,18 @@ class TurnEngine:
         if intent not in ("chat", "unclear") and confidence < _ACTION_CONFIDENCE_FLOOR:
             return None, "low_confidence", True
         return data, "ok", True
+
+    @staticmethod
+    def _route_overrides(llm: dict[str, Any], text: str, lang: str) -> None:
+        """Code-side guards on the model's own router decision. A `know` answer is searched instead when the question is
+        about something that changes (_FORCE_SEARCH) or when the drafted answer is not in her language."""
+        reply = str(llm.get("reply") or "")
+        asked = llm.get("mode") == "know" or (not llm.get("mode") and reply and bool(_QUESTION.search(text)))
+        if not asked or not reply:
+            return
+        if _FORCE_SEARCH.search(text) or not qa.in_her_language(reply, lang):
+            llm["draft"] = llm.get("reply") or ""
+            llm["mode"], llm["needs_web"] = "search", True
 
     def _topic_block(self, uid: int) -> str:
         """The last factual question and its subject, so a follow-up ("and his wife?", "how old?", "tell me more") is

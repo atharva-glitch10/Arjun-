@@ -249,3 +249,36 @@ def test_emergency_distress_and_medicine_turns_never_reach_search(core_http, uid
     llm = Llm(route("search", query="anything"))
     res = make(core_http, llm).handle(uid, text)
     assert tav.calls == [] and llm.web_calls == [] and res.trace.get("web") != "search"
+
+
+# ---- guards added after the first live eval (2026-11-09) ------------------------------------------------------------
+def test_advanced_search_that_times_out_falls_back_to_basic_inside_the_same_deadline():
+    seen = []
+
+    def h(req):
+        body = json.loads(req.content)
+        seen.append(body["search_depth"])
+        if body["search_depth"] == "advanced":
+            raise httpx.ReadTimeout("slow", request=req)
+        return httpx.Response(200, json={"answer": "A.", "results": [{"title": "T", "content": "d", "url": "https://a.test/1", "score": 0.9}]})
+
+    out = web_search.search("q", "en", client=client(h), sleep=lambda s: None, full=True)
+    assert seen == ["advanced", "basic"] and out["answer"] == "A."
+
+
+def test_an_age_question_is_searched_even_when_the_model_is_sure(core_http, uid, tav):
+    llm = Llm(route("know", reply="सचिन तेंडुलकरचं वय बावन्न वर्ष आहे.", know=0.99, entity="Sachin Tendulkar"), answer="५३ वर्षांचे.")
+    res = make(core_http, llm).handle(uid, "सचिनचं वय किती")
+    assert len(tav.calls) == 1 and res.reply == "५३ वर्षांचे."
+
+
+def test_a_know_answer_in_the_wrong_language_is_searched_so_the_answer_is_written_in_hers(core_http, uid, tav):
+    core_http.patch(f"/users/{uid}", json={"language": "en"})
+    llm = Llm(route("know", reply="फ्रान्सची राजधानी पॅरिस आहे.", know=0.99, query="capital of France"), answer="Paris is the capital of France.")
+    res = make(core_http, llm).handle(uid, "what is the capital of France")
+    assert len(tav.calls) == 1 and res.reply == "Paris is the capital of France."
+
+
+def test_ordinary_talk_is_never_turned_into_a_search(core_http, uid, tav):
+    res = make(core_http, Llm(route("know", reply="छान, बागेत फिरणं चांगलं असतं.", know=0.99))).handle(uid, "सध्या मी रोज बागेत जातो")
+    assert tav.calls == [] and res.reply == "छान, बागेत फिरणं चांगलं असतं."
