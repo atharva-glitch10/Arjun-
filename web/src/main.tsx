@@ -4,9 +4,8 @@ import { createRoot } from "react-dom/client";
 import { Dashboard } from "./family/Dashboard";
 import { JoinCall } from "./family/JoinCall";
 import { ElderApp } from "./elder/ElderApp";
-import { Gallery } from "./ghar/Gallery";
 import { UiGallery } from "./preview/UiGallery";
-import "./styles/ghar.css";
+import "./styles/app.css";
 import "./styles/ui.css";
 
 type View = "elder" | "caregiver";
@@ -49,7 +48,7 @@ function App() {
       {view === "elder" ? <ElderApp userId={userId} forceEvening={evening} /> : <Dashboard userId={userId} onUser={changeUser} />}
       <nav
         aria-label="Switch view"
-        style={{ display: "flex", gap: 6, justifyContent: "flex-end", padding: 12, background: view === "elder" ? "#FFD25E" : "transparent" }}
+        style={{ display: "flex", gap: 6, justifyContent: "flex-end", padding: 12, background: "var(--ground-app)" }}
       >
         <button className="fbtn" style={{ minHeight: 44 }} onClick={() => setView(view === "elder" ? "caregiver" : "elder")}>
           {view === "elder" ? "Family dashboard" : "Elder screen"}
@@ -71,5 +70,5 @@ function App() {
 const root = document.getElementById("root");
 if (root) {
   const join = params.get("view") === "join";
-  createRoot(root).render(join ? <JoinCall /> : params.get("ui") === "1" ? <UiGallery /> : params.has("preview") ? <Gallery /> : <App />);
+  createRoot(root).render(join ? <JoinCall /> : params.get("ui") === "1" ? <UiGallery /> : <App />);
 }

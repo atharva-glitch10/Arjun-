@@ -40,8 +40,9 @@ import type {
   SoundEventTrend,
   WatchSample,
 } from "../api";
-import { CheckIcon, ClockIcon, CrossIcon } from "../ghar/Motifs";
-import { HeartMark } from "../ghar/Screens";
+import { Check, Clock, X } from "lucide-react";
+
+import { BrandMark } from "./BrandMark";
 
 interface Data {
   user: User;
@@ -109,7 +110,7 @@ function MarkCell({ mark }: { mark: Mark }) {
     return (
       <div className="mark" role="img" aria-label="Done">
         <span className="on-time" style={{ color: "#fff" }}>
-          <CheckIcon size={18} w={3} />
+          <Check size={18} strokeWidth={3} />
         </span>
       </div>
     );
@@ -117,8 +118,8 @@ function MarkCell({ mark }: { mark: Mark }) {
   if (mark === "late") {
     return (
       <div className="mark" role="img" aria-label="Taken late">
-        <span className="late" style={{ color: "var(--ghar-ink)" }}>
-          <ClockIcon size={18} />
+        <span className="late" style={{ color: "var(--navy)" }}>
+          <Clock size={18} />
         </span>
       </div>
     );
@@ -126,15 +127,15 @@ function MarkCell({ mark }: { mark: Mark }) {
   if (mark === "missed") {
     return (
       <div className="mark" role="img" aria-label="Not confirmed">
-        <span className="missed" style={{ color: "var(--ghar-ink-muted)" }}>
-          <CrossIcon />
+        <span className="missed" style={{ color: "var(--ink-muted)" }}>
+          <X size={16} />
         </span>
       </div>
     );
   }
   return (
     <div className="mark" role="img" aria-label="Nothing set">
-      <span style={{ color: "var(--ghar-miss)" }}>–</span>
+      <span style={{ color: "var(--ink-muted)" }}>–</span>
     </div>
   );
 }
@@ -424,13 +425,19 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
   return (
     <div className="family">
+      <header className="family-band">
+        <div className="family-band-inner">
+          <BrandMark />
+        </div>
+      </header>
+      <div className="family-body">
       <div className="family-inner">
         {emergencies.map((n) => (
           <div
             key={`alert${n.id}`}
             role="alert"
             style={{
-              background: "var(--ghar-kumkum)",
+              background: "var(--emergency)",
               color: "#fff",
               padding: "14px 18px",
               borderRadius: 12,
@@ -444,7 +451,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             {ringing.includes(n.id) && (
               <button
                 className="fbtn"
-                style={{ marginTop: 10, background: "#fff", color: "var(--ghar-kumkum)", borderColor: "#fff", fontWeight: 800 }}
+                style={{ marginTop: 10, background: "#fff", color: "var(--emergency)", borderColor: "#fff", fontWeight: 800 }}
                 onClick={acknowledge}
               >
                 I have seen it - stop the alarm
@@ -455,7 +462,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
         <div className="fam-note fam-alarm">
           {alarm.sound && alarm.popup ? (
             <span>
-              <strong style={{ color: "var(--ghar-leaf)" }}>Emergency alarm is on</strong> (sound and pop-up). Keep this
+              <strong style={{ color: "var(--ok-fg)" }}>Emergency alarm is on</strong> (sound and pop-up). Keep this
               tab open; in a background tab it can take up to a minute. No call or SMS is sent.
             </span>
           ) : (
@@ -471,17 +478,13 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             </>
           )}
         </div>
-        <div className="fam-topbar fam-header">
-          <HeartMark size={56} />
+        <div className="fam-topbar">
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <span className="fam-brand">Arjun · family</span>
-            <h1 className="fam-title">
-              {name}'s day
-            </h1>
-            <span className="t-muted" style={{ fontSize: 17 }}>
+            <h1>{name} today</h1>
+            <span className="t-muted" style={{ fontSize: 14 }}>
               {now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })} · updated {clock(updated)}
               {error && (
-                <strong role="status" style={{ marginLeft: 8, color: "var(--ghar-kumkum)" }}>
+                <strong role="status" style={{ marginLeft: 8, color: "var(--emergency)" }}>
                   · could not refresh, showing the last data
                 </strong>
               )}
@@ -492,18 +495,18 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             आत्ता सारांश पाठवा
           </button>
           {briefingStatus && <span role="status" className="t-muted">{briefingStatus}</span>}
-          <div className="pill" style={{ fontSize: 17, alignSelf: "center" }}>
+          <div className="fam-pill">
             {requestsToday === 0 ? (
               <>
-                <span style={{ color: "var(--ghar-leaf)" }}>
-                  <CheckIcon size={20} w={2.4} />
+                <span style={{ color: "var(--ok-fg)" }}>
+                  <Check size={20} strokeWidth={2.4} />
                 </span>
                 No help requests today
               </>
             ) : (
               <>
-                <span style={{ color: "var(--ghar-kumkum)" }}>
-                  <ClockIcon size={20} />
+                <span style={{ color: "var(--emergency)" }}>
+                  <Clock size={20} />
                 </span>
                 {requestsToday} help request{requestsToday > 1 ? "s" : ""} today
               </>
@@ -530,52 +533,53 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
         {tab === "today" && (
           <>
-        <div className="fam-hero">
-          <section
-            className="fam-card"
-            aria-label={`How is ${name} today`}
-            style={{ borderLeft: `10px solid ${SEVERITY_STYLE[data.today.severity].bg}` }}
-          >
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
-              <h2 style={{ margin: 0 }}>How is {name} today</h2>
-              <SeverityChip level={data.today.severity} />
-              {data.today.mood !== "not_assessed" && <span className="pill" style={{ fontSize: 17 }}>Mood: {data.today.mood}</span>}
-              <span className="grow" />
-              <span className="t-muted" style={{ fontSize: 15 }}>
-                {feedStatus === "live" ? "Live" : feedStatus === "polling" ? "Updating every 5 s" : "Connecting..."}
-              </span>
-            </div>
-            <p style={{ fontSize: 19, lineHeight: 1.5, margin: "10px 0 6px" }}>
-              {data.today.last_summary ||
-                (user.consent_distress_alert
-                  ? "No conversation summary yet today."
-                  : `Summaries and mood are off. Turn on "share how ${name} is doing" below to see them.`)}
-            </p>
-            <span className={`fam-seen ${seen.tone}`}>{seen.text}</span>
+        <BeforeYouCall name={name} summary={data.today.last_summary} book={data.book} feed={feed} />
+
+        <section
+          className="fam-card"
+          aria-label={`How is ${name} today`}
+          style={{ borderLeft: `10px solid ${SEVERITY_STYLE[data.today.severity].bg}` }}
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
+            <h2 style={{ margin: 0 }}>How is {name} today</h2>
+            <SeverityChip level={data.today.severity} />
+            {data.today.mood !== "not_assessed" && <span className="fam-pill">Mood: {data.today.mood}</span>}
+            <span className="grow" />
             <span className="t-muted" style={{ fontSize: 15 }}>
-              {data.today.conversations} conversation{data.today.conversations === 1 ? "" : "s"} today · summaries, never
-              her exact words
+              {feedStatus === "live" ? "Live" : feedStatus === "polling" ? "Updating every 5 s" : "Connecting..."}
             </span>
-            {feed.length > 0 && (
-              <ul className="fam-list" style={{ marginTop: 12 }}>
-                {feed.slice(0, 12).map((e) => (
-                  <li key={`f${e.id}`}>
-                    <SeverityChip level={e.severity} small />
-                    <span style={{ fontWeight: 800, minWidth: 64 }}>{clock(parse(e.created_at))}</span>
-                    <span style={{ flex: 1 }}>
-                      <strong>{e.title}</strong> {e.body}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          </div>
+          <p style={{ fontSize: 19, lineHeight: 1.5, margin: "10px 0 6px" }}>
+            {data.today.last_summary ||
+              (user.consent_distress_alert
+                ? "No conversation summary yet today."
+                : `Summaries and mood are off. Turn on "share how ${name} is doing" below to see them.`)}
+          </p>
+          <span className="t-muted" style={{ fontSize: 15 }}>
+            {data.today.conversations} conversation{data.today.conversations === 1 ? "" : "s"} today · summaries, never
+            her exact words
+          </span>
+          {feed.length > 0 && (
+            <ul className="fam-list" style={{ marginTop: 12 }}>
+              {feed.slice(0, 12).map((e) => (
+                <li key={`f${e.id}`}>
+                  <SeverityChip level={e.severity} small />
+                  <span style={{ fontWeight: 800, minWidth: 64 }}>{clock(parse(e.created_at))}</span>
+                  <span style={{ flex: 1 }}>
+                    <strong>{e.title}</strong> {e.body}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-          <BeforeYouCall name={name} summary={data.today.last_summary} book={data.book} feed={feed} />
-
-        </div>
-
-        <div className="tiles">
+<div className="tiles">
+          <div className={seen.tone === "ok" ? "tile" : "tile empty"} style={seen.tone === "quiet" ? { background: "#fff1de" } : undefined}>
+            <span className="label">How is {name} now</span>
+            <span className="value" style={{ fontSize: 20 }}>{seen.text}</span>
+            <span className="label">from her talks and taps with Arjun only; no words are shared</span>
+          </div>
           <div className="tile">
             <span className="label">Reminders today</span>
             <span className="value">
@@ -749,7 +753,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
             <section className="fam-card">
               <h2>Health checks</h2>
-              <div style={{ padding: "14px 16px", borderRadius: 14, background: "var(--ghar-sand)", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ padding: "14px 16px", borderRadius: 14, background: "var(--line-soft)", display: "flex", flexDirection: "column", gap: 8 }}>
                 <span style={{ fontSize: 18, fontWeight: 800 }}>
                   BP readings · raw numbers only
                 </span>
@@ -1016,6 +1020,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
           </section>
         </div>
         )}
+      </div>
       </div>
     </div>
   );

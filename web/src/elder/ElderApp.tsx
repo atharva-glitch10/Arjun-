@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
-import type { Contact, Delivery, DueNow, Dose, PendingAction } from "../api";
+import type { Contact, Delivery, DoseCheck, DueNow, Dose, HealthProfile, PendingAction } from "../api";
 import {
   ConfirmScreen,
   ConnectingScreen,
@@ -11,14 +11,15 @@ import {
   KahaniScreen,
   ListenScreen,
   MedicineScreen,
+  MyInfoScreen,
   ReminderCardScreen,
   ReplyScreen,
   SafetyScreen,
   StartScreen,
   TouchToHearScreen,
   setCompanionLabel,
-} from "../ghar/Screens";
-import type { UpcomingItem } from "../ghar/Screens";
+} from "../screens/ElderScreens";
+import type { UpcomingItem } from "../screens/ElderScreens";
 import { FAILURE_TEXT, shownFor } from "../voice/state";
 import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
@@ -43,15 +44,17 @@ import {
 // How the elder is addressed in headings: the family's "what should Arjun call her" (Settings), else "आजी".
 const DEFAULT_ADDRESS = "आजी";
 
+const LANGUAGE_NAME: Record<string, string> = { mr: "मराठी", hi: "हिंदी", en: "English" };
+
 const hhmmOf = (iso: string): string => iso.slice(11, 16);
 
-// Hands-free is the default: the page connects by itself, keeps listening, and needs no button. `?handsfree=0`
-// brings back the tap-to-talk flow (for testing on a laptop without a dedicated elder device).
+// Tap-to-talk is the default (owner decision 2026-11-08): the mic stays closed until the elder taps बोला.
+// `?handsfree=1` brings back the always-listening mode (for a dedicated, always-open elder device).
 const HANDS_FREE = (() => {
   try {
-    return new URLSearchParams(window.location.search).get("handsfree") !== "0";
+    return new URLSearchParams(window.location.search).get("handsfree") === "1";
   } catch {
-    return true;
+    return false;
   }
 })();
 
@@ -97,6 +100,23 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const [due, setDue] = useState<DueNow>({ current: [], next: null });
   const [medState, setMedState] = useState<"due" | "taken" | "snoozed">("due");
   const [medicineOpen, setMedicineOpen] = useState(false);
+  // "My medicines and information": what the family wrote, word for word. Opened by the elder, closed by her.
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [info, setInfo] = useState<{ profile: HealthProfile | null; doses: DoseCheck[]; failed: boolean }>({
+    profile: null,
+    doses: [],
+    failed: false,
+  });
+  const openInfo = () => {
+    setInfoOpen(true);
+    void Promise.allSettled([api.healthProfile(userId), api.medicineCheck(userId)]).then(([pr, ds]) =>
+      setInfo({
+        profile: pr.status === "fulfilled" ? pr.value : null,
+        doses: ds.status === "fulfilled" ? ds.value : [],
+        failed: pr.status === "rejected" || ds.status === "rejected",
+      }),
+    );
+  };
   const lastDose = useRef<Dose | null>(null);
   const lastCard = useRef<ReturnType<typeof pendingToCard> | null>(null);
   const queuedText = useRef<string | null>(null);
@@ -462,7 +482,13 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const shareNames = contacts.slice(0, 3);
   const tapOpen = phase === "live";
 
+  const NOT_HOME = ["start", "touch", "card", "connecting", "failed", "safety", "listen", "confirm", "saved", "story", "reply"];
+  const isHome =
+    !infoOpen && !NOT_HOME.includes(shown as string) && !(cardDone && shown === "home") && !(medicineOpen && shownDose);
+
   const body = () => {
+    if (infoOpen && shown === "home" && !(medicineOpen && shownDose))
+      return <MyInfoScreen profile={info.profile} doses={info.doses} failed={info.failed} onBack={() => setInfoOpen(false)} />;
     if (cardDone && (shown === "home" || shown === "card"))
       return (
         <MedicineScreen
@@ -629,8 +655,9 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <HomeScreen
             evening={evening}
+            languageLabel={LANGUAGE_NAME[displayLanguage]}
             greeting={`${timeGreeting(elderLanguage(displayLanguage), now.getHours())}, ${addressAs}`}
-            dateLine={dateLine(now)}
+            dateLine={evening ? `${weekday(now)} · ${periodOfDay(now.getHours())}` : dateLine(now)}
             clock={timeLabel(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`)}
             items={items}
             medicine={
@@ -646,6 +673,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
             onSpeak={() => begin()}
             onToday={() => begin("आज काय आहे")}
             onHelp={() => begin("मदत")}
+            onInfo={openInfo}
           />
         );
     }
@@ -654,7 +682,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const live = phase === "live";
   return (
     <div
-      className={`elder-shell${shown === "listen" || shown === "connecting" ? " listening" : evening && shown === "home" ? " night" : ""}`}
+      className={`elder-shell${shown === "safety" ? " is-safety" : isHome ? " is-home" : ""}`}
     >
       {HANDS_FREE && live && shown === "home" && (
         <div className="hf-badge" role="status">

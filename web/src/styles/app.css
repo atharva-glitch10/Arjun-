@@ -422,3 +422,21 @@ h1, h2, p { margin: 0; }
   .orb-phone { display: none; }
   .orb-laptop { display: block; }
 }
+
+/* From origin/main (2026-11-08): emergency + names cards, alarm bar, layout helpers. Colours mapped to this file's tokens. */
+.fam-alarm { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 16px; border-radius: 18px;
+  background: rgba(255, 255, 255, .6); color: #5C4210; }
+.fam-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.fam-stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+@media (max-width: 900px) { .fam-cols { grid-template-columns: 1fr; } }
+.fam-seen { align-self: flex-start; padding: 6px 14px; border-radius: 999px; font-size: 16px; font-weight: 700;
+  background: #FFF1CC; color: #5C3A06; }
+.fam-seen.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.fam-tech summary { cursor: pointer; font-size: 18px; font-weight: 800; color: #5C4210; }
+.fam-tech[open] summary { margin-bottom: 14px; }
+.emergency-card .fam-form, .names-card .fam-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: end; }
+.emergency-card .fam-form label, .names-card .fam-form label { display: flex; flex-direction: column; gap: 6px; font-size: 15px; font-weight: 700; color: #5C4210; }
+.emergency-card .fam-form input:not([type="checkbox"]), .names-card .fam-form input, .names-card .fam-form select { min-height: 48px; padding: 8px 12px; font-size: 17px; font-family: inherit; color: #2B1B05; }
+.emergency-card .fam-form label.check { flex-direction: row; align-items: center; gap: 10px; font-size: 16px; }
+.emergency-card .fam-form label.check input { width: 22px; height: 22px; }
+.emergency-card > .fbtn { align-self: flex-start; }

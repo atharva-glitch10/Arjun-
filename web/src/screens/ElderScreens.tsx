@@ -8,6 +8,14 @@ import type { OrbState } from "@/components/orbState";
 
 /** Presentational elder screens ("listens with care" design). No fetching and no hard-coded user data: all props. */
 
+
+/** What she calls her companion (family-set in Settings; blank = अर्जुन). Set by ElderApp after it loads the user. */
+let companionLabel = "अर्जुन";
+export function setCompanionLabel(name: string | undefined): void {
+  const n = (name ?? "").trim();
+  companionLabel = !n || n.toLowerCase() === "arjun" ? "अर्जुन" : n;
+}
+
 export const AI_DISCLOSURE = "अर्जुन — तुमचा AI सोबती";
 
 export interface UpcomingItem {
@@ -17,6 +25,8 @@ export interface UpcomingItem {
   /** First letter(s) of a family member, when the item is about a known contact. */
   initials?: string;
   kind: "call" | "reminder" | "appointment";
+  /** When it is due (ms), so the medicine card can sit in time order among these. */
+  at?: number;
 }
 
 /** The white-core orb used on the warm phone screens. */
@@ -58,7 +68,7 @@ export interface HomeProps {
   languageLabel?: string;
   items: UpcomingItem[];
   /** Next medicine card. Only passed when a medicine API exists. */
-  medicine?: { when: string; name: string };
+  medicine?: { when: string; name: string; at?: number };
   busy?: boolean;
   error?: string;
   onSpeak: () => void;
@@ -99,6 +109,12 @@ export function HomeScreen(p: HomeProps) {
 
         {/* phone: the next things as cards */}
         <div className="home-cards">
+          {/* in time order: a 7 pm call is shown before the 8:30 pm tablet (live run 2026-11-09, origin #26) */}
+          {p.items
+            .filter((it) => !p.medicine || p.medicine.at === undefined || (it.at ?? 0) <= p.medicine.at)
+            .map((it) => (
+              <UpcomingCard key={it.key} item={it} />
+            ))}
           {p.medicine && (
             <div className="upcoming">
               <div className="avatar soft" style={{ background: "var(--ok-bg)", color: "var(--ok-fg)" }}>
@@ -110,9 +126,11 @@ export function HomeScreen(p: HomeProps) {
               </div>
             </div>
           )}
-          {p.items.map((it) => (
-            <UpcomingCard key={it.key} item={it} />
-          ))}
+          {p.items
+            .filter((it) => p.medicine && p.medicine.at !== undefined && (it.at ?? 0) > p.medicine.at)
+            .map((it) => (
+              <UpcomingCard key={it.key} item={it} />
+            ))}
         </div>
 
         {/* laptop: the same data as two sections */}
@@ -610,8 +628,8 @@ export function StartScreen(p: { onStart: () => void }) {
     <div className="screen centered">
       <div className="center-block">
         <WarmOrb size="lg" pulse label="अर्जुन" />
-        <h1 className="h1">अर्जुन</h1>
-        <p className="lead">आठवणी आणि औषधं सांगण्यासाठी एकदा दाबा</p>
+        <h1 className="h1">नमस्कार! मी {companionLabel}.</h1>
+        <p className="lead">चला, गप्पा मारूया!</p>
       </div>
       <button className="btn primary big" onClick={p.onStart}>
         <Volume2 size={30} aria-hidden />
