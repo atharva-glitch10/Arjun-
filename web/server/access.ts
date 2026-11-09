@@ -51,7 +51,8 @@ export const FAMILY_ROUTES: Route[] = [
   route("PATCH", `/users/${ID}`),
   route("GET", `/users/${ID}/(?:reminders|appointments|contacts|app-links|medicines)`),
   route("POST", `/users/${ID}/(?:reminders|appointments|contacts|app-links|medicines)`),
-  route("DELETE", `/users/${ID}/(?:reminders|app-links|medicines)/${ID}`),
+  route("DELETE", `/users/${ID}/(?:reminders|app-links|medicines|contacts)/${ID}`),
+  route("PATCH", `/users/${ID}/contacts/${ID}`),
   route("PATCH", `/users/${ID}/medicines/${ID}`),
   route("GET", `/users/${ID}/appointments/next`),
   route("GET", `/users/${ID}/facts`), // "अर्जुनला माहीत असलेल्या गोष्टी": core-api hides it without the consent flag

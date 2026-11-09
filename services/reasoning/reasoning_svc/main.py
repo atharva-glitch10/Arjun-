@@ -193,6 +193,8 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
     # "Last talked to Arjun" for the family dashboard: recorded AFTER the reply is sent, so it adds no
     # latency, and on every turn (safety turns included). Time only; the words are never stored.
     wait = _turn_bucket.take(str(body.user_id))
+    if wait > 0 and (is_emergency(body.text) or is_distress(body.text)):
+        wait = 0  # safety is never rate limited: a busy recognizer must not swallow "छातीत दुखतंय"
     if wait > 0:  # a stuck recognizer loop must not flood core-api or the LLM
         raise HTTPException(429, "too many turns", headers={"Retry-After": str(max(1, round(wait)))})
     background.add_task(engine.note_activity, body.user_id)

@@ -194,8 +194,12 @@ def rename_companion(text: str, name: str) -> str:
     return text.replace("अर्जुन", name).replace("Arjun", name)
 
 
+_NAME_QUESTIONS = ("तुझं नाव काय", "तुमचं नाव काय", "तुझे नाव काय", "तुझं नाव", "tujha nav", "tuza nav",
+                   "तुम्हारा नाम", "आपका नाम", "तेरा नाम", "tumhara naam", "aapka naam", "your name",
+                   "who are you", "तू कोण आहेस", "तुम्ही कोण आहात", "तुम कौन हो", "आप कौन हैं")
+
 _VARIED = {
-    "mr": ["हं, सांगा ना, मी ऐकतोय.", "बरं. मग पुढे काय झालं?", "अच्छा! जरा अजून सांगा.", "हो का? मग?"],
+    "mr": ["हं, सांगा ना, मी ऐकतोय.", "बरं. मग पुढे काय झालं?", "अरे वा! जरा अजून सांगा.", "हो का? मग?"],
     "hi": ["हाँ, बताइए, मैं सुन रहा हूँ।", "अच्छा। फिर क्या हुआ?", "अरे वाह! थोड़ा और बताइए।", "हम्म, फिर?"],
     "en": ["I'm listening, go on.", "Oh? Then what happened?", "Tell me a little more.", "Mm, and then?"],
 }
@@ -317,6 +321,7 @@ class TurnEngine:
         self._context_cache: dict[int, tuple[float, str]] = {}
         self._last_arjun_reply: dict[int, str] = {}
         self._recent_replies: dict[int, list[str]] = {}
+        self._listen_i: dict[int, int] = {}
         self._last_reply_simplifiable: dict[int, bool] = {}
         self._repeat_times: dict[int, deque[float]] = {}
 
@@ -480,8 +485,8 @@ class TurnEngine:
         if llm is None:
             trace["route_reason"] = llm_reason
 
-        # 2. AI disclosure
-        if has_any(normalize(text), _AI_QUESTIONS):
+        # 2. AI disclosure (and "what is your name?", answered with the same honest line)
+        if has_any(normalize(text), _AI_QUESTIONS) or has_any(normalize(text), _NAME_QUESTIONS):
             return TurnResult(rename_companion(r["ai_disclosure"], companion_name(user)), "UNKNOWN", "care", lang,
                               trace=self._t(trace, t0))
 
@@ -2405,10 +2410,16 @@ class TurnEngine:
         """Fixed template only: no medical content. The family gets told only after a spoken yes."""
         r = rp.R[rp.lang_or_default(lang)]
         contacts = self.core.contacts(uid)
+        try:  # her name as the family knows it, not a fixed "Aaji"
+            user = self.core.user(uid)
+            who = (str(user.get("address_as") or "").strip()
+                   or str(user.get("name") or "").replace("(synthetic)", "").strip() or "She")
+        except (CoreError, httpx.HTTPError):
+            who = "She"
         message = (
-            "Aaji asked to set a medicine time. Please add it on the dashboard."
+            f"{who} asked to set a medicine time. Please add it on the dashboard."
             if key == "med_family_sets"
-            else "Aaji has a question about medicine. Please call her; Arjun did not answer it."
+            else f"{who} has a question about medicine. Please call her; Arjun did not answer it."
         )
         if self._act(uid, "REQUEST_CAREGIVER", {"message": message}) is not None:
             if contacts and key == "med_deflect":
@@ -2513,6 +2524,13 @@ class TurnEngine:
         from_llm = reply is not None
         if reply is None:
             reply = self._specific_clarification(uid, text, lang)
+        if not reply and len(text.split()) >= 2:
+            # No model reply (none configured, busy, timed out) and no topic to ask about: a real sentence still gets
+            # a short listening line, never silence (live run 2026-11-09: five chat turns in a row got no answer).
+            pool = _VARIED.get(lang, _VARIED["mr"])
+            n = self._listen_i.get(uid, 0)
+            self._listen_i[uid] = n + 1
+            reply = pool[n % len(pool)]
         if from_llm:  # at most one question, not in every reply, never the same one twice in a day
             shaped = shape_questions(reply, self.memory.asked_today(uid, now), self.memory.previous_reply_was_question(uid, now))
             if shaped != reply:
@@ -2544,8 +2562,11 @@ class TurnEngine:
                 (("कलेक्शन", "collection", "फोटो"), "कलेक्शन", "तुम्ही फोटोच्या कलेक्शनबद्दल बोलताय का?"),
                 (("एप्रिल", "कॅलेंडर", "calendar", "रिकामं"), "कॅलेंडर", "तुम्ही कॅलेंडरमधल्या तारखांबद्दल बोलताय का?"),
             )
+            words = set(tokens(norm))
             for needles, key, prompt in choices:
-                if any(word in norm for word in needles):
+                # whole words or their case forms ("फोनवर"), never a piece of a longer word: "कॉलेजला" is not "कॉल"
+                if any(w == n or (w.startswith(n) and len(w) - len(n) <= 3 and not n.isascii()) or (n.isascii() and w == n)
+                       for n in needles for w in words):
                     topic, question = key, prompt
                     break
         if not topic:

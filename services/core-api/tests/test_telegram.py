@@ -98,7 +98,7 @@ def test_telegram_off_sends_nothing_and_the_body_says_so(client, uid, monkeypatc
     telegram.wait_idle()
     assert posts == []
     body = _notes(client, uid)[0]["body"]
-    assert "Dashboard alert only" in body and "Telegram alert sent" not in body
+    assert "No Telegram alert is set up" in body and "Telegram alert sent" not in body
 
 
 def test_a_failed_send_is_recorded_and_the_alert_never_claims_delivery(client, uid, tg, monkeypatch):

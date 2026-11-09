@@ -137,6 +137,75 @@ function MarkCell({ mark }: { mark: Mark }) {
   );
 }
 
+/** One family contact; "Edit" fixes a wrong number (Arjun phones these numbers in an emergency). */
+function ContactRow(p: {
+  contact: Contact;
+  onSave: (name: string, relation: string, phone: string) => Promise<unknown> | void;
+  onDelete: () => Promise<unknown> | void;
+}) {
+  const c = p.contact;
+  const [editing, setEditing] = useState(false);
+  const [f, setF] = useState({ name: c.name, relation: c.relation, phone: c.phone });
+  if (!editing)
+    return (
+      <li style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <span style={{ flex: 1 }}>
+          <span style={{ fontWeight: 800 }}>{c.name}</span> ({c.relation}) {c.phone || "no phone"}
+        </span>
+        <button className="fbtn" onClick={() => setEditing(true)}>
+          Edit
+        </button>
+      </li>
+    );
+  return (
+    <li style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+      <input className="fam-input" aria-label="Name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+      <input className="fam-input" aria-label="Relation" value={f.relation} onChange={(e) => setF({ ...f, relation: e.target.value })} />
+      <input
+        className="fam-input"
+        aria-label="Phone"
+        inputMode="tel"
+        placeholder="10-digit phone"
+        value={f.phone}
+        onChange={(e) => setF({ ...f, phone: e.target.value })}
+      />
+      <button
+        className="fbtn solid"
+        disabled={!f.name.trim()}
+        onClick={async () => {
+          await p.onSave(f.name.trim(), f.relation.trim() || "family", f.phone.trim());
+          setEditing(false);
+        }}
+      >
+        Save
+      </button>
+      <button className="fbtn" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+      <button
+        className="fbtn danger"
+        onClick={async () => {
+          if (window.confirm(`Remove ${c.name} from contacts?`)) await p.onDelete();
+        }}
+      >
+        Remove
+      </button>
+    </li>
+  );
+}
+
+const NOTE_LABEL: Record<string, string> = {
+  emergency: "Emergency",
+  emergency_location: "Location",
+  caregiver_request: "Request",
+  lonely: "Lonely",
+  distress: "Upset",
+  issue: "Problem",
+  medicine: "Medicine",
+  medicine_unconfirmed: "Medicine",
+  delivery: "Not delivered",
+};
+
 export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: number) => void }) {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState("");
@@ -480,7 +549,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
                   ? "No conversation summary yet today."
                   : `Summaries and mood are off. Turn on "share how ${name} is doing" below to see them.`)}
             </p>
-            <span className={`fam-seen ${seen.tone}`}>Last heard: {seen.text}</span>
+            <span className={`fam-seen ${seen.tone}`}>{seen.text}</span>
             <span className="t-muted" style={{ fontSize: 15 }}>
               {data.today.conversations} conversation{data.today.conversations === 1 ? "" : "s"} today · summaries, never
               her exact words
@@ -559,7 +628,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               </div>
             ))}
             <p className="fam-note">
-              Everything here is what Aaji told Arjun. "Done" and "Taken" are self-reported. "On time" is within the window set for each medicine (default 30 min). Meals, the walk and the BP check are the family-set times above; nothing is scored.
+              Everything here is what {name} told Arjun. "Done" and "Taken" are self-reported. "On time" is within the window set for each medicine (default 30 min). Meals, the walk and the BP check are the family-set times above; nothing is scored.
             </p>
           </section>
 
@@ -569,13 +638,21 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
               {data.requests.length + data.notes.length === 0 && <p>None.</p>}
               <ul className="fam-list">
                 {data.requests.map((n) => (
-                  <li key={`r${n.id}`}>Request: {n.message}</li>
-                ))}
-                {data.notes.map((n) => (
-                  <li key={`n${n.id}`}>
-                    {n.kind}: {n.body}
+                  <li key={`r${n.id}`}>
+                    <span>
+                      <strong>Request:</strong> {n.message}
+                    </span>
                   </li>
                 ))}
+                {data.notes
+                  .filter((n) => !(n.kind === "caregiver_request" && data.requests.some((r) => r.message === n.body)))
+                  .map((n) => (
+                    <li key={`n${n.id}`}>
+                      <span>
+                        <strong>{NOTE_LABEL[n.kind ?? ""] ?? "Note"}:</strong> {n.body}
+                      </span>
+                    </li>
+                  ))}
               </ul>
             </section>
             <section className="fam-card">
@@ -895,9 +972,12 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
             <h2>Family contacts</h2>
             <ul className="fam-list">
               {data.contacts.map((c) => (
-                <li key={c.id}>
-                  <span style={{ fontWeight: 800 }}>{c.name}</span> ({c.relation}) {c.phone}
-                </li>
+                <ContactRow
+                  key={c.id}
+                  contact={c}
+                  onSave={(n, r, p) => run(() => api.editContact(userId, c.id, n, r, p))}
+                  onDelete={() => run(() => api.deleteContact(userId, c.id))}
+                />
               ))}
             </ul>
             <AddContact onAdd={(n, r, p) => run(() => api.addContact(userId, n, r, p))} />
@@ -1142,7 +1222,7 @@ function AddContact({ onAdd }: { onAdd: (name: string, rel: string, phone: strin
     >
       <input className="fam-input" required placeholder="Name" aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} />
       <input className="fam-input" placeholder="Relation" aria-label="Relation" value={rel} onChange={(e) => setRel(e.target.value)} />
-      <input className="fam-input" placeholder="Phone (synthetic only)" aria-label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+      <input className="fam-input" placeholder="Phone (10 digits)" aria-label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
       <button className="fbtn solid" type="submit">
         Add contact
       </button>

@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
@@ -16,7 +17,7 @@ from .auth import router as auth_router
 from .briefings import router as briefings_router
 from .checkins import router as checkins_router
 from .day import router as day_router
-from .db import Base, engine, ensure_columns, get_db
+from .db import Base, engine, ensure_columns, get_db, reconcile_schema
 from .deliveries import ack_item, enqueue
 from .deliveries import router as deliveries_router
 from .deps import auth_enabled, check_api_key_configured, get_now, require_key
@@ -41,6 +42,8 @@ from .wellbeing import router as wellbeing_router
 @asynccontextmanager
 async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
     check_api_key_configured()  # refuse to start with auth silently disabled
+    for change in reconcile_schema(engine, Base.metadata):  # old databases: add / set aside, never drop
+        logging.getLogger("uvicorn.error").warning("schema: %s", change)
     Base.metadata.create_all(engine)
     ensure_columns(engine)  # no migrations: add columns that newer code needs to old databases
     yield
@@ -156,6 +159,29 @@ def add_contact(user_id: int, body: s.ContactIn, db: Session = Depends(get_db)) 
 def list_contacts(user_id: int, db: Session = Depends(get_db)) -> list[m.Contact]:
     _user(db, user_id)
     return list(db.scalars(select(m.Contact).where(m.Contact.user_id == user_id)))
+
+
+def _contact(db: Session, user_id: int, contact_id: int) -> m.Contact:
+    contact = db.get(m.Contact, contact_id)
+    if contact is None or contact.user_id != user_id:
+        raise HTTPException(404, "contact not found")
+    return contact
+
+
+@router.patch("/users/{user_id}/contacts/{contact_id}", response_model=s.ContactOut)
+def edit_contact(user_id: int, contact_id: int, body: s.ContactIn, db: Session = Depends(get_db)) -> m.Contact:
+    """Fix a contact's name, relation or phone (live run 2026-11-09: a demo number could not be replaced)."""
+    contact = _contact(db, user_id, contact_id)
+    for k, v in body.model_dump().items():
+        setattr(contact, k, v)
+    db.commit()
+    return contact
+
+
+@router.delete("/users/{user_id}/contacts/{contact_id}", status_code=204)
+def delete_contact(user_id: int, contact_id: int, db: Session = Depends(get_db)) -> None:
+    db.delete(_contact(db, user_id, contact_id))
+    db.commit()
 
 
 # ---- reminders --------------------------------------------------------------------------------
@@ -580,7 +606,7 @@ _ALERT_TAIL: dict[str, str] = {
     "sending": " Sending a Telegram alert now.",
     "pending": " A Telegram alert is already being sent.",
     "failed": " The Telegram alert could not be sent.",
-    "none": " Dashboard alert only; no call or message was sent.",
+    "none": " No Telegram alert is set up. Any phone calls Arjun places are listed in Settings, Emergency help.",
 }
 
 

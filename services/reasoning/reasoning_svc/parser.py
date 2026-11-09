@@ -75,7 +75,10 @@ MED_Q = ("skip", "double", "extra", "twice", "two", "दोन", "don", "dona", 
          "miss", "missed", "chukli", "चुकली", "late", "ushir", "उशीर", "der", "देर", "nako",
          "नको", "band", "बंद", "stop", "kami", "कमी", "reduce", "increase", "vadhav", "वाढव",
          "safe", "harmful", "allergy", "nahi", "नाही", "nahin", "नहीं", "not", "didn't",
-         "ghetli nahi", "घेतली नाही", "ghetle nahi", "घेतले नाही", "ho gaya nahi")
+         "ghetli nahi", "घेतली नाही", "ghetle nahi", "घेतले नाही", "ho gaya nahi",
+         # live run 2026-11-09: "मी गोळी दोनदा घेऊ का?" and "बीपी गोळी राहिली" went to chat
+         "दोनदा", "donda", "दुबारा", "dubara", "राहिली", "राहिला", "राहिलं", "rahili", "रह गई", "छूट",
+         "घेऊ का", "ghyau ka", "लूँ क्या", "लूं क्या", "lu kya", "should i take", "can i take")
 MED_TAKEN_WORDS = ("ghetli", "ghetla", "ghetle", "घेतली", "घेतला", "घेतले", "le li", "ले ली",
                    "kha li", "खा ली", "taken", "took", "liya", "लिया", "li", "ली")
 SNOOZE_WORDS = ("nantar", "नंतर", "baad mein", "बाद में", "later", "thodi der", "थोड़ी देर",
@@ -87,13 +90,16 @@ MINUTE_WORDS = ("minitanni", "मिनिटांनी", "minute", "minutes",
 # ---- time / day guidance -------------------------------------------------------------------
 TIME_Q = ("kiti vajle", "किती वाजले", "kiti vajlet", "किती वाजलेत", "vel kay", "वेळ काय",
           "vel kiti", "वेळ किती", "kitne baje", "कितने बजे", "time kya", "time kay", "what time",
-          "samay kya", "समय क्या", "time kitna", "ghadyalat kiti", "kya time hua", "time zala")
+          "samay kya", "समय क्या", "time kitna", "ghadyalat kiti", "kya time hua", "time zala",
+          "what is the time", "what's the time", "whats the time", "the time", "time is it", "टाइम क्या",
+          "कितने बज", "किती वाजलेत", "किती वाजले आहेत", "time sanga", "टाइम सांगा", "वेळ सांगा")
 DATE_Q = ("konta divas", "कोणता दिवस", "kon ta divas", "tarikh", "तारीख", "kaun sa din",
           "कौन सा दिन", "what day", "what date", "todays date", "today's date", "aaj kya din",
           "aaj konta")
 NEXT_Q = ("pudhe kay", "पुढे काय", "pudhcha kay", "next kay", "ata kay karaycha", "आता काय करायचं",
           "ata kay karu", "आता काय करू", "ab kya karna", "अब क्या करना", "what next",
-          "what's next", "whats next", "what should i do", "kya karun", "kay karu", "ata kay")
+          "what's next", "whats next", "what should i do", "kya karun", "kay karu", "ata kay",
+          "पुढचं काय", "pudhcha kay", "पुढे काय आहे", "नंतर काय आहे", "आगे क्या है", "आगे क्या", "next kya")
 
 
 # every word of these, said alone, is a yes / a no (used only while an action is pending)
@@ -338,6 +344,12 @@ def _find_hour(norm: str) -> tuple[int, int, bool] | None:
     return None
 
 
+def _restore_case(task: str, text: str) -> str:
+    """Normalising lower-cases English; put back the casing she used ("call Chandrakant", not "call chandrakant")."""
+    original = {w.casefold().strip(".,!?"): w.strip(".,!?") for w in text.split()}
+    return " ".join(original.get(w, w) for w in task.split())
+
+
 def apply_text(draft: Draft, text: str, profile: Profile, now: datetime, is_followup: bool) -> Draft:
     """Merge slots found in `text` into `draft` (returns the same object)."""
     norm = hour_words_to_digits(normalize(text))
@@ -387,7 +399,7 @@ def apply_text(draft: Draft, text: str, profile: Profile, now: datetime, is_foll
     if not is_followup or not draft.task:
         task = _extract_task(norm)
         if task and not draft.task:
-            draft.task = task
+            draft.task = _restore_case(task, text)
     return draft
 
 
@@ -492,8 +504,8 @@ def parse(
             return p
         if has_any(norm, TIME_Q):
             return done("TIME_QUERY", 0.85)
-        if has_any(norm, NEXT_Q):
-            return done("NEXT_UP", 0.75)
+        if has_any(norm, NEXT_Q) and not has_any(norm, ("झालं", "झाले", "झाला", "zala", "हुआ", "happened")):
+            return done("NEXT_UP", 0.75)  # "पुढे काय झालं?" is her story, not her schedule
 
     # While an action awaits its yes/no, an answer made ONLY of yes-words (or only no-words) is that answer at
     # any length: speech recognizers pad a "हो" ("हो हो चालेल हो हो ठेव").
@@ -533,7 +545,8 @@ def parse(
     if has_any(norm, APPOINTMENT) and has_any(norm, QUESTION) and not has_any(norm, REMIND):
         return done("GET_APPOINTMENT", 0.8)
 
-    if has_any(norm, DONE) and not has_any(norm, REMIND):
+    # "काय झालं?" / "क्या हुआ?" asks what happened; it does not report a task as done
+    if has_any(norm, DONE) and not has_any(norm, REMIND) and not has_any(norm, ("काय", "kay", "क्या", "kya", "what")):
         return done("COMPLETE_REMINDER", 0.7, hint=_extract_task(norm))
 
     if has_any(norm, REMIND):

@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import ssl
+from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -61,6 +63,13 @@ def user_context_terms(user_id: int) -> tuple[list[str], list[str]]:
     except (httpx.HTTPError, ValueError, TypeError, KeyError):
         return [], []
 
+
+
+@lru_cache(maxsize=1)
+def _tls() -> ssl.SSLContext:
+    """One TLS context for every Prisma reconnect. Building it loads the CA bundle (~100 ms, blocking): live logs showed
+    "event loop blocked ... load_default_certs" on each reconnect, delaying audio."""
+    return ssl.create_default_context()
 
 class PrismaV3STT(stt.STT):
     def __init__(
@@ -154,6 +163,7 @@ class PrismaV3Stream(stt.RecognizeStream):
             async with websockets.connect(
                 self._prisma.base_url,
                 additional_headers=headers,
+                ssl=_tls() if self._prisma.base_url.startswith("wss:") else None,
                 ping_interval=20,
                 ping_timeout=20,
                 close_timeout=10,

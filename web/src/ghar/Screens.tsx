@@ -28,6 +28,8 @@ export interface UpcomingItem {
   /** First letter(s) of a family member, when the item is about a known contact. */
   initials?: string;
   kind: "call" | "reminder" | "appointment";
+  /** When it is due (ms), so the medicine card can sit in time order among these. */
+  at?: number;
 }
 
 function UpcomingCard({ item }: { item: UpcomingItem }) {
@@ -58,7 +60,7 @@ export interface HomeProps {
   clock?: string;
   items: UpcomingItem[];
   /** Next medicine card (evening design). Only passed when a medicine API exists. */
-  medicine?: { when: string; name: string };
+  medicine?: { when: string; name: string; at?: number };
   busy?: boolean;
   error?: string;
   onSpeak: () => void;
@@ -121,6 +123,12 @@ export function HomeScreen(p: HomeProps) {
 
       {(p.medicine || upcoming.length > 0) && (
         <div className="ad-next">
+          {/* in time order: a 7 pm call is shown before the 8:30 pm tablet (live run 2026-11-09) */}
+          {upcoming
+            .filter((it) => !p.medicine || p.medicine.at === undefined || (it.at ?? 0) <= p.medicine.at)
+            .map((it) => (
+              <UpcomingCard key={it.key} item={it} />
+            ))}
           {p.medicine && (
             <div className="card-row">
               <div className="avatar leaf" style={{ color: "var(--ghar-leaf)" }}>
@@ -132,9 +140,11 @@ export function HomeScreen(p: HomeProps) {
               </div>
             </div>
           )}
-          {upcoming.map((it) => (
-            <UpcomingCard key={it.key} item={it} />
-          ))}
+          {upcoming
+            .filter((it) => p.medicine && p.medicine.at !== undefined && (it.at ?? 0) > p.medicine.at)
+            .map((it) => (
+              <UpcomingCard key={it.key} item={it} />
+            ))}
         </div>
       )}
 
