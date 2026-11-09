@@ -112,7 +112,7 @@ def engine_for(core_http, provider=None, **kw):
 def test_the_real_failure_now_goes_to_the_emergency_flow_and_alerts_the_family(core_http, uid):
     res = engine_for(core_http).handle(uid, "सर १० १५ मला हार्ट अटॅक येतोय")
     assert res.intent == "EMERGENCY" and res.mode == "safety" and res.screen == "safety"
-    assert res.reply == "मी तुमच्या घरच्यांना लगेच कळवलं आहे. 112 वर फोन करा."
+    assert res.reply == "मी तुमच्या घरच्यांना लगेच कळवलं आहे. जमलं तर 112 ला फोन करा, नाहीतर जवळच्या कोणाला हाक मारा."
     notes = core_http.get(f"/users/{uid}/notifications").json()
     assert [n["kind"] for n in notes] == ["emergency"]  # the dashboard / Telegram alert path, consent or not
 
@@ -120,7 +120,7 @@ def test_the_real_failure_now_goes_to_the_emergency_flow_and_alerts_the_family(c
 def test_the_alert_names_the_son_when_the_family_has_one(core_http, uid):
     core_http.post(f"/users/{uid}/contacts", json={"name": "राहुल", "relation": "मुलगा", "phone": "0000000001"})
     res = engine_for(core_http).handle(uid, "मला हार्ट अटॅक येतोय")
-    assert res.reply == "मी राहुलला लगेच कळवलं आहे. 112 वर फोन करा."
+    assert res.reply == "मी राहुलला लगेच कळवलं आहे. जमलं तर 112 ला फोन करा, नाहीतर जवळच्या कोणाला हाक मारा."
 
 
 @pytest.mark.parametrize("text", [c["text"] for c in CASES if c["expect"] == "emergency"][::4])
