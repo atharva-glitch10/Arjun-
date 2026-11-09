@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { Dashboard } from "./family/Dashboard";
 import { JoinCall } from "./family/JoinCall";
 import { ElderApp } from "./elder/ElderApp";
+import { ChatDemo } from "./preview/ChatDemo";
 import { UiGallery } from "./preview/UiGallery";
 import { YtDebug } from "./preview/YtDebug";
 import "./styles/app.css";
@@ -71,5 +72,5 @@ function App() {
 const root = document.getElementById("root");
 if (root) {
   const join = params.get("view") === "join";
-  createRoot(root).render(join ? <JoinCall /> : params.get("ui") === "1" ? <UiGallery /> : (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true && params.get("debug") === "yt" ? <YtDebug /> : <App />);
+  createRoot(root).render(join ? <JoinCall /> : params.get("ui") === "1" ? <UiGallery /> : params.get("ui") === "chat" ? <ChatDemo /> : (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true && params.get("debug") === "yt" ? <YtDebug /> : <App />);
 }

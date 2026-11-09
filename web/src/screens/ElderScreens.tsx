@@ -1,4 +1,5 @@
 import { Bell, Calendar, Check, ClipboardList, Clock, Image as ImageIcon, ListChecks, Lock, Mic, Phone, Pill, TriangleAlert, Utensils, Volume2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import type { DoseCheck, HealthProfile } from "@/api";
@@ -223,6 +224,54 @@ export function HomeScreen(p: HomeProps) {
   );
 }
 
+/* ---- WhatsApp-style conversation (team notes 2026-11-10) -------------------------------------------- */
+export interface ChatMsg {
+  id: number;
+  who: "me" | "arjun";
+  text: string;
+  /** "HH:MM" shown under the bubble, like WhatsApp. */
+  time: string;
+}
+
+/** Her words on the right in green, Arjun's on the left in white, newest at the bottom; the live sentence she is
+ * still saying shows as a faded bubble with "…". Big type for old eyes. */
+export function ChatThread(p: { messages: ChatMsg[]; live?: string; typing?: boolean }) {
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    end.current?.scrollIntoView?.({ block: "end" });
+  }, [p.messages.length, p.live, p.typing]);
+  return (
+    <div className="wa-thread" aria-live="polite" role="log">
+      {p.messages.length === 0 && !p.live && <p className="wa-empty">{t("you_said")} …</p>}
+      {p.messages.map((m) => (
+        <div key={m.id} className={`wa-row ${m.who}`}>
+          <div className={`wa-bubble ${m.who}`}>
+            <span className="wa-text">{m.text}</span>
+            <span className="wa-time">{m.time}</span>
+          </div>
+        </div>
+      ))}
+      {p.live && (
+        <div className="wa-row me">
+          <div className="wa-bubble me live">
+            <span className="wa-text">{p.live} …</span>
+          </div>
+        </div>
+      )}
+      {p.typing && (
+        <div className="wa-row arjun">
+          <div className="wa-bubble arjun typing" aria-label="…">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      )}
+      <div ref={end} />
+    </div>
+  );
+}
+
 export function ListenScreen(p: {
   heard: string;
   /** Only for the design gallery: in the live app Arjun decides when the sentence is finished. */
@@ -230,6 +279,8 @@ export function ListenScreen(p: {
   onStop: () => void;
   /** Typed fallback (dev / gallery). */
   onType?: { value: string; set: (v: string) => void; send: () => void };
+  /** The conversation so far, shown WhatsApp-style instead of the single "you said" card. */
+  thread?: ChatMsg[];
 }) {
   const state: OrbState = "listening";
   return (
@@ -241,12 +292,16 @@ export function ListenScreen(p: {
         <WarmOrb size="lg" pulse label={t("listening_aria", { name: companionLabel })} />
         <span className="orb-caption">{t("listening_cap", { name: companionLabel })}</span>
       </div>
-      <div className="said-card" aria-live="polite">
-        <span className="t-muted" style={{ fontSize: 16 }}>
-          {t("you_said")}
-        </span>
-        <p className="quote">{p.heard ? `“${p.heard}”` : "…"}</p>
-      </div>
+      {p.thread ? (
+        <ChatThread messages={p.thread} live={p.heard} />
+      ) : (
+        <div className="said-card" aria-live="polite">
+          <span className="t-muted" style={{ fontSize: 16 }}>
+            {t("you_said")}
+          </span>
+          <p className="quote">{p.heard ? `“${p.heard}”` : "…"}</p>
+        </div>
+      )}
       {p.onType && (
         <form
           onSubmit={(e) => {
@@ -346,6 +401,7 @@ export function ReplyScreen(p: {
   onNo: () => void;
   onSpeak: () => void;
   onOk: () => void;
+  thread?: ChatMsg[];
 }) {
   return (
     <div className="screen">
@@ -353,9 +409,13 @@ export function ReplyScreen(p: {
         <WarmOrb size="md" />
         <h1 className="h2">{companionLabel}</h1>
       </div>
-      <div className="panel" aria-live="polite">
-        <p style={{ fontSize: 27, lineHeight: 1.5, fontWeight: 600 }}>{p.reply}</p>
-      </div>
+      {p.thread && p.thread.length > 0 ? (
+        <ChatThread messages={p.thread} />
+      ) : (
+        <div className="panel" aria-live="polite">
+          <p style={{ fontSize: 27, lineHeight: 1.5, fontWeight: 600 }}>{p.reply}</p>
+        </div>
+      )}
       <div className="stack-end">
         {p.ask === "yesno" && (
           <>
@@ -484,6 +544,7 @@ export interface KahaniProps {
   share?: { names: string[]; initials: string[]; busy?: boolean; onYes: () => void; onNo: () => void };
   onSpeak?: () => void;
   onBack: () => void;
+  thread?: ChatMsg[];
 }
 
 const AVATAR_COLORS = ["#e8833a", "#1c6b35", "#13204a"];
@@ -495,16 +556,22 @@ export function KahaniScreen(p: KahaniProps) {
         <WarmOrb size="md" />
         <h1 className="h2">{t("book_h")}</h1>
       </div>
-      <div className="arjun-chip">
-        <p>{p.prompt}</p>
-      </div>
-      <div className="note-page" aria-live="polite">
-        <span className="title">{p.noteTitle}</span>
-        <p className="text">{p.transcript}</p>
-        <span className="t-muted" style={{ fontSize: 16 }}>
-          {p.hint}
-        </span>
-      </div>
+      {p.thread && p.thread.length > 0 ? (
+        <ChatThread messages={p.thread} />
+      ) : (
+        <>
+          <div className="arjun-chip">
+            <p>{p.prompt}</p>
+          </div>
+          <div className="note-page" aria-live="polite">
+            <span className="title">{p.noteTitle}</span>
+            <p className="text">{p.transcript}</p>
+            <span className="t-muted" style={{ fontSize: 16 }}>
+              {p.hint}
+            </span>
+          </div>
+        </>
+      )}
       {p.share ? (
         <div className="share-card">
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
