@@ -103,7 +103,7 @@ def test_an_empty_answer_is_not_cached(client, uid, monkeypatch):
     assert len(g.calls) == 2
 
 
-def test_news_search_is_live_and_keeps_a_live_title_with_no_query_match(client, uid, monkeypatch):
+def test_news_search_is_the_newest_uploads_not_live_streams_and_keeps_a_live_title_with_no_query_match(client, uid, monkeypatch):
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
     body = {"items": [
         {"id": {"videoId": "AAAAAAAAAAA"}, "snippet": {"title": "मुंबईत पाऊस", "channelTitle": "Ch"}},
@@ -115,7 +115,8 @@ def test_news_search_is_live_and_keeps_a_live_title_with_no_query_match(client, 
     r = client.get("/media/youtube/search", params={"q": "", "kind": "news_video", "user_id": uid})
     assert [x["video_id"] for x in r.json()] == ["BBBBBBBBBBB", "AAAAAAAAAAA"]
     _, p = g.calls[0]
-    assert p["eventType"] == "live" and p["q"] == "मराठी बातम्या live" and p["maxResults"] == 8
+    assert "eventType" not in p and p["order"] == "date" and p["publishedAfter"].endswith("Z")
+    assert p["q"] == "मराठी बातम्या" and p["maxResults"] == 8
 
 
 def test_media_status_reports_the_key_and_the_last_error(client, uid, monkeypatch):

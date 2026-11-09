@@ -261,10 +261,10 @@ def test_news_on_screen_plays_the_family_channel(core_http, uid, household):
                           "query": ""}
 
 
-def test_news_on_screen_without_a_family_channel_searches_live_marathi_news(core_http, uid, monkeypatch):
+def test_news_on_screen_without_a_family_channel_searches_the_newest_marathi_news(core_http, uid, monkeypatch):
     g = with_google(monkeypatch)
     res = engine(core_http).handle(uid, "बातम्या बघायच्या आहेत")
-    assert g.calls[0]["eventType"] == "live" and g.calls[0]["q"] == "मराठी बातम्या live"
+    assert "eventType" not in g.calls[0] and g.calls[0]["order"] == "date" and g.calls[0]["q"] == "मराठी बातम्या"
     assert res.action["kind"] == "youtube_video" and res.reply.startswith("लावतो:")
 
 

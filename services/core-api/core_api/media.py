@@ -39,7 +39,9 @@ NEWS_TOP = 5
 TITLE_MAX = 120
 FEED_TIMEOUT_S = 5.0
 YOUTUBE_MAX_RESULTS = 8
-YOUTUBE_NEWS_QUERY = "मराठी बातम्या live"
+# News = the newest regular uploads of the last 3 days, NOT live streams: a live embed often refuses to play
+# ("Your browser can't play this video", 2026-11-09) and is only up some hours of the day.
+YOUTUBE_NEWS_QUERY = "मराठी बातम्या"
 
 _daily: dict[str, Any] = {"day": None, "calls": 0, "blocked": False}
 _last_error: str | None = None  # for /media/status: "403 quotaExceeded", never the key or the query
@@ -148,7 +150,8 @@ def youtube_search(
         "relevanceLanguage": "mr", "regionCode": "IN", "maxResults": YOUTUBE_MAX_RESULTS, "key": api_key,
     }
     if news:
-        params["eventType"] = "live"
+        params["order"] = "date"
+        params["publishedAfter"] = (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
     else:
         # The API's closest bucket to the 3-30 minute videos an elder can watch: "medium" (about 4-20 min).
         # "short" (#shorts) and "long" (hours) are never what she asked for.
