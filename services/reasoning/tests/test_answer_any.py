@@ -163,7 +163,10 @@ def test_synthesis_gets_todays_date_the_engine_answer_sources_and_the_ambiguity_
     llm = Llm(route("search", query="runs", entity="Rohit"), answer="४२ धावा.")
     make(core_http, llm).handle(uid, "रोहितने किती धावा केल्या")
     system = llm.web_calls[0][0]
-    for needle in ("9 November 2026", "The engine says 42.", "ESPNcricinfo", "ONE short clarifying question", "AT MOST TWO",
+    from datetime import datetime, timedelta, timezone
+
+    today = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+    for needle in (f"{today.day} {today:%B %Y}", "The engine says 42.", "ESPNcricinfo", "ONE short clarifying question", "AT MOST TWO",
                    "the specific fact first", "NEVER invent", "sources disagree", "Rohit"):
         assert needle in system, needle
 

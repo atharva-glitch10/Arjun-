@@ -231,7 +231,7 @@ def test_the_prompt_asks_for_answers_names_and_at_most_one_question(core_http, u
     s = spy.system
     assert "ANSWER IT properly" in s and "AT MOST ONE question" in s and "by name and relation" in s
     assert "2-3 simple steps" in s and "व्हिडिओ लावू?" in s  # boundary 10 permits short recipe basics
-    assert "Never give medical/health/medicine advice" in s and "news facts" in s
+    assert "Never give medicine advice, doses or a diagnosis" in s and "news facts" in s
     assert "male" in s and "तुम्ही" in s
 
 

@@ -513,8 +513,8 @@ AUTO: dict[str, dict[str, str]] = {
         "auto_taken": "{name} घेतली, नोंदवलं.",
         "auto_snooze": "ठीक आहे, १५ मिनिटांनी परत सांगतो.",
         "auto_no_more_snooze": "आणखी पुढे ढकलता येत नाही. घरच्यांच्या स्क्रीनवर कळवलं आहे.",
-        "auto_med_deflect": "हे डॉक्टरांना विचारा. घरच्यांच्या स्क्रीनवर कळवलं आहे.",
-        "auto_med_deflect_named": "हे डॉक्टरांना विचारा. {name}ला स्क्रीनवर कळवलं आहे.",
+        "auto_med_deflect": "दोन डोस एकत्र घेऊ नका. पुढे काय करायचं ते डॉक्टरांना विचारा. घरच्यांच्या स्क्रीनवर कळवलं आहे.",
+        "auto_med_deflect_named": "दोन डोस एकत्र घेऊ नका. पुढे काय करायचं ते डॉक्टरांना विचारा. {name}ला स्क्रीनवर कळवलं आहे.",
         "auto_med_family_sets": "औषधाच्या वेळा तुमचं कुटुंब ठरवतं. त्यांना स्क्रीनवर कळवलं आहे.",
         "deliver_medicine_auto": "औषधाची वेळ. {name}. {dose}. वेळ {when}.",
         "undone": "ठीक आहे, ते रद्द केलं.",
@@ -530,8 +530,8 @@ AUTO: dict[str, dict[str, str]] = {
         "auto_taken": "{name} ली, दर्ज कर लिया।",
         "auto_snooze": "ठीक है, 15 मिनट बाद फिर बताऊँगा।",
         "auto_no_more_snooze": "अब और आगे नहीं टाल सकते। घरवालों की स्क्रीन पर बता दिया है।",
-        "auto_med_deflect": "यह डॉक्टर से पूछिए। घरवालों की स्क्रीन पर बता दिया है।",
-        "auto_med_deflect_named": "यह डॉक्टर से पूछिए। {name} को स्क्रीन पर बता दिया है।",
+        "auto_med_deflect": "दो खुराक एक साथ मत लीजिए। आगे क्या करना है, डॉक्टर से पूछिए। घरवालों की स्क्रीन पर बता दिया है।",
+        "auto_med_deflect_named": "दो खुराक एक साथ मत लीजिए। आगे क्या करना है, डॉक्टर से पूछिए। {name} को स्क्रीन पर बता दिया है।",
         "auto_med_family_sets": "दवा के समय आपका परिवार तय करता है। उन्हें स्क्रीन पर बता दिया है।",
         "deliver_medicine_auto": "दवा का समय। {name}. {dose}. समय {when}.",
         "undone": "ठीक है, वह रद्द कर दिया।",
@@ -547,8 +547,8 @@ AUTO: dict[str, dict[str, str]] = {
         "auto_taken": "Noted, you took {name}.",
         "auto_snooze": "Okay, I will remind you again in 15 minutes.",
         "auto_no_more_snooze": "I cannot put it off any more. I have told your family on their screen.",
-        "auto_med_deflect": "Please ask your doctor about that. I have told your family on their screen.",
-        "auto_med_deflect_named": "Please ask your doctor about that. I have told {name} on the screen.",
+        "auto_med_deflect": "Do not take two doses together. Ask your doctor what to do next. I have told your family on their screen.",
+        "auto_med_deflect_named": "Do not take two doses together. Ask your doctor what to do next. I have told {name} on the screen.",
         "auto_med_family_sets": "Your family sets medicine times. I have told them on their screen.",
         "deliver_medicine_auto": "Medicine time. {name}. {dose}. Time {when}.",
         "undone": "Okay, I have cancelled that.",
@@ -869,3 +869,78 @@ for _table in (_MED, AUTO, _CHECKIN, _DAY, PRONOUN, _READING, MEMORY, CHAT):
 for _lang in _rl.LANGS:
     WEEKDAYS[_lang] = _TIME[_lang]["weekdays"]
     MONTHS[_lang] = _TIME[_lang]["months"]
+
+
+# ---- Owner decision 2026-11-10: minimal everyday self-care for a NON-emergency complaint, then "see a doctor" -----
+# Fixed lines only (never the model): no medicine names, no doses, no diagnosis. Emergencies never reach this.
+SELF_CARE: dict[str, dict[str, str]] = {
+    "mr": {
+        "head": "थोडा वेळ शांत खोलीत पडून राहा आणि पाणी प्या.",
+        "stomach": "हलकं जेवण घ्या आणि पाणी थोडं थोडं प्या.",
+        "fever": "आराम करा, भरपूर पाणी प्या आणि कपाळावर ओलं कापड ठेवा.",
+        "joint": "गरम पाण्याची पिशवी लावा आणि थोडा आराम करा.",
+        "sleep": "झोपण्याआधी कोमट दूध घ्या, दिवा मंद करा आणि टीव्ही-फोन दूर ठेवा.",
+        "cold": "गरम पाण्याची वाफ घ्या आणि कोमट पाणी प्या.",
+        "acidity": "थोडं थंड पाणी किंवा दूध प्या, तिखट-तेलकट टाळा आणि जेवल्यावर लगेच आडवं होऊ नका.",
+        "cut": "जखम स्वच्छ पाण्याने धुवा, स्वच्छ कपड्याने दाबून धरा आणि पट्टी लावा.",
+        "fall_past": "अजून दुखत असेल तर तिथे थंड पाण्याचा शेक द्या.",
+        "unwell": "थोडा आराम करा आणि पाणी प्या.",
+        "doctor": "बरं वाटलं नाही किंवा त्रास वाढला तर डॉक्टरांना दाखवा.",
+    },
+    "hi": {
+        "head": "थोड़ी देर शांत कमरे में लेट जाइए और पानी पीजिए।",
+        "stomach": "हल्का खाना खाइए और पानी थोड़ा-थोड़ा पीजिए।",
+        "fever": "आराम कीजिए, खूब पानी पीजिए और माथे पर गीला कपड़ा रखिए।",
+        "joint": "गरम पानी की थैली लगाइए और थोड़ा आराम कीजिए।",
+        "sleep": "सोने से पहले गुनगुना दूध लीजिए, रोशनी कम कीजिए और टीवी-फोन दूर रखिए।",
+        "cold": "गरम पानी की भाप लीजिए और गुनगुना पानी पीजिए।",
+        "acidity": "थोड़ा ठंडा पानी या दूध पीजिए, तीखा-तला खाना टालिए और खाने के बाद तुरंत मत लेटिए।",
+        "cut": "घाव को साफ़ पानी से धोइए, साफ़ कपड़े से दबाकर रखिए और पट्टी लगाइए।",
+        "fall_past": "अब भी दर्द हो तो वहाँ ठंडी सिकाई कीजिए।",
+        "unwell": "थोड़ा आराम कीजिए और पानी पीजिए।",
+        "doctor": "आराम न मिले या तकलीफ़ बढ़े तो डॉक्टर को दिखाइए।",
+    },
+    "en": {
+        "head": "Lie down in a quiet room for a while and drink some water.",
+        "stomach": "Eat something light and sip water slowly.",
+        "fever": "Rest, drink plenty of water and keep a damp cloth on your forehead.",
+        "joint": "Use a hot water bag and rest a little.",
+        "sleep": "Have warm milk before bed, dim the lights and keep the TV and phone away.",
+        "cold": "Take steam and sip warm water.",
+        "acidity": "Sip cool water or milk, avoid spicy and oily food, and don't lie down right after eating.",
+        "cut": "Wash the cut with clean water, press it with a clean cloth and put on a bandage.",
+        "fall_past": "If it still hurts, put a cold pack on it.",
+        "unwell": "Rest a little and drink some water.",
+        "doctor": "If it doesn't get better or gets worse, please see a doctor.",
+    },
+}
+
+MED_LIST: dict[str, dict[str, str]] = {
+    "mr": {
+        "none": "तुमच्या नोंदीत आज कोणतंही औषध नाही. घरचे ते डॅशबोर्डवर लिहू शकतात.",
+        "list": "आज तुमची औषधं: {items}.",
+        "item": "{when} {name}, {dose}",
+        "taken": " (घेतली)",
+        "now": "आता {when} ची {name}, {dose}. घेतल्यावर 'गोळी घेतली' सांगा.",
+        "later": "पुढची गोळी {when}: {name}, {dose}.",
+        "done": "आजची सगळी औषधं घेतली म्हणून नोंद आहे.",
+    },
+    "hi": {
+        "none": "आज आपकी सूची में कोई दवा नहीं है। घरवाले इसे डैशबोर्ड पर लिख सकते हैं।",
+        "list": "आज आपकी दवाइयाँ: {items}।",
+        "item": "{when} {name}, {dose}",
+        "taken": " (ली)",
+        "now": "अभी {when} की {name}, {dose}। लेने के बाद 'दवा ले ली' बताइए।",
+        "later": "अगली दवा {when}: {name}, {dose}।",
+        "done": "आज की सारी दवाइयाँ ले ली हैं, ऐसा दर्ज है।",
+    },
+    "en": {
+        "none": "There is no medicine on your list today. Your family can add it on the dashboard.",
+        "list": "Your medicines today: {items}.",
+        "item": "{when} {name}, {dose}",
+        "taken": " (taken)",
+        "now": "Now, {when}: {name}, {dose}. Tell me 'I took it' after you take it.",
+        "later": "Your next medicine, {when}: {name}, {dose}.",
+        "done": "All of today's medicines are marked as taken.",
+    },
+}

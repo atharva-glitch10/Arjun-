@@ -160,9 +160,9 @@ def test_the_symptom_reply_is_fixed_and_still_makes_one_understanding_call(core_
     res = eng.handle(uid, "सर्दी झाली आहे")
     assert res.intent == "SYMPTOM" and res.mode == "companion" and len(llm.calls) == 1
     assert "Raw transcript: सर्दी झाली आहे" in llm.calls[0]["messages"][-1]["content"]
-    assert res.reply == "हे घरच्यांना किंवा डॉक्टरांना नक्की सांगा."  # no consent: no claim to have told them
+    assert "डॉक्टरांना दाखवा" in res.reply and "कळवलं" not in res.reply  # no consent: no claim to have told them
     core_http.patch(f"/users/{uid}", json={"consent_distress_alert": True})
     told = eng.handle(uid, "ताप आलाय")
-    assert told.reply == "घरच्यांना कळवलं आहे."
+    assert told.reply.endswith("घरच्यांना कळवलं आहे.")
     after = eng.handle(uid, STORY)  # the chat continues, and the LLM is asked again for this turn
     assert after.intent == "CHAT" and len(llm.calls) == 3

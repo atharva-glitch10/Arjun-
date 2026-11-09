@@ -406,6 +406,33 @@ _SYMPTOM_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
             r"\bmi\s+padl(?:e|o|i)\s+hot\w*",
         )
     ),
+    # owner decision 2026-11-10: these three get a self-care line too
+    "cold": tuple(
+        _pat(p)
+        for p in (
+            r"(?<!\S)सर्दी\S*",
+            r"(?<!\S)नाक\s+(?:\S+\s+)?(?:गळ|वाह|बंद|बह)\S*",
+            r"(?<!\S)जुकाम\S*",
+            r"\b(?:a\s+)?cold\b(?!\s+(?:water|milk|drink|weather|day))|\brunny\s+nose\b|\bblocked\s+nose\b",
+        )
+    ),
+    "acidity": tuple(
+        _pat(p)
+        for p in (
+            r"(?<!\S)(?:अॅसिडिटी|ॲसिडिटी|एसिडिटी|ऍसिडिटी|पित्त|गॅस|गैस|जळजळ|जलन)\S*",
+            r"\bacidity\b|\bheartburn\b|\bgas\b|\bbloat\w*",
+        )
+    ),
+    "cut": tuple(
+        _pat(p)
+        for p in (
+            r"(?<!\S)(?:हात|बोट|पाय|गुडघ|बोटा)\S*\s+(?:\S+\s+)?(?:कापल|खरचटल|भाजल|लागल)\S*",
+            r"(?<!\S)(?:हाथ|उंगली|पैर)\S*\s+(?:\S+\s+)?(?:कट|जल)\S*",
+            r"(?<!\S)जखम\S*",
+            r"(?<!\S)(?:कट\s+गया|कट\s+गई|चोट\s+लग)\S*",
+            r"\bcut\s+(?:my|myself|finger|hand)\b|\bsmall\s+cut\b|\bscratch\w*\b",
+        )
+    ),
     "unwell": tuple(
         _pat(p)
         for p in (
