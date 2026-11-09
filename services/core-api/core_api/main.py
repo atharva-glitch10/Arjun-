@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
 from typing import Literal
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import joins, rag, telegram
+from . import baseurl, joins, rag, telegram
 from . import models as m
 from . import schemas as s
 from .activity import router as activity_router
@@ -40,9 +41,18 @@ from .voices import router as voices_router
 from .wellbeing import router as wellbeing_router
 
 
+def _log_base_url_status() -> None:
+    """One startup line: BASE_URL ok / unreachable / quick-tunnel (no secrets). Off the request path: the probe can take 3 s."""
+    line = baseurl.status_line()
+    (logging.getLogger("uvicorn.error").info if line.startswith("BASE_URL ok") else logging.getLogger("uvicorn.error").warning)(line)
+    print(line, flush=True)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
     check_api_key_configured()  # refuse to start with auth silently disabled
+    if not os.environ.get("ARJUN_TESTING"):
+        threading.Thread(target=_log_base_url_status, name="base-url-check", daemon=True).start()
     for change in reconcile_schema(engine, Base.metadata):  # old databases: add / set aside, never drop
         logging.getLogger("uvicorn.error").warning("schema: %s", change)
     Base.metadata.create_all(engine)
@@ -107,6 +117,14 @@ def escalate_sound_event(user_id: int, db: Session = Depends(get_db)) -> dict[st
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/diag/base-url")
+def diag_base_url() -> dict[str, object]:
+    """Can the family open the join links Arjun sends? Family session (or the service API key) only; no secrets in the answer."""
+    v = baseurl.check()
+    return {"url": v["url"], "https": v["https"], "reachable": v["reachable"], "kind": v["kind"], "ok": v["ok"],
+            "reason": v["reason"], "hint": baseurl.FIX_HINT}
 
 
 def _user(db: Session, user_id: int) -> m.User:

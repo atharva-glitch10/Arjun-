@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import joins, telegram
+from . import baseurl, joins, telegram
 from . import models as m
 from .db import SessionLocal, get_db
 from .deps import get_now, local_now, require_key
@@ -147,6 +147,14 @@ def start_video_call(
         if active_contact is not None:
             raise HTTPException(409, "a family call is already active")
 
+    if baseurl.configured() and not baseurl.check()["ok"]:
+        # the family could not open the join link: say so (text only) and tell the elder the call did not connect
+        who = (db.get(m.User, user_id).name if db.get(m.User, user_id) else "आजी").split("(", 1)[0].strip()
+        telegram.send_alert(
+            f"📹 {who} व्हिडिओ कॉल करत होत्या. {baseurl.LINK_DOWN_TEXT}", None, user_id=user_id,
+            kind="video_call_link_down", bind=db.get_bind(),
+        )
+        raise HTTPException(503, "family call link unavailable (BASE_URL not reachable)")
     call = m.VideoCall(user_id=user_id, contact_id=contact.id, mode="video", status="ringing", created_at=now)
     db.add(call)
     db.commit()

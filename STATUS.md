@@ -1,5 +1,21 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Dead join-link guard (2026-11-09)
+- **Bug:** a Telegram "join call" button pointed at a dead Cloudflare quick-tunnel URL (DNS_PROBE_FINISHED_NXDOMAIN).
+- **Fix:** `core_api/baseurl.py` checks BASE_URL before any link is sent: https only, `*.trycloudflare.com` refused unless
+  `ARJUN_ALLOW_QUICK_TUNNEL=1`, and it must answer a GET within 3 s (status < 500), verdict cached 60 s. Telegram sends the alert
+  WITHOUT the button plus "लिंक उपलब्ध नाही, कृपया थेट फोन करा" and logs the reason (an emergency alert is never dropped). A video call from
+  the elder screen with a dead link is refused (503), the family gets the text-only note, and the elder hears "कॉल लागला नाही, मी पुन्हा
+  प्रयत्न करतो". No BASE_URL at all keeps the old behaviour.
+- **Visibility:** core-api logs one startup line `BASE_URL ok|unreachable|quick-tunnel|not-set|not-https ...` with the fix hint (Tailscale
+  Funnel https://odin.tail7a9105.ts.net); `scripts/dev-up.ps1` prints the same line (and `-Phone` sets the quick-tunnel opt-in for core-api
+  only, never in .env); `GET /diag/base-url` (family session or API key) returns {url, https, reachable, kind, ok, reason, hint}; the
+  family Settings tab shows a "Call link needs attention" banner when not ok.
+- **Tests:** `tests/test_base_url.py` (dead URL, quick tunnel blocked/allowed, good URL, 5xx, cache 60 s, startup line, Telegram text-only,
+  video call refusal, diag endpoint), `BaseUrlWarning.test.ts`. All HTTP mocked (core-api conftest stubs the probe for every other test).
+- **Not verified:** a real tunnel / the real Funnel URL (not probed from here), a real Telegram message, and the dev-up.ps1 status line
+  was only syntax-checked, not run (it would start the services).
+
 ## YouTube player fix (2026-11-09)
 - **Symptom:** the elder media screen showed YouTube's "Your browser can't play this video" (dark video area, our buttons worked).
 - **Diagnosis (code review; NOT reproduced live, the Chrome extension was not connected):** the iframe used `www.youtube.com` with

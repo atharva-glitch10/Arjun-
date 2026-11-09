@@ -180,7 +180,7 @@ $services = [ordered]@{
                        Vars = "DATABASE_URL", "CORE_API_KEY", "ARJUN_TZ", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "ARJUN_AGENT_NAME",
                        "CORE_RATE_LIMIT", "CORE_RATE_PER_S", "CORE_RATE_BURST", "UNDO_TTL_S", "FEED_RECHECK_S", "YOUTUBE_API_KEY",
                        "YOUTUBE_MAX_SEARCHES_PER_DAY", "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-                       "BASE_URL", "JOIN_SECRET", "ARJUN_CHECKINS_ENABLED", "ARJUN_CHECKIN_MAX_PER_DAY", "ARJUN_CHECKIN_MIN_GAP_MIN", "ARJUN_CHECKIN_DEMO",
+                       "BASE_URL", "ARJUN_ALLOW_QUICK_TUNNEL", "JOIN_SECRET", "ARJUN_CHECKINS_ENABLED", "ARJUN_CHECKIN_MAX_PER_DAY", "ARJUN_CHECKIN_MIN_GAP_MIN", "ARJUN_CHECKIN_DEMO",
                        "BRIEFING_TIME", "BRIEFING_VOICE_URL", "ARJUN_SOUND_EVENTS", "GNANI_API_KEY", "VOICE_CLONE_KEY", "CALLS_ENABLED", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM" }
     "reasoning"   = @{ Dir = "services\reasoning"; Cmd = "& '$py' -m uvicorn reasoning_svc.main:app --port 8001"
                        Vars = "CORE_API_URL", "CORE_API_KEY", "ARJUN_TZ", "EVON_BASE_URL", "EVON_MODEL", "EVON_API_KEY", "EVON_SEND_TEMPLATE_KWARGS",
@@ -216,6 +216,7 @@ if ($Phone) {
     }
     $script:tunnelUrl = Start-PhoneTunnel
     Set-EnvBaseUrl $script:tunnelUrl
+    $local["ARJUN_ALLOW_QUICK_TUNNEL"] = "1"   # core-api only (not written to .env): this quick tunnel was just started and verified
     Write-Host "BASE_URL set to $script:tunnelUrl (only that .env line changed)"
 }
 
@@ -245,6 +246,26 @@ foreach ($name in $services.Keys) {
     }
 }
 Write-Host "core-api http://127.0.0.1:8000/docs | reasoning http://127.0.0.1:8001/docs | web http://localhost:5173"
+
+# One line: can the family open the join links Arjun sends? (BASE_URL is a URL, not a secret.) Same rules as core-api's baseurl.py.
+function Show-BaseUrlStatus {
+    $url = ("" + (Get-Setting "BASE_URL")).Trim().TrimEnd("/")
+    $hint = "Fix: set BASE_URL in .env to the Tailscale Funnel URL (https://odin.tail7a9105.ts.net)."
+    if (-not $url) { Write-Warning "BASE_URL not-set: family-call links have no join button. $hint"; return }
+    if ($url -notmatch "^https://") { Write-Warning "BASE_URL not-https: $url. $hint"; return }
+    if ($url -match "^https://([^/]+\.)?trycloudflare\.com" -and (Get-Setting "ARJUN_ALLOW_QUICK_TUNNEL") -ne "1") {
+        Write-Warning "BASE_URL quick-tunnel: $url (core-api refuses quick-tunnel links unless ARJUN_ALLOW_QUICK_TUNNEL=1). $hint"; return
+    }
+    try {
+        $r = Invoke-WebRequest -Uri "$url/" -UseBasicParsing -TimeoutSec 3
+        Write-Host "BASE_URL ok: $url (HTTP $($r.StatusCode))" -ForegroundColor Green
+    } catch {
+        $code = $null; if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+        if ($code -and $code -lt 500) { Write-Host "BASE_URL ok: $url (HTTP $code)" -ForegroundColor Green }
+        else { Write-Warning "BASE_URL unreachable: $url. Telegram alerts will go out WITHOUT a join button. $hint" }
+    }
+}
+Show-BaseUrlStatus
 
 if ($Phone) {
     if ($Only -and $Only -ne "core-api") {

@@ -14,12 +14,23 @@ os.environ.pop("BASE_URL", None)
 os.environ.pop("JOIN_SECRET", None)
 
 import pytest  # noqa: E402
+from core_api import baseurl  # noqa: E402
 from core_api.db import Base, get_db, make_engine  # noqa: E402
 from core_api.main import app, get_now  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 NOW = datetime(2026, 10, 6, 9, 0)
+
+
+@pytest.fixture(autouse=True)
+def _base_url_probe(monkeypatch):
+    """The BASE_URL reachability probe never touches the network in tests: every URL answers 200 unless a test says otherwise."""
+    baseurl.reset()
+    monkeypatch.setattr(baseurl, "_fetch", lambda url, timeout: 200)
+    monkeypatch.delenv("ARJUN_ALLOW_QUICK_TUNNEL", raising=False)
+    yield
+    baseurl.reset()
 
 
 @pytest.fixture()

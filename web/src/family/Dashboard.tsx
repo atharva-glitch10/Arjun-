@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { activityLine } from "./activity";
 import { AppLinksCard } from "./AppLinksCard";
+import { BaseUrlWarning } from "./BaseUrlWarning";
 import { KnownFactsCard } from "./KnownFactsCard";
 import { EmergencyCard } from "./EmergencyCard";
 import { HealthProfileCard } from "./HealthProfileCard";
@@ -828,6 +829,7 @@ export function Dashboard({ userId, onUser }: { userId: number; onUser: (id: num
 
         {tab === "settings" && (
           <>
+        <BaseUrlWarning />
         <NamesCard user={user} onSave={(patch) => run(() => api.patchUser(userId, patch))} />
 
         <EmergencyCard userId={userId} name={name} />

@@ -22,6 +22,7 @@ from typing import Any
 import httpx
 from sqlalchemy.orm import sessionmaker
 
+from . import baseurl
 from . import models as m
 from .db import SessionLocal
 
@@ -142,6 +143,10 @@ def _deliver(
 ) -> None:
     ok = False
     try:
+        # a dead / refused BASE_URL must never reach the family as a button (2026-11-09): the alert goes out as text
+        join_url, extra = baseurl.guard_link(join_url)
+        if extra:
+            text = f"{text}\n{extra}"
         ok = _post(text, join_url, button_text)
     except Exception as exc:  # noqa: BLE001 - a network failure must never reach the elder's turn
         # Type only: the exception text can contain the request URL, and that URL contains the bot token.

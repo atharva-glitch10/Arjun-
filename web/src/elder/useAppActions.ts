@@ -116,7 +116,7 @@ export function useAppActions(voice: ArjunVoice, userId: number, contacts: Conta
         .catch(() => {
           if (attempt !== callAttempt.current) return;
           setVideoCallStarting(null);
-          if (voice.snapshot.phase === "live") void voice.sendText("कॉल जोडता आला नाही. पुन्हा प्रयत्न करा.");
+          if (voice.snapshot.phase === "live") void voice.sendText("कॉल लागला नाही, मी पुन्हा प्रयत्न करतो.");
         });
       return;
     }

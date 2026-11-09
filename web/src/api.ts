@@ -113,6 +113,17 @@ export interface AppLinkInput {
   allow_other_host?: boolean;
 }
 
+/** /diag/base-url: can the family open the join links Arjun sends? (family session only) */
+export interface BaseUrlDiag {
+  url: string;
+  https: boolean;
+  reachable: boolean;
+  kind: "none" | "invalid" | "http" | "quick-tunnel" | "tailscale" | "https";
+  ok: boolean;
+  reason: string;
+  hint: string;
+}
+
 /** /media/status: the YouTube key lives on core-api; the browser only ever sees whether it is there. */
 export interface MediaStatus {
   youtube_key: boolean;
@@ -431,6 +442,7 @@ export const api = {
   voiceLabel: (id: number) => core<{ name: string | null; relation: string | null }>(`/users/${id}/voice-label`),
   appLinks: (id: number) => core<AppLink[]>(`/users/${id}/app-links`),
   mediaStatus: () => core<MediaStatus>("/media/status"),
+  baseUrlDiag: () => core<BaseUrlDiag>("/diag/base-url"),
   /** Other embeddable videos for a title: the player's next candidates when one will not play here. */
   youtubeSearch: (userId: number, q: string) =>
     core<{ video_id: string; title: string; channel: string }[]>(`/media/youtube/search?user_id=${userId}&q=${encodeURIComponent(q)}`),
