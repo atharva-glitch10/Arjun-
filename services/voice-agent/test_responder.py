@@ -220,4 +220,4 @@ def test_a_fast_answer_gets_no_hold_line(tmp_path):
 def test_defaults_match_the_budget():
     import bridge
     import responder
-    assert responder.SLOW_AFTER_S == 5.0 and bridge.REASONING_TIMEOUT_S == 9.0 and bridge.PREPARE_TIMEOUT_S <= 0.3
+    assert responder.SLOW_AFTER_S == 4.0 and bridge.REASONING_TIMEOUT_S == 9.0 and bridge.PREPARE_TIMEOUT_S <= 0.3

@@ -16,13 +16,13 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from urllib.parse import quote
 
 import httpx
 
-from . import config, replies_langs
+from . import config, qa, replies_langs
 from . import replies as rp
 from .app_replies import A
 from .appcmd import (
@@ -116,7 +116,12 @@ def _is_system_marker(text: str) -> bool:
 
 log = logging.getLogger("reasoning.turn")
 
-_WEB_TURN_BUDGET_S = 8.5  # whole turn, understanding + search (<=4 s) + answer; the voice path waits 9 s
+_WEB_TURN_BUDGET_S = 6.0  # whole turn, understanding + search (<=4 s) + answer (2026-11-09: 6 s; the voice path waits 9 s)
+_ANSWER_CACHE_S = 120.0  # a repeated question inside this window is answered from the last answer
+_TOPIC_TTL_S = 600.0  # a follow-up ("and his wife?") is resolved against the last factual topic for this long
+_IST = timezone(timedelta(hours=5, minutes=30))
+# a time-sensitive question about an EVENT (a score, a result, breaking news): Tavily's news index + a recent window
+_EVENTISH = re.compile(r"score|match|won\b|wins?\b|result|election|latest|breaking|today|yesterday|live\b|सामना|स्कोर|निकाल|निवडणूक|मैच", re.IGNORECASE)
 _WEB_ANSWER_RESERVE_S = 1.5  # kept back for the answer call when sizing the search timeout
 _WEB_BLOCK = re.compile(
     r"औषध|गोळी|गोळ्या|डोस|इंजेक्शन|दवा|दवाई|खुराक|medicine|tablet|dose|injection|pill|"
@@ -135,7 +140,9 @@ _NEWS = re.compile(r"बातम्या|बातमी|खबर|समा�
 # prepare(): a sentence that LOOKS like a live-facts question (weather, news, score, price, who holds an office)
 _WEB_LIKELY = re.compile(
     _WEATHER.pattern + "|" + _NEWS.pattern + r"|स्कोर|सामना|मॅच|मैच|क्रिकेट|score|match|cricket|भाव|दर\b|किंमत|price|rate|"
-    r"पंतप्रधान|मुख्यमंत्री|प्रधानमंत्री|prime minister|president|कोण जिंकल|आज काय चालू",
+    r"पंतप्रधान|मुख्यमंत्री|प्रधानमंत्री|prime minister|president|कोण जिंकल|आज काय चालू|"
+    r"कोण आहे|कोण होता|कोण आहेत|कौन है|कौन था|\bwho (?:is|was|are|won)\b|\bwhen (?:is|was|did)\b|कधी झाला|कब हुआ|"
+    r"\bhow (?:many|much|old|tall)\b|किती वर्षांचा|कितने साल|\blatest\b|ताज्या|सध्या|सद्य|वर्तमान|\bcurrent\b",
     re.IGNORECASE,
 )
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
@@ -353,6 +360,9 @@ class TurnEngine:
         self._listen_i: dict[int, int] = {}
         self._last_reply_simplifiable: dict[int, bool] = {}
         self._repeat_times: dict[int, deque[float]] = {}
+        self._topic: dict[int, tuple[str, str, str, float]] = {}  # uid -> (entity, query, her question, when): for follow-ups
+        self._answer_cache: dict[tuple[str, str], tuple[float, str]] = {}  # (question, lang) -> (when, answer)
+        self.last_web: dict[str, Any] = {}  # the last lookup, for the QA eval's "worst answers" report only
         self._city_state: dict[int, tuple[str, str, float]] = {}  # uid -> ("ask"|"save", city, expires) after a weather turn
 
     # ------------------------------------------------------------------ public
@@ -395,7 +405,7 @@ class TurnEngine:
         """A companion chat line never repeats one of Arjun's last 3 lines word for word (heard live 2026-11-08: the
         same sentence four times sounded like a machine). Safety and care templates are never touched."""
         recent = self._recent_replies.setdefault(user_id, [])
-        if res.mode == "companion" and res.intent in ("CHAT", "UNKNOWN") and res.reply and res.reply in recent:
+        if res.mode == "companion" and res.intent in ("CHAT", "UNKNOWN") and res.reply and res.reply in recent and not (res.trace or {}).get("web"):
             pool = _VARIED.get(res.language, _VARIED["mr"])
             fresh = next((x for x in pool if x not in recent), pool[len(recent) % len(pool)])
             res = replace(res, reply=fresh)
@@ -600,7 +610,7 @@ class TurnEngine:
 
         # 3c. live facts (weather, news, scores): only on the LLM's say-so, only after every safety path above
         if pending is None and draft is None and parsed.intent == "CHAT" and llm and llm.get("needs_web"):
-            web = self._web_turn(user_id, text, str(llm.get("web_query") or ""), lang, trace, t0)
+            web = self._web_turn(user_id, text, str(llm.get("web_query") or ""), lang, trace, t0, llm=llm)
             if web is not None:
                 self._convo_at[user_id] = self._mono()
                 return web
@@ -662,7 +672,7 @@ class TurnEngine:
             data = self.evon.understand_turn(  # type: ignore[attr-defined]
                 text, lang, now, history=view.messages, context=context,
                 interests=user.get("interests") or [],
-                timeout=min(_UNDERSTAND_TIMEOUT_S, self._llm_remaining()), memory=view.block,
+                timeout=min(_UNDERSTAND_TIMEOUT_S, self._llm_remaining()), memory=view.block + self._topic_block(uid),
             )
         except httpx.TimeoutException:
             remaining = self._llm_remaining()
@@ -673,7 +683,7 @@ class TurnEngine:
             try:
                 data = self.evon.understand_turn(  # type: ignore[attr-defined]
                     text, lang, now, history=view.messages[-12:], context=context,
-                    interests=user.get("interests") or [], timeout=remaining, memory=view.block,
+                    interests=user.get("interests") or [], timeout=remaining, memory=view.block + self._topic_block(uid),
                 )
             except httpx.TimeoutException:
                 log.info("understanding retry timed out")
@@ -706,6 +716,16 @@ class TurnEngine:
         if intent not in ("chat", "unclear") and confidence < _ACTION_CONFIDENCE_FLOOR:
             return None, "low_confidence", True
         return data, "ok", True
+
+    def _topic_block(self, uid: int) -> str:
+        """The last factual question and its subject, so a follow-up ("and his wife?", "how old?", "tell me more") is
+        resolved by the model into a full query. Expires after 10 minutes."""
+        topic = self._topic.get(uid)
+        if not topic or self._mono() - topic[3] > _TOPIC_TTL_S:
+            return ""
+        entity, query, question, _ = topic
+        return (f"\nPREVIOUS FACTUAL TOPIC: she last asked \"{question[:160]}\"; subject: {entity or 'unknown'}; "
+                f"search query used: {query[:160]}.\n")
 
     def _user_context(self, uid: int, now: datetime, user: dict[str, Any], text: str = "") -> str:
         """The cached family/dashboard context plus the facts she told Arjun that fit THIS sentence (never cached)."""
@@ -2678,10 +2698,17 @@ class TurnEngine:
             return out(r["web_city_declined"], "city_declined")
         return None
 
-    def _web_turn(self, uid: int, text: str, query: str, lang: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
-        """A live-facts question. Weather: Open-Meteo (her city, else ARJUN_CITY, else ask once). News: Tavily results
-        from the family's approved domains ONLY, source named aloud. Anything else: any search result. The LLM answers
-        from the snippets only. Never for medicine / health words. Any failure is the fixed "no information" line."""
+    def _web_turn(
+        self, uid: int, text: str, query: str, lang: str, trace: dict[str, Any], t0: float, llm: dict[str, Any] | None = None
+    ) -> TurnResult | None:
+        """The answer router's "search" / "tool" / "refuse_safe" branch (the "know" branch is the LLM's own reply).
+        Weather: Open-Meteo (her city, else ARJUN_CITY, else ask once). News: Tavily results from the family's approved
+        domains ONLY, source named aloud. Anything else: Tavily (advanced, 5 results, its own short answer), low-score
+        and stale results dropped, ONE reworded retry when the first results are weak, the LLM answers the exact question
+        from them, and a quality gate checks the draft (one stricter retry, else an honest "not sure"). Never for
+        medicine / health words. Any failure is the fixed "no information" line."""
+        llm = llm or {}
+        mode = str(llm.get("mode") or "search")
         r = rp.R[rp.lang_or_default(lang)]
 
         def done(reply: str, how: str, source: str = "rules") -> TurnResult:
@@ -2690,14 +2717,19 @@ class TurnEngine:
                 trace=self._t({**trace, "intent": "CHAT", "web": how}, t0),
             )
 
-        if _WEB_BLOCK.search(text) or symptom_category(text):
+        if mode == "refuse_safe" or _WEB_BLOCK.search(text) or symptom_category(text):
             return TurnResult(
                 r["web_health"], "CHAT", "companion", lang, trace=self._t({**trace, "intent": "CHAT", "web": "blocked"}, t0)
             )
+        ckey = (normalize(text), lang)
+        cached = self._answer_cache.get(ckey)
+        if cached and self._mono() - cached[0] < _ANSWER_CACHE_S:
+            return done(cached[1], "cache", "llm")
         # one wall-clock budget for the whole lookup, kept under the voice path's 9 s wait
         end = self._llm_deadline - self._llm_timeout_s + _WEB_TURN_BUDGET_S
+        today = datetime.now(_IST).date()
         try:
-            if _WEATHER.search(text):
+            if _WEATHER.search(text) or mode == "tool":
                 city = self._city_for(uid)
                 if not city:  # ask once; her answer is handled by _city_followup
                     self._city_state[uid] = ("ask", "", self._mono() + 120)
@@ -2708,37 +2740,92 @@ class TurnEngine:
             allowed = self._news_domains(uid)[:5] if news else []
             if news and not allowed:
                 return done(r["web_none"], "news_no_source")
-            search_s = min(web_search.TIMEOUT_S, end - self._mono() - _WEB_ANSWER_RESERVE_S)
-            if search_s < 1.0:
+            time_sensitive = bool(llm.get("time_sensitive")) or news
+            queries = qa.build_queries({**llm, "web_query": query} if llm else {"web_query": query}, text, today, time_sensitive)
+            entity = str(llm.get("entity") or "")
+            domains = [d for d, _ in allowed] or None
+
+            def run(q: str) -> tuple[str, list[dict[str, Any]]]:
+                search_s = min(web_search.TIMEOUT_S, end - self._mono() - _WEB_ANSWER_RESERVE_S)
+                if search_s < 1.0:
+                    return "", []
+                event = news or (time_sensitive and bool(_EVENTISH.search(q)))
+                got = web_search.search(
+                    q, lang, timeout_s=search_s, domains=domains, full=True, news=event,
+                    max_age_days=(30 if news else 14) if event else (365 if time_sensitive else None), today=today,
+                )
+                if isinstance(got, dict):
+                    return str(got.get("answer") or ""), list(got.get("results") or [])
+                return "", list(got or [])  # a plain list (older providers / tests)
+
+            if end - self._mono() - _WEB_ANSWER_RESERVE_S < 1.0:
                 return done(r["web_none"], "no_budget")
-            results = web_search.search(
-                query or text, lang, timeout_s=search_s, domains=[d for d, _ in allowed] or None
-            )
+            answer, results = "", []
+            tried: list[str] = []
+            for n, q in enumerate(queries):
+                if n and end - self._mono() < _WEB_ANSWER_RESERVE_S + 2.5:
+                    break  # a second query only when the budget allows it
+                tried.append(q)
+                a, res = run(q)
+                answer = answer or a
+                known = {(x.get("source_domain"), x.get("title")) for x in results}
+                results += [x for x in res if (x.get("source_domain"), x.get("title")) not in known]
+            if qa.weak(results) and not news:
+                retry = qa.reworded(text, entity, tried)
+                if retry and end - self._mono() >= _WEB_ANSWER_RESERVE_S + 2.0:
+                    tried.append(retry)
+                    a, res = run(retry)
+                    answer = answer or a
+                    results += [x for x in res if x not in results]
+            results = results[:5]
             source = ""
             if news and results:
                 # name the source and answer from THAT result alone, so the spoken name is the true origin
                 for d, label in allowed:
                     hit = [x for x in results if web_search.host_allowed(x.get("source_domain", ""), [d])]
                     if hit:
-                        results, source = hit[:1], label
+                        results, source, answer = hit[:1], label, ""
                         break
                 else:
-                    results = None
+                    results = []
+            self.last_web = {"queries": tried, "answer": answer, "top": [(x.get("source_domain"), x.get("title")) for x in results[:3]]}
             if not results:
                 return done(r["web_none"], "search_failed" if not news else "news_no_approved_result")
+            for x in results:
+                x["source"] = qa.source_name(str(x.get("source_domain") or ""))
             self._llm_deadline = end  # the answer call may use what is left of the lookup budget
             if self.evon is None or not hasattr(self.evon, "web_answer") or self._llm_remaining() < _MIN_LLM_BUDGET_S:
                 return done(r["web_none"], "no_llm")
-            raw = self.evon.web_answer(text, lang, results, timeout=self._llm_remaining())  # type: ignore[attr-defined]
-            clean, _ = split_voice_tags(raw) if raw else (None, "")
-            reply, _ = sanitize_companion(clean, lang, user_text=text) if clean else (None, [])
-            if not reply:
-                return done(r["web_none"], "answer_failed")
+            facts = qa.computed_facts([str(x.get("snippet") or "") for x in results] + [answer], today)
+            kw = dict(answer=answer, today=qa.today_phrase(today), entity=entity, draft=str(llm.get("draft") or ""),
+                      facts=facts, name_source=not news)
+
+            def ask(strict: bool) -> str | None:
+                raw = self.evon.web_answer(text, lang, results, timeout=self._llm_remaining(), strict=strict, **kw)  # type: ignore[attr-defined]
+                clean, _ = split_voice_tags(raw) if raw else (None, "")
+                out, _ = sanitize_companion(clean, lang, user_text=text) if clean else (None, [])
+                return out
+
+            reply = ask(False)
+            ok, why = qa.answers_question(text, reply or "", lang)
+            if not ok and self._llm_remaining() >= _MIN_LLM_BUDGET_S + 0.7:
+                log.info("answer gate failed (%s); one stricter retry", why)
+                again = ask(True)
+                ok, why = qa.answers_question(text, again or "", lang)
+                reply = again if ok else reply
+            if not ok:
+                found = str(results[0].get("title") or results[0].get("snippet") or "")[:140]
+                trace_how = "search_unsure"
+                return done(r["web_unsure"].format(found=found), trace_how, "llm") if found else done(r["web_none"], "answer_failed")
             if source:
                 reply = r["web_source"].format(src=source, answer=reply)
-            return done(reply, "search_news" if news else "search", "llm")
+            else:
+                self._answer_cache[ckey] = (self._mono(), reply or "")
+            self._topic[uid] = (entity, tried[0] if tried else query, text, self._mono())
+            return done(reply or "", "search_news" if news else "search", "llm")
         except Exception as exc:  # noqa: BLE001 - a web lookup never breaks a turn
             log.info("web turn failed: %s", type(exc).__name__)
+            log.debug("web turn failure detail", exc_info=True)
             return done(r["web_none"], "error")
 
     def _specific_clarification(self, uid: int, text: str, lang: str) -> str:

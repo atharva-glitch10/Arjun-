@@ -538,11 +538,28 @@ MONTHS: dict[str, list[str]] = {
 LANGS = tuple(TR)  # bn gu kn ml pa ta te
 
 
+# "I am not sure; this is what I found" (the quality gate's honest fallback, 2026-11-09). {found} is the top result's title.
+UNSURE: dict[str, str] = {
+    "mr": "मला याची पक्की खात्री नाही. मला इतकं मिळालं: {found}",
+    "hi": "मुझे इसका पक्का पता नहीं है। मुझे यह मिला: {found}",
+    "en": "I am not sure about this. This is what I found: {found}",
+    "bn": "আমি এ বিষয়ে নিশ্চিত নই। আমি এটুকু পেয়েছি: {found}",
+    "gu": "મને આની પાક્કી ખાતરી નથી. મને આટલું મળ્યું: {found}",
+    "kn": "ನನಗೆ ಇದರ ಬಗ್ಗೆ ಖಚಿತವಿಲ್ಲ. ನನಗೆ ಸಿಕ್ಕಿದ್ದು ಇಷ್ಟು: {found}",
+    "ml": "എനിക്ക് ഇതിൽ ഉറപ്പില്ല. എനിക്ക് കിട്ടിയത് ഇതാണ്: {found}",
+    "pa": "ਮੈਨੂੰ ਇਸ ਬਾਰੇ ਪੱਕਾ ਨਹੀਂ ਪਤਾ। ਮੈਨੂੰ ਇੰਨਾ ਮਿਲਿਆ: {found}",
+    "ta": "இதில் எனக்கு உறுதியாகத் தெரியவில்லை. எனக்குக் கிடைத்தது இதுதான்: {found}",
+    "te": "దీని గురించి నాకు ఖచ్చితంగా తెలియదు. నాకు దొరికింది ఇది: {found}",
+}
+
+
 def extend(R: dict[str, dict[str, str]], time_tables: dict[str, dict]) -> None:
     """Add the new languages to the reply tables in place. Untranslated keys fall back to English, so a lookup never
     raises KeyError and never silently returns Marathi."""
+    for lang in ("mr", "hi", "en"):
+        R[lang]["web_unsure"] = UNSURE[lang]
     for lang in LANGS:
-        R[lang] = {**R["en"], **TR[lang]}
+        R[lang] = {**R["en"], **TR[lang], "web_unsure": UNSURE[lang]}
         t = dict(time_tables["en"])
         t.update(weekdays=WEEKDAYS[lang], months=MONTHS[lang])
         for k in ("time_now", "date_now", "greet_morning", "greet_afternoon", "greet_evening", "greet_night"):

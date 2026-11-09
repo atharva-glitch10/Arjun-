@@ -17,7 +17,7 @@ logger = logging.getLogger("arjun.responder")
 
 PREPARE_WAIT_S = 0.35  # /turn/prepare is asked for within 0.3 s; this is the hard stop
 HOLD_LINE = "थोडा वेळ लागतोय…"  # used when prepare gave no translated hold line
-SLOW_AFTER_S = 5.0  # hold line if the answer is still not here after this long
+SLOW_AFTER_S = 4.0  # hold line if the answer is still not here after this long (4 s since 2026-11-09; the web turn budget is 6 s)
 
 
 class Responder:

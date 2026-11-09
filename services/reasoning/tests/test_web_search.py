@@ -239,7 +239,7 @@ def tavily(monkeypatch):
 
     def fake(query, lang="mr", **kw):
         calls.append((query, lang))
-        return [{"title": "बातमी", "snippet": "संसदेत चर्चा सुरू आहे."}]
+        return [{"title": "बातमी", "snippet": "संसदेत चर्चा सुरू आहे. " + "सविस्तर बातमी येथे वाचा आणि पुढील माहिती पहा. " * 3}]
 
     monkeypatch.setattr(web_search, "search", fake)
     return calls
@@ -285,7 +285,7 @@ def test_missing_key_gives_the_fixed_line_without_a_request(core_http, uid, monk
 
 def test_llm_answer_failure_gives_the_fixed_line(core_http, uid, tavily):
     res = make(core_http, Llm(_understand(), answer="")).handle(uid, "आजचा सामना कोण जिंकला")
-    assert res.reply == "आत्ता माहिती मिळाली नाही."
+    assert res.reply.startswith("मला याची पक्की खात्री नाही") and res.trace["web"] == "search_unsure"  # honest, with what was found
 
 
 def test_weather_uses_open_meteo_and_the_elders_city(core_http, uid, tavily, monkeypatch):
@@ -349,7 +349,7 @@ def test_web_eval_routing_latency_and_samples(core_http, uid, monkeypatch):
         shown = llm.web_calls[0][0] if llm.web_calls else ""
         ok = {
             "weather": how == "weather" and not queries,
-            "search": how == "search" and len(queries) == 1 and res.reply == case["answer"] and res.filler,
+            "search": how == "search" and 1 <= len(queries) <= 2 and res.reply == case["answer"] and res.filler,
             "search_fail": how == "search_failed" and res.reply == "आत्ता माहिती मिळाली नाही.",
             "blocked": not queries and not res.filler and bool(res.reply),
             "safety": res.mode == "safety" and not queries and not llm.calls,
