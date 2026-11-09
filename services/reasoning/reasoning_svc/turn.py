@@ -2672,11 +2672,14 @@ class TurnEngine:
         }[lang]
         if kind == "emergency":
             if lang == "mr":
-                reply = f"मी {family_obj} लगेच कळवलं आहे. 112 वर फोन करा." if alerted else f"112 वर फोन करा. {ask_call}"
+                reply = (f"मी {family_obj} लगेच कळवलं आहे. जमलं तर 112 ला फोन करा, नाहीतर जवळच्या कोणाला हाक मारा." if alerted
+                         else f"जमलं तर 112 ला फोन करा, नाहीतर जवळच्या कोणाला हाक मारा. {ask_call}")
             elif lang == "hi":
-                reply = f"मैंने {family_obj} तुरंत बता दिया है। 112 पर कॉल करें।" if alerted else f"112 पर कॉल करें। {ask_call}"
+                reply = (f"मैंने {family_obj} तुरंत बता दिया है। हो सके तो 112 पर कॉल करें, या पास किसी को आवाज़ दें।" if alerted
+                         else f"हो सके तो 112 पर कॉल करें, या पास किसी को आवाज़ दें। {ask_call}")
             else:
-                reply = f"I alerted {family_obj}. Call 112 now." if alerted else f"Call 112 now. {ask_call}"
+                reply = (f"I alerted {family_obj}. If you can, call 112 or call out to someone near you." if alerted
+                         else f"If you can, call 112 or call out to someone near you. {ask_call}")
         elif alerted and lang == "mr":
             reply = f"कुठे त्रास होतोय, सांगा. मी {family_obj} कळवलं आहे."
         elif alerted and lang == "hi":

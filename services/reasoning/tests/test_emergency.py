@@ -58,7 +58,7 @@ def test_emergency_reply_never_diagnoses(engine, uid):
 
 def test_detected_english_emergency_keeps_english_safety_wording(engine, uid):
     result = engine.handle(uid, "chest pain", "en-IN")
-    assert result.language == "en" and "Call 112" in result.reply
+    assert result.language == "en" and "call 112" in result.reply
 
 
 def _down_engine():
