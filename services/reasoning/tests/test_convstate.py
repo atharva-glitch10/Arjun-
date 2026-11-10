@@ -144,7 +144,7 @@ def test_the_llm_prompt_carries_the_state_and_the_pronoun_reference(core_http, u
     eng.handle(uid, "माझा नातू आर्यन उद्या येणार आहे")
     eng.handle(uid, "त्याला काय आवडतं")
     system = prompt_of(llm)
-    assert "CONVERSATION STATE" in system and "current topic" in system and "आर्यन" in system and '"त्याला" most likely means' in system
+    assert "CONVERSATION STATE (what the talk" in system and "current topic" in system and "आर्यन" in system and '"त्याला" most likely means' in system
 
 
 def test_the_state_follows_a_change_of_subject_in_the_real_engine(core_http, uid):
@@ -171,7 +171,7 @@ def test_the_switch_restores_the_old_assembly(core_http, uid, monkeypatch):
     eng = make(core_http, llm)
     eng.handle(uid, "माझा नातू आर्यन उद्या येणार आहे")
     eng.handle(uid, "त्याला काय आवडतं")
-    assert "CONVERSATION STATE" not in prompt_of(llm)
+    assert "CONVERSATION STATE (what the talk" not in prompt_of(llm)
 
 
 def test_convstate_dataclass_defaults():

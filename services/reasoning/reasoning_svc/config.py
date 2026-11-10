@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 EXTRACTION_TEMPERATURE = 0.0  # care mode / intent extraction / distress: always 0
 # 0.5 since the LLM-first change (2026-11-04): one call reads the whole sentence and writes the reply.
 # 0.3 made the companion flat and repetitive; 0.6 was too loose. UNVERIFIED with a real voice.
-COMPANION_TEMPERATURE = 0.5
+COMPANION_TEMPERATURE = 0.4  # 2026-11-10: <= 0.4 so a reply stays on what she said (was 0.5; companion eval was run at 0.5, re-run pending)
 COMPANION_TOP_P = 0.95
 # USER CONTEXT (name, family, today's medicines, check-ins) is cached per user for this long.
 USER_CONTEXT_TTL_S = float(os.environ.get("USER_CONTEXT_TTL_S", "300"))
@@ -138,4 +138,6 @@ FACTS_IN_CONTEXT = int(os.environ.get("ARJUN_FACTS_IN_CONTEXT", "10"))
 # Conversation state (convstate.py): the prompt is built from it in a fixed order under a token cap; ARJUN_CONTEXT_STATE=0 restores the
 # old assembly (all history, facts appended whole).
 CONTEXT_STATE = os.environ.get("ARJUN_CONTEXT_STATE", "1").strip() != "0"
+# Relevance guard (turn.py `_relevance_guard`): a companion reply must be ABOUT what she just said. ARJUN_RELEVANCE_GUARD=0 turns it off.
+RELEVANCE_GUARD = os.environ.get("ARJUN_RELEVANCE_GUARD", "1").strip() != "0"
 PROMPT_TOKEN_CAP = int(os.environ.get("ARJUN_PROMPT_TOKEN_CAP", "2600"))  # the variable part: history + state + context + facts

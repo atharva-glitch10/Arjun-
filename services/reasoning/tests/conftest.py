@@ -22,6 +22,9 @@ os.environ.pop("JOIN_SECRET", None)
 # behind ARJUN_ASK_BEFORE_ACTING=1. The no-question default is tested with ask_first=False explicitly
 # (test_no_questions.py and the other new suites).
 os.environ.setdefault("ARJUN_ASK_BEFORE_ACTING", "1")
+# The relevance guard (2026-11-10) adds a yes/no LLM call on low-overlap chat replies; the older suites count LLM calls exactly, so they run
+# with it off. test_relevance_guard.py turns it on explicitly.
+os.environ.setdefault("ARJUN_RELEVANCE_GUARD", "0")
 
 # Integration tests run reasoning against the real core-api app (in-memory SQLite).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core-api"))

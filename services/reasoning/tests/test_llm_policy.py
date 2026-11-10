@@ -9,6 +9,7 @@ from datetime import datetime
 
 import httpx
 import pytest
+from reasoning_svc import config
 from reasoning_svc import replies as rp
 from reasoning_svc.core_client import CoreClient
 from reasoning_svc.evon import EvonClient, load_intent_schema, sanitize_companion
@@ -286,7 +287,7 @@ def test_only_the_last_four_exchanges_are_sent(core_http, uid):
     assert [m["role"] for m in last] == ["system"] + ["user", "assistant"] * 4 + ["user"]
     assert last[1]["content"].endswith(" 2")  # exchanges 0-2 were dropped
     assert llm.last["max_tokens"] == 700  # the understanding JSON gets room for a full object (was 250: cut off, invalid_json)
-    assert llm.last["temperature"] == 0.5
+    assert llm.last["temperature"] == config.COMPANION_TEMPERATURE
 
 
 def test_finish_reason_length_cuts_the_reply_to_its_last_full_sentence(core_http, uid):

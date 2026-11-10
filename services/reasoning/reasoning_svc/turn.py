@@ -22,7 +22,7 @@ from urllib.parse import quote
 
 import httpx
 
-from . import config, langid, langswitch, qa, replies_langs
+from . import config, langid, langswitch, qa, relevance, replies_langs
 from . import replies as rp
 from .app_replies import A
 from .appcmd import (
@@ -416,6 +416,8 @@ class TurnEngine:
         self.facts = FactBook(core, mono)
         self.convstate = StateTracker(config.SESSION_IDLE_MIN)  # topic, entities, references: rules only, in memory only
         self.last_prompt_info: dict[int, dict[str, int]] = {}
+        self.last_relevance: dict[int, dict[str, Any]] = {}  # per user: the last relevance verdict (score, retried, ...), never words
+        self.relevance = {"checked": 0, "cheap_pass": 0, "llm_checks": 0, "llm_no": 0, "retried": 0, "clarified": 0}
         self._last_fact: dict[int, tuple[int, str, float]] = {}  # user -> (fact id, text, mono) she just saved
         self._delivered: dict[int, tuple[int, str, str]] = {}  # delivery id -> (user, spoken text, kind)
         self._local = threading.local()  # nested handle() calls (a check-in "yes" opens media) record only once
@@ -2571,7 +2573,7 @@ class TurnEngine:
                 else:
                     self._last_done[uid] = before
             reply, speech, from_llm = self._chat_reply(
-                uid, text, lang, now, llm_reply=(llm or {}).get("reply") or ""
+                uid, text, lang, now, llm_reply=(llm or {}).get("reply") or "", self_check=(llm or {}).get("self_check"),
             )
             res = out(reply, "companion")
             res.speech = speech
@@ -2792,7 +2794,7 @@ class TurnEngine:
 
     def _chat_reply(
         self, uid: int, text: str, lang: str, now: datetime | None = None, llm_reply: str = "",
-        opener_followup: str = "",
+        opener_followup: str = "", self_check: bool | None = None,
     ) -> tuple[str, str, bool]:
         """(text for the screen, text for the voice, written by the LLM?). The voice text may carry Timbre voice
         tags the LLM chose. `llm_reply` is the reply from the unified call; only chat/unclear turns pass it."""
@@ -2848,6 +2850,10 @@ class TurnEngine:
             guarded = self._guard_reply_language(uid, text, lang, reply, now, view, user, context)
             if guarded != reply:
                 reply, speech = guarded, ""  # the voice tags sat on the old words
+        if reply is not None and config.RELEVANCE_GUARD and not opener_followup:
+            reply, speech = self._relevance_guard(
+                uid, text, lang, reply, speech, now, view, user, context, history, memory_block, self_check,
+            )
         from_llm = reply is not None
         if reply is None:
             reply = self._specific_clarification(uid, text, lang)
@@ -2863,6 +2869,75 @@ class TurnEngine:
             if shaped != reply:
                 reply, speech = shaped, ""  # the voice tags sat on the old words: say the shaped reply plainly
         return reply, speech, from_llm
+
+    def _relevance_guard(
+        self, uid: int, text: str, lang: str, reply: str, speech: str, now: datetime, view: Any, user: dict[str, Any],
+        context: str, history: list[tuple[str, str]], memory_block: str, self_check: bool | None,
+    ) -> tuple[str, str]:
+        """Before anything is spoken: is the reply ABOUT what she just said (and the running talk)? Cheap word overlap first; a small
+        LLM yes/no only when the overlap is low. Off-topic or generic: ONE retry ("answer exactly: her sentence"); still off: a short
+        question that quotes her own words (never a generic line). Logs the score and the retry, never the words."""
+        st = self.convstate.get(uid)
+        pend = self.memory.pending(uid, now)
+        anchors = [*st.people[-3:], *st.places[-2:]]
+        state = self.convstate.block(uid, text)
+        info: dict[str, Any] = {"score": 0.0, "retried": 0, "llm_check": None, "clarified": False}
+        self.relevance["checked"] += 1
+
+        def verdict(candidate: str) -> tuple[bool, float]:
+            """(on topic?, score). Generic filler is never on topic; enough overlap is; otherwise ask the model (None = cannot tell = ok)."""
+            sc = relevance.score(text, candidate, topic=st.topic, entities=anchors, pending=pend[0] if pend else "")
+            if relevance.is_generic(candidate):
+                return False, sc
+            if sc >= relevance.PASS_SCORE:
+                return True, sc
+            if self.evon is None or self._llm_remaining() < _MIN_LLM_BUDGET_S or not hasattr(self.evon, "relevance_check"):
+                return True, sc  # cannot verify: never block a reply on a guess
+            self.relevance["llm_checks"] += 1
+            ok = self.evon.relevance_check(text, candidate, state, timeout=min(2.0, self._llm_remaining()))  # type: ignore[attr-defined]
+            info["llm_check"] = ok
+            if ok is False:
+                self.relevance["llm_no"] += 1
+            return ok is not False, sc
+
+        if self_check is False and not relevance.is_generic(reply):
+            good, sc = False, relevance.score(text, reply, topic=st.topic, entities=anchors, pending=pend[0] if pend else "")
+            if sc >= relevance.PASS_SCORE:
+                good = True  # the model doubted itself but the reply plainly picks up her words
+        else:
+            good, sc = verdict(reply)
+        info["score"] = sc
+        if good:
+            self.relevance["cheap_pass"] += info["llm_check"] is None
+            self.last_relevance[uid] = info
+            log.info(json.dumps({"relevance_score": sc, "retried": 0, "llm_check": info["llm_check"]}))
+            return reply, speech
+        # ---- off topic or generic: one retry, then her own words back as a question
+        if self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
+            info["retried"] = 1
+            self.relevance["retried"] += 1
+            raw = self.evon.companion_reply(
+                text, lang, now, history=history, interests=user.get("interests") or [], timeout=self._llm_remaining(),
+                context=context, memory=memory_block, focus=text,
+            )
+            if raw:
+                clean, voiced = split_voice_tags(raw)
+                if clean is not None:
+                    clean = strip_filler(clean, user_text=text)
+                second, _ = sanitize_companion(clean, lang, user_text=text)
+                if second is not None:
+                    second = self._guard_reply_language(uid, text, lang, second, now, view, user, context)
+                    good2, sc2 = verdict(second)
+                    info["score"] = sc2
+                    if good2:
+                        self.last_relevance[uid] = info
+                        log.info(json.dumps({"relevance_score": sc2, "retried": 1, "llm_check": info["llm_check"]}))
+                        return second, ""
+        info["clarified"] = True
+        self.relevance["clarified"] += 1
+        self.last_relevance[uid] = info
+        log.info(json.dumps({"relevance_score": info["score"], "retried": info["retried"], "clarified": True}))
+        return relevance.clarify(text, lang), ""
 
     # ---- live web facts ---------------------------------------------------------------------------------
     def prepare(self, text: str, language_code: str | None = None, reply_language: str | None = None) -> dict[str, Any]:

@@ -110,7 +110,7 @@ def test_the_screen_and_the_voice_lose_the_same_filler(core_http, uid):
     res = eng.handle(uid, STORY)
     assert res.reply == "चिकन छान झालं! कोणी बनवलं?"
     assert res.speech == "<laugh> चिकन छान झालं! कोणी बनवलं?"
-    assert llm.calls[-1]["max_tokens"] == 700 and llm.calls[-1]["temperature"] == config.COMPANION_TEMPERATURE == 0.5
+    assert llm.calls[-1]["max_tokens"] == 700 and llm.calls[-1]["temperature"] == config.COMPANION_TEMPERATURE <= 0.4
 
 
 def test_a_reply_that_is_only_filler_becomes_the_fixed_line(core_http, uid):

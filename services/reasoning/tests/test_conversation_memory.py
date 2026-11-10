@@ -35,7 +35,8 @@ def make(core_http, **kw):
 
 def sent(llm):
     """(role, text) of the last companion request, without the system prompt and the new user turn."""
-    msgs = llm.bodies[-1]["messages"]
+    # (the relevance guard's yes/no call, "You judge ONE spoken reply", is not a conversation turn)
+    msgs = [b for b in llm.bodies if not b["messages"][0]["content"].startswith("You judge ONE")][-1]["messages"]
     return [(m["role"], m["content"]) for m in msgs[1:-1]]
 
 

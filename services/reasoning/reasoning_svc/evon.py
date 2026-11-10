@@ -296,6 +296,11 @@ def _conversation_rules(language: str) -> str:
         f"Never invent facts about people or places she mentions. Do not end every reply with a generic "
         f"how-are-you-feeling question, and never answer an actionable request by saying you cannot do it. "
         f"Answer her latest sentence first; never change the subject or contradict something she said earlier today. "
+        f"STAY ON WHAT SHE SAID: answer ONLY what she just said or asked, given the earlier turns and CONVERSATION STATE; reuse her own words and "
+        f"the people or things she named; never start a new topic, never give a list of tips and never ask an unrelated question. If what she said "
+        f"is ambiguous, ask ONE short question that quotes her own words. If she changes the subject, follow her. A short answer (yes, no, "
+        f"'तेच', 'आणखी') answers your last question or offer. Keep a chat reply to at most 2 short spoken sentences (a recipe or how-to "
+        f"answer as above). "
         f"If uncertain, make one specific clarification naming your best guess, and do not repeat that question within 10 minutes. "
         f"SOUND LIKE A PERSON, NOT A MACHINE: react to her feeling first ('अरे वा!', 'अरेरे', 'हो ना', 'खरंच?'), "
         f"then say one thing about what she said. Do not repeat her sentence back to her, do not start with her own "
@@ -362,9 +367,10 @@ def _system_prompt(
             '"done|skipped"|null, "bp": {"systolic": integer, "diastolic": integer}|null}, '
             '"reply": string, "confidence": number 0-1, "answer_mode": "know"|"search"|"tool"|"refuse_safe"|null, '
             '"entity": string|null, "query_en": string|null, "queries": [string]|null, "time_sensitive": true|false, '
-            '"know_confidence": number 0-1}\n'
+            '"know_confidence": number 0-1, "topic": string|null, "relevance_self_check": true|false}\n'
             "KEEP THE JSON COMPACT: leave out every slot and field whose value is null or false, and write `reply` only "
-            "for chat. "
+            "for chat. For chat also give `topic` (2-4 words: what the talk is about now) and `relevance_self_check` (true only if "
+            "your `reply` directly answers HER LAST SENTENCE; false if you are unsure or it wanders). "
             "ANSWER ROUTER, for intent=chat QUESTIONS (null for ordinary talk): answer_mode=know = a stable fact, "
             "explanation, definition, how-to, maths, language, story, religion/culture or general advice: put the full "
             "short spoken answer in `reply`; know_confidence = how sure you are (below 0.9 it will be searched). "
@@ -935,6 +941,8 @@ class EvonClient:
             "legacy_intent": intent_raw if legacy else "",
             "legacy_reply": False,
             "finish_reason": meta.get("finish_reason"),
+            "topic": str(data.get("topic") or "")[:60],
+            "self_check": data.get("relevance_self_check") if isinstance(data.get("relevance_self_check"), bool) else None,
             **_route(data, intent, reply),
         }
 
@@ -1036,6 +1044,7 @@ class EvonClient:
         correction: str = "",
         context: str = "",
         memory: str = "",
+        focus: str = "",
     ) -> str | None:
         """`history` is this conversation's earlier (role, text) turns, oldest first. `context` (who she is, what she
         told Arjun) and `memory` (the session summary, the open question) go in exactly as for understand_turn."""
@@ -1047,6 +1056,11 @@ class EvonClient:
                 "Your previous reply was rejected by the safety check (" + correction + "). Write a different "
                 "reply that keeps the same meaning, is 1-2 short sentences, gives a practical next step, and "
                 "breaks none of the rules above. Never mention the check. "
+            )
+        if focus:  # the relevance guard's one retry: the previous reply did not answer her sentence
+            system += (
+                "Your previous reply did not answer what she said. Answer exactly this sentence of hers, directly, in 1-2 short "
+                "sentences, using her own words and the people or things in the conversation; no new topic, no list: " + focus + " "
             )
         messages = [{"role": "system", "content": system}]
         messages += [{"role": role, "content": content} for role, content in (history or [])]
@@ -1067,6 +1081,29 @@ class EvonClient:
         if meta.get("finish_reason") == "length":
             out = trim_to_sentence(out)
         return out.strip() or None
+
+    def relevance_check(self, said: str, reply: str, state: str = "", timeout: float | None = None) -> bool | None:
+        """A tiny yes/no: does `reply` directly respond to what she said? None = could not tell (provider down / odd answer), which the
+        caller treats as "do not block"."""
+        system = (
+            "You judge ONE spoken reply of a voice companion. Answer with exactly one word: yes or no. yes = the REPLY directly "
+            "responds to what SHE SAID (given the context). no = it is about something else, starts a new topic, ignores her "
+            "sentence, or is only a generic filler. Her words are speech-to-text and may be noisy."
+        )
+        user = (f"CONTEXT:\n{state[:600]}\n" if state else "") + f"SHE SAID: {said[:300]}\nREPLY: {reply[:400]}"
+        try:
+            out = self._chat(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}], 0.0,
+                purpose="relevance", timeout=timeout, max_tokens=8,
+            )
+        except (httpx.HTTPError, ValueError, KeyError):  # LlmBusy is an httpx.TransportError
+            return None
+        word = (out or "").strip().lower().lstrip("\"'`*").split()[:1]
+        if word and word[0].startswith("yes"):
+            return True
+        if word and word[0].startswith("no"):
+            return False
+        return None
 
     def simplify_reply(self, reply: str, language: str, timeout: float | None = None) -> str | None:
         """Simplify only Arjun's prior reply. The caller validates all numeric/time tokens and falls back exactly."""
