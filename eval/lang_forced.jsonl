@@ -1,0 +1,24 @@
+{"scenario":"f1","profile":"mr","ui":"hi","text":"आज तुम्ही काय केलं","expect":"hi"}
+{"scenario":"f1","profile":"mr","ui":"hi","text":"मला थोडं बरं वाटत नाहीये आज, खूप थकवा आहे","expect":"hi"}
+{"scenario":"f1","profile":"mr","ui":"hi","text":"माझी नात उद्या येणार आहे","expect":"hi"}
+{"scenario":"f1","profile":"mr","ui":"hi","text":"तुला गाणं आवडतं का","expect":"hi"}
+{"scenario":"f2","profile":"hi","ui":"mr","text":"आप आज क्या कर रहे हैं","expect":"mr"}
+{"scenario":"f2","profile":"hi","ui":"mr","text":"मेरी पोती कल आने वाली है","expect":"mr"}
+{"scenario":"f2","profile":"hi","ui":"mr","text":"क्या आपको गाने पसंद हैं","expect":"mr"}
+{"scenario":"f2","profile":"hi","ui":"mr","text":"मुझे आज बहुत अच्छा लग रहा है","expect":"mr"}
+{"scenario":"f3","profile":"mr","ui":"en","text":"आज तुम्ही काय केलं","expect":"en"}
+{"scenario":"f3","profile":"mr","ui":"en","text":"माझा मुलगा परदेशात असतो","expect":"en"}
+{"scenario":"f3","profile":"mr","ui":"en","text":"तुम्हाला पाऊस आवडतो का","expect":"en"}
+{"scenario":"f3","profile":"mr","ui":"en","text":"what is the capital of France","expect":"en"}
+{"scenario":"f4","profile":"en","ui":"mr","text":"How are you today","expect":"mr"}
+{"scenario":"f4","profile":"en","ui":"mr","text":"I had tea in the garden this morning","expect":"mr"}
+{"scenario":"f4","profile":"en","ui":"mr","text":"Tell me a story about a king","expect":"mr"}
+{"scenario":"f5","profile":"mr","ui":"ta","text":"आज तुम्ही काय केलं","expect":"ta"}
+{"scenario":"f5","profile":"mr","ui":"ta","text":"मेरी पोती आज आई थी","expect":"ta"}
+{"scenario":"f5","profile":"mr","ui":"ta","text":"How are you today","expect":"ta"}
+{"scenario":"f6","profile":"hi","ui":"te","text":"आप कैसे हैं आज","expect":"te"}
+{"scenario":"f6","profile":"hi","ui":"te","text":"मुझे भजन सुनना अच्छा लगता है","expect":"te"}
+{"scenario":"f7","profile":"mr","ui":"bn","text":"आज तुम्ही काय केलं","expect":"bn"}
+{"scenario":"f7","profile":"mr","ui":"bn","text":"माझी नात खूप गोड आहे","expect":"bn"}
+{"scenario":"f8","profile":"mr","ui":"hi","text":"मला doctor कडे जायचं आहे","expect":"hi"}
+{"scenario":"f8","profile":"mr","ui":"hi","text":"आज WhatsApp वर फोटो आला आहे","expect":"hi"}

@@ -122,3 +122,9 @@ A: dict[str, dict[str, str]] = {
         "volume_down": "Quieter.",
     },
 }
+
+# bn gu kn ml pa ta te: the app-command lines fall back to English (a KeyError here crashed every app / media turn for those languages)
+from .replies_langs import LANGS as _NEW_LANGS  # noqa: E402
+
+for _lang in _NEW_LANGS:
+    A.setdefault(_lang, A["en"])

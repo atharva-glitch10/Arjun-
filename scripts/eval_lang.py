@@ -3,7 +3,7 @@ For each turn: did the reply TEXT come out in the language that was expected, an
 voice-agent turns into a Timbre locale) right? Scoring uses shared/langid.py for both checkouts, so before / after compare fairly.
 No key is printed.
 
-    python scripts/eval_lang.py
+    python scripts/eval_lang.py [eval/lang_forced.jsonl]
 """
 
 from __future__ import annotations
@@ -60,7 +60,8 @@ def main() -> int:
 
     app.dependency_overrides[get_db] = _db
     app.dependency_overrides[get_now] = lambda: datetime.now()
-    items = [json.loads(x) for x in (ROOT / "eval" / "lang_eval.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "eval" / "lang_eval.jsonl"  # lang_forced.jsonl: the frontend language is sent as reply_language
+    items = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
     s = config.llm_settings()
     print(f"LLM {s.provider}/{s.model} | code: {ROOT}")
     rows = []
@@ -79,7 +80,7 @@ def main() -> int:
                 if not first:
                     time.sleep(3.0)
                 first = False
-                res = eng.handle(uid, it["text"])
+                res = eng.handle(uid, it["text"], reply_language=it.get("ui"))
                 text_lang = scorer.classify(res.reply, default=it["expect"]).lang
                 text_ok = scorer.matches(res.reply, it["expect"]) and text_lang in (it["expect"], "")
                 tts_ok = LOCALE.get(res.language or "") == LOCALE[it["expect"]]

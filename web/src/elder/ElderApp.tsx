@@ -136,7 +136,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   } | null>(null);
   const lastAutoStart = useRef<number | null>(null);
 
-  const voice = useArjunVoice(userId);
+  const voice = useArjunVoice(userId, displayLanguage); // the screen's language goes to the backend with the token and every change
   const uiLang = uiLanguage(voice.activeLang, displayLanguage); // a spoken switch changes the labels too, not only the reply
   setElderLang(uiLang);
   setReplyLang(voice.replyLang || uiLang);

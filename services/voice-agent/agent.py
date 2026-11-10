@@ -94,7 +94,7 @@ from soundevents import (
 )
 from ttsgate import TtsGate
 from turnlog import TurnLog
-from usermeta import user_id_from_metadata
+from usermeta import language_from_metadata, user_id_from_metadata
 from voice import (
     slower_text,
     strip_tags,
@@ -108,6 +108,7 @@ from voice import (
 
 logger = logging.getLogger("arjun.agent")
 
+LANG_CODES = frozenset({"mr", "hi", "en", "bn", "gu", "kn", "ml", "pa", "ta", "te", "or"})  # what reasoning accepts as reply_language
 REQUIRED_ENV = ("GNANI_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
 # TESTING switch (voiceprovider.py): with ARJUN_VOICE_PROVIDER=sarvam the Gnani key is not needed, SARVAM_API_KEY is.
 SARVAM_REQUIRED_ENV = ("SARVAM_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
@@ -426,6 +427,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     applog.setup_file_log() # the CLI may have reset logging after import; make sure the file handler is on
     await ctx.connect()
     from_metadata = user_id_from_metadata(ctx.job.metadata, 0)
+    # The language the elder SCREEN is set to (the frontend owns it): from the token's dispatch metadata, then kept current by the
+    # page's "arjun.ui_lang" attribute. Every turn sends it to reasoning as `reply_language`, which answers in it.
+    ui_language: list[str | None] = [language_from_metadata(ctx.job.metadata)]
     user_id = from_metadata or USER_ID
     use_sarvam = voiceprovider.provider() == "sarvam"  # TESTING switch; the default is the Gnani path below
     if use_sarvam:
@@ -506,10 +510,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         return max(matching)[1] if matching else transcript_languages.get("__current__", STT_LANGUAGE)
 
     async def ask(text: str):  # type: ignore[no-untyped-def]
-        return await asyncio.to_thread(reply_or_fallback, user_id, text, detect_for(text))
+        return await asyncio.to_thread(reply_or_fallback, user_id, text, detect_for(text), None, ui_language[0])
 
     async def prepare(text: str):  # type: ignore[no-untyped-def]
-        return await asyncio.to_thread(prepare_reasoning, user_id, text, detect_for(text))
+        return await asyncio.to_thread(prepare_reasoning, user_id, text, detect_for(text), None, ui_language[0])
 
     async def say_reply(reply) -> bool:  # type: ignore[no-untyped-def]
         """Synthesize this reply in Prisma's detected language using the verified session model/voice."""
@@ -665,6 +669,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     @ctx.room.on("participant_attributes_changed")
     def _on_page_attributes(changed, participant) -> None:  # type: ignore[no-untyped-def]
+        if "arjun.ui_lang" in changed:  # the page's language changed (a spoken switch, or the family changed it)
+            value = str(changed.get("arjun.ui_lang") or "")
+            ui_language[0] = value if value in LANG_CODES else ui_language[0]
+            logger.info("screen language is now %s", ui_language[0])
         if ATTR_VIDEO_CALL in changed:
             call_active[0] = changed.get(ATTR_VIDEO_CALL) in ("ringing", "answered")
         if ATTR_MEDIA in changed or "arjun.media.heartbeat" in changed:

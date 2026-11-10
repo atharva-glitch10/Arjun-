@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from livekit.api import AccessToken, RoomAgentDispatch, RoomConfiguration, VideoGrants
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from . import models as m
@@ -47,6 +47,9 @@ def reset_rooms_for_tests() -> None:
 
 class TokenIn(BaseModel):
     user_id: int
+    # the language the elder screen is set to: it travels to the voice agent in the dispatch metadata, and the agent sends it
+    # to reasoning with every turn (the frontend owns the language, 2026-11-10)
+    language: str | None = Field(default=None, pattern=r"^(mr|hi|en|bn|gu|kn|ml|pa|ta|te|or)$")
 
 
 class TokenOut(BaseModel):
@@ -92,7 +95,7 @@ def livekit_token(
             )
         )
         .with_room_config(RoomConfiguration(
-                agents=[RoomAgentDispatch(agent_name=agent_name, metadata=json.dumps({"user_id": user.id}))]
+                agents=[RoomAgentDispatch(agent_name=agent_name, metadata=json.dumps({"user_id": user.id, **({"language": body.language} if body.language else {})}))]
             ))
         .to_jwt()
     )

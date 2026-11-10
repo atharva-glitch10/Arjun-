@@ -186,6 +186,7 @@ _ACTION_CLAIM = re.compile(
     r"आठवण\s*(?:ठेवतो|ठेवली|नोंदवली|नोंदवतो)|याद\s*(?:रखता हूँ|रख ली|दिला दूँगा)|\bi(?:'ll| will)\s+remind you\b|reminder\s+(?:is\s+)?(?:set|saved)",
     re.IGNORECASE,
 )
+_REPLY_LANGS = frozenset({"mr", "hi", "en", "bn", "gu", "kn", "ml", "pa", "ta", "te", "or"})
 _LANG_SESSION_S = 4 * 3600  # a spoken language switch stays in force this long
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
 _UNDERSTAND_TIMEOUT_S = 3.0
@@ -446,13 +447,13 @@ class TurnEngine:
         self._media_ask.pop(user_id, None)
         self._media_choice.pop(user_id, None)
 
-    def handle(self, user_id: int, text: str, language_code: str | None = None) -> TurnResult:
+    def handle(self, user_id: int, text: str, language_code: str | None = None, reply_language: str | None = None) -> TurnResult:
         """One turn. Whatever path answers (safety, rules, a tool, the LLM), the exchange is recorded ONCE in the session
         memory afterwards, so no spoken line is ever missing from the history the LLM sees."""
         depth = getattr(self._local, "depth", 0)
         self._local.depth = depth + 1
         try:
-            res = self._handle(user_id, text, language_code)
+            res = self._handle(user_id, text, language_code, reply_language)
         finally:
             self._local.depth = depth
         if depth == 0:
@@ -564,7 +565,8 @@ class TurnEngine:
             del recent[:-3]
         return res
 
-    def _handle(self, user_id: int, text: str, language_code: str | None = None) -> TurnResult:
+    def _handle(self, user_id: int, text: str, language_code: str | None = None, reply_language: str | None = None) -> TurnResult:
+        forced = reply_language if reply_language in _REPLY_LANGS else None  # the language the frontend is set to: authoritative
         t0 = time.perf_counter()
         self._llm_deadline = self._mono() + self._llm_timeout_s
         self._last_turn[user_id] = self._mono()
@@ -604,7 +606,7 @@ class TurnEngine:
                 default_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
                 default_lang = "mr"
-            lang = _reply_language(language_code, text, default_lang)
+            lang = forced or _reply_language(language_code, text, default_lang)
             if emergency:
                 return self._safety(user_id, lang, trace, t0, kind="emergency")
             return self._distress(user_id, lang, trace, t0)
@@ -617,11 +619,11 @@ class TurnEngine:
             lang = detect_language(text, "mr")
             r = rp.R[rp.lang_or_default(lang)]
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
-        lang = _reply_language(language_code, text, user["language"])
+        lang = forced or _reply_language(language_code, text, user["language"])
         switched = self._language_turn(user_id, text, trace, t0)  # "हिंदीत बोला": the reply language changes NOW
         if switched is not None:
             return switched
-        lang = self._active_lang(user_id) or lang  # a switch in force beats the language of this utterance
+        lang = forced or self._active_lang(user_id) or lang  # the frontend's language, else a spoken switch, else what she spoke
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
         style = user.get("speech_style") or {"rate": "normal", "volume": "normal", "simple": False}
@@ -2840,11 +2842,11 @@ class TurnEngine:
         return reply, speech, from_llm
 
     # ---- live web facts ---------------------------------------------------------------------------------
-    def prepare(self, text: str, language_code: str | None = None) -> dict[str, Any]:
+    def prepare(self, text: str, language_code: str | None = None, reply_language: str | None = None) -> dict[str, Any]:
         """FAST pre-check for the voice agent (no core-api, no LLM, no search): will this turn probably need a live
         web lookup? Rules only. A safety / medicine / health sentence is never web. A wrong "yes" only costs one
         spoken "बघतो…"; the real decision is still the LLM's in /turn."""
-        lang = _detected_reply_language(language_code) or detect_language(text, "mr")
+        lang = reply_language if reply_language in _REPLY_LANGS else (_detected_reply_language(language_code) or detect_language(text, "mr"))
         r = rp.R[rp.lang_or_default(lang)]
         web = (
             bool(_WEB_LIKELY.search(text))

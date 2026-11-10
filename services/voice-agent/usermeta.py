@@ -7,6 +7,17 @@ ARJUN_USER_ID stays as the fallback for rooms dispatched without metadata (Conso
 
 import json
 
+_LANGS = frozenset({"mr", "hi", "en", "bn", "gu", "kn", "ml", "pa", "ta", "te", "or"})
+
+
+def language_from_metadata(metadata: str | None) -> str | None:
+    """The language the elder screen was set to when the token was issued ("hi"), or None."""
+    try:
+        value = json.loads(metadata or "").get("language")
+    except (ValueError, AttributeError, TypeError):
+        return None
+    return value if isinstance(value, str) and value in _LANGS else None
+
 
 def user_id_from_metadata(metadata: str | None, default: int) -> int:
     try:

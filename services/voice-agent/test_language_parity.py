@@ -82,3 +82,45 @@ def test_recognition_hints_cover_mr_hi_en_so_a_switch_between_them_needs_no_rest
     assert prisma_language_hints(["hi"]) == ["hi-IN", "en-IN"]
     assert prisma_language_hints(["en"]) == ["en-IN", "hi-IN"]
     assert prisma_language_hints(["ta"]) == ["ta-IN"]  # another language is pinned: a permanent switch takes effect next session
+
+
+# ---- the frontend's language reaches reasoning (body parameter) ---------------------------------------------------------
+def test_the_agent_reads_the_screen_language_from_the_dispatch_metadata():
+    from usermeta import language_from_metadata
+
+    assert language_from_metadata('{"user_id": 3, "language": "hi"}') == "hi"
+    assert language_from_metadata('{"user_id": 3}') is None
+    for bad in ('{"language": "xx"}', '{"language": 5}', "not json", "", None, '{"language": ["hi"]}'):
+        assert language_from_metadata(bad) is None, bad
+
+
+def test_every_turn_and_prepare_carries_reply_language_in_the_body():
+    from bridge import prepare_reasoning
+
+    seen = []
+
+    def handler(request):
+        import json as _json
+
+        seen.append((request.url.path, _json.loads(request.content)))
+        return httpx.Response(200, json={"reply": "ठीक है।", "mode": "care", "awaiting_confirmation": False, "language": "hi",
+                                         "needs_web": False, "filler": "", "hold": ""})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    ask_reasoning(1, "आज कैसा है", http=http, language="mr-IN", reply_language="hi")
+    prepare_reasoning(1, "आज पाऊस पडेल का", "mr-IN", http, "hi")
+    ask_reasoning(1, "x", http=http)  # an older caller: no parameter, none sent
+    assert seen[0] == ("/turn", {"user_id": 1, "text": "आज कैसा है", "language_code": "mr-IN", "reply_language": "hi"})
+    assert seen[1][1]["reply_language"] == "hi" and seen[1][0] == "/turn/prepare"
+    assert "reply_language" not in seen[2][1]
+
+
+def test_the_spoken_fallback_line_is_in_the_screen_language_when_reasoning_is_down():
+    from bridge import reply_or_fallback
+
+    def down(request):
+        raise httpx.ConnectError("reasoning down")
+
+    http = httpx.Client(transport=httpx.MockTransport(down))
+    got = reply_or_fallback(1, "आज कैसा है", "mr-IN", http, "hi")
+    assert got.language == "hi" and got.mode == "fallback"

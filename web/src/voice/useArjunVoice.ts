@@ -67,7 +67,9 @@ function savedVolume(): number {
 
 const isAgent = (p: Participant): p is RemoteParticipant => p.kind === ParticipantKind.AGENT;
 
-export function useArjunVoice(userId: number): ArjunVoice {
+/** `language` = the profile language of the elder screen. The language SENT to the backend is the spoken switch in force (activeLang)
+ *  if any, else this one: in the token body at join, then as the "arjun.ui_lang" attribute whenever it changes. */
+export function useArjunVoice(userId: number, language?: string): ArjunVoice {
   const [roomView, setRoomView] = useState<Room | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [failure, setFailure] = useState<Failure | undefined>();
@@ -78,6 +80,9 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [reply, setReply] = useState("");
   const [replyLang, setReplyLang] = useState("");
   const [activeLang, setActiveLang] = useState("");
+  const sendLang = activeLang || language || ""; // what the backend must reply in: the switch in force, else the screen language
+  const sendLangRef = useRef(sendLang);
+  sendLangRef.current = sendLang;
   const [heard, setHeard] = useState("");
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [item, setItem] = useState("");
@@ -210,7 +215,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
     async (t0: number): Promise<Room | null> => {
       let tok;
       try {
-        tok = await api.livekitToken(userId);
+        tok = await api.livekitToken(userId, sendLangRef.current || undefined);
       } catch {
         return null;
       }
@@ -297,6 +302,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
       void r.localParticipant.setAttributes({
         "arjun.media": mediaStateRef.current,
         "arjun.media.heartbeat": String(Date.now()),
+        ...(sendLangRef.current ? { "arjun.ui_lang": sendLangRef.current } : {}),
       }).catch(() => {});
       for (const p of r.remoteParticipants.values()) seeFamily(p);
       return r;
@@ -481,6 +487,12 @@ export function useArjunVoice(userId: number): ArjunVoice {
   }, []);
 
   const dismissSafety = useCallback(() => setSafetyDismissedTurn(turnRef.current), []);
+
+  // the language changed while connected (a spoken switch, or the family changed it): tell the agent before her next turn
+  useEffect(() => {
+    const r = room.current;
+    if (sendLang && r && r.state === "connected") void r.localParticipant.setAttributes({ "arjun.ui_lang": sendLang }).catch(() => {});
+  }, [sendLang]);
 
   const reportMedia = useCallback((state: "playing" | "stopped") => {
     mediaStateRef.current = state;

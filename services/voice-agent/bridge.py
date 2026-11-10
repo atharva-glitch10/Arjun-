@@ -50,7 +50,7 @@ class BridgeReply:
 
 
 def ask_reasoning(
-    user_id: int, transcript: str, http: httpx.Client | None = None, language: str | None = None,
+    user_id: int, transcript: str, http: httpx.Client | None = None, language: str | None = None, reply_language: str | None = None,
 ) -> BridgeReply:
     """Call reasoning /turn. Raises on HTTP or network errors (see reply_or_fallback)."""
     client = http or _shared_client()
@@ -58,6 +58,8 @@ def ask_reasoning(
     payload = {"user_id": user_id, "text": transcript}
     if language:
         payload["language_code"] = language
+    if reply_language:  # the screen's language: reasoning answers in it, whatever she or Prisma said
+        payload["reply_language"] = reply_language
     r = client.post(f"{REASONING_URL}/turn", json=payload)
     r.raise_for_status()
     data = r.json()
@@ -79,7 +81,7 @@ def ask_reasoning(
 
 
 def prepare_reasoning(
-    user_id: int, transcript: str, language: str | None = None, http: httpx.Client | None = None
+    user_id: int, transcript: str, language: str | None = None, http: httpx.Client | None = None, reply_language: str | None = None
 ) -> dict | None:  # type: ignore[type-arg]
     """POST /turn/prepare: {needs_web, filler, hold} within PREPARE_TIMEOUT_S, or None on ANY failure or slowness
     (then the turn simply runs without a filler)."""
@@ -87,6 +89,8 @@ def prepare_reasoning(
         payload = {"user_id": user_id, "text": transcript}
         if language:
             payload["language_code"] = language
+        if reply_language:
+            payload["reply_language"] = reply_language
         r = (http or _shared_client()).post(f"{REASONING_URL}/turn/prepare", json=payload, timeout=PREPARE_TIMEOUT_S)
         r.raise_for_status()
         data = r.json()
@@ -159,12 +163,13 @@ def fallback_text(language: str, transcript: str = "") -> str:
 
 
 def reply_or_fallback(
-    user_id: int, transcript: str, language: str, http: httpx.Client | None = None
+    user_id: int, transcript: str, language: str, http: httpx.Client | None = None, reply_language: str | None = None
 ) -> BridgeReply:
     """Like ask_reasoning, but any failure becomes a spoken fallback (mode="fallback")."""
     t0 = time.perf_counter()
+    language = reply_language or language  # the fixed fallback line is in the screen's language too
     try:
-        return ask_reasoning(user_id, transcript, http, language)
+        return ask_reasoning(user_id, transcript, http, language, reply_language)
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         cause = "rate_limit" if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429 else type(exc).__name__
         log.error("reasoning fallback cause=%s", cause)

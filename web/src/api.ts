@@ -499,7 +499,9 @@ export const api = {
   ackDelivery: (id: number, deliveryId: number, outcome = "ok") =>
     core<Delivery>(`/users/${id}/deliveries/${deliveryId}/ack`, post({ outcome })),
   // A short-lived join token for one voice session (a fresh room each time; the secret stays server-side).
-  livekitToken: (userId: number) => core<LivekitToken>("/livekit/token", post({ user_id: userId })),
+  // `language` = the language the elder screen is set to; it rides in the body so the voice agent can tell reasoning to reply in it.
+  livekitToken: (userId: number, language?: string) =>
+    core<LivekitToken>("/livekit/token", post(language ? { user_id: userId, language } : { user_id: userId })),
   // The family-call link from Telegram: checked by core-api, returns a token for the elder's current room.
   familyJoin: (token: string) => core<FamilyJoin>(`/family/join?t=${encodeURIComponent(token)}`),
   familyCallAnswer: (token: string) => core<{ status: string }>("/family/calls/answer", post({ t: token })),

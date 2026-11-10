@@ -72,6 +72,9 @@ class TurnIn(BaseModel):
     user_id: int
     text: str = Field(min_length=1, max_length=2000)
     language_code: str | None = Field(default=None, max_length=16)
+    # The language the elder SCREEN is set to (the frontend owns the language, 2026-11-10). When present it is authoritative:
+    # the reply, the fixed lines and the LLM prompt all use it, whatever language the utterance or Prisma's label says.
+    reply_language: str | None = Field(default=None, pattern=r"^(mr|hi|en|bn|gu|kn|ml|pa|ta|te|or)$")
 
 
 class SoundEventIn(BaseModel):
@@ -200,7 +203,7 @@ class PrepareOut(BaseModel):
 def turn_prepare(body: TurnIn) -> PrepareOut:
     """Step 1 of the two-step voice flow: rules only, no core-api / LLM / search, so it returns in milliseconds. It
     never touches memory or state; /turn (unchanged) still produces the one real answer."""
-    return PrepareOut(**get_engine().prepare(body.text, body.language_code))
+    return PrepareOut(**get_engine().prepare(body.text, body.language_code, body.reply_language))
 
 
 @app.post("/turn", response_model=TurnOut)
@@ -215,7 +218,7 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
         raise HTTPException(429, "too many turns", headers={"Retry-After": str(max(1, round(wait)))})
     background.add_task(engine.note_activity, body.user_id)
     try:
-        res = engine.handle(body.user_id, body.text, body.language_code)
+        res = engine.handle(body.user_id, body.text, body.language_code, reply_language=body.reply_language)
     except CoreError as exc:
         raise HTTPException(502 if exc.status >= 500 else exc.status, exc.detail) from exc
     # The family's conversation summary: buffered in memory, sent after the conversation ends.
