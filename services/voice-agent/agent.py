@@ -61,6 +61,7 @@ try:  # TESTING switch (voiceprovider.py). Imported here: a plugin must be regis
 except ImportError:  # the Gnani path does not need it
     sarvam = None
 import langid
+import streamclient
 from livekit.plugins.gnani.tts import (
     RESTChunkedStream,
     SSEChunkedStream,
@@ -509,7 +510,11 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         ]
         return max(matching)[1] if matching else transcript_languages.get("__current__", STT_LANGUAGE)
 
+    stream_client = streamclient.StreamClient() if streamclient.enabled() else None  # ARJUN_STREAM=1: WebSocket /turn/stream
+
     async def ask(text: str):  # type: ignore[no-untyped-def]
+        if stream_client is not None:  # falls back to the HTTP /turn below by itself
+            return await streamclient.ask_with_fallback(stream_client, user_id, text, detect_for(text), ui_language[0])
         return await asyncio.to_thread(reply_or_fallback, user_id, text, detect_for(text), None, ui_language[0])
 
     async def prepare(text: str):  # type: ignore[no-untyped-def]

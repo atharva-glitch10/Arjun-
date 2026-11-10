@@ -62,12 +62,16 @@ def ask_reasoning(
         payload["reply_language"] = reply_language
     r = client.post(f"{REASONING_URL}/turn", json=payload)
     r.raise_for_status()
-    data = r.json()
+    return reply_from_data(r.json(), language, (time.perf_counter() - t0) * 1000)
+
+
+def reply_from_data(data: dict, language: str | None, round_trip_ms: float) -> BridgeReply:  # type: ignore[type-arg]
+    """A /turn JSON body (or the `final` frame of /turn/stream, same fields) -> BridgeReply."""
     return BridgeReply(
         text=data["reply"],
         mode=data["mode"],
         awaiting_confirmation=data["awaiting_confirmation"],
-        round_trip_ms=(time.perf_counter() - t0) * 1000,
+        round_trip_ms=round_trip_ms,
         screen=data.get("screen", "reply"),
         intent=data.get("intent", ""),
         speech=data.get("speech", "") or "",

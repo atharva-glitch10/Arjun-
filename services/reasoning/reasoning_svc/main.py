@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Literal
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket
 from pydantic import BaseModel, Field
 
 from . import config
@@ -10,6 +10,7 @@ from .core_client import CoreClient, CoreError
 from .distress import is_distress, is_emergency
 from .evon import EvonClient, Limiter, debug_log, llm_debug_enabled
 from .ratelimit import TokenBucket
+from .stream import serve as _serve_stream
 from .textutil import collapse_repeats
 from .turn import TurnEngine
 from .wellbeing import Tracker
@@ -232,6 +233,19 @@ def turn(body: TurnIn, background: BackgroundTasks) -> TurnOut:
             mode=res.mode, final=res.speech or res.reply, trace=res.trace,
         )
     return TurnOut(**res.__dict__)
+
+
+@app.websocket("/turn/stream")
+async def turn_stream(ws: WebSocket) -> None:
+    """Streaming twin of POST /turn (frames: see stream.py). /turn is unchanged and is the client's fallback."""
+
+    def after(user_id: int, text: str, res: Any) -> None:  # what /turn does in its background tasks
+        engine = get_engine()
+        engine.note_activity(user_id)
+        if not res.silent:
+            get_tracker().record(user_id, text, res.reply, res.intent, res.action.get("title", ""))
+
+    await _serve_stream(ws, get_engine, _turn_bucket, after)
 
 
 class GateIn(BaseModel):
