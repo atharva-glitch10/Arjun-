@@ -47,6 +47,7 @@ from .apps import label as app_label
 from .callcmd import is_call_request, relation_matches, role_of
 from .checkins import answer_for, topic_of, volunteered_topic
 from .clock import local_now
+from .convstate import StateTracker, fit_prompt
 from .core_client import CoreClient, CoreError
 from .distress import (
     gives_medical_advice,
@@ -413,6 +414,8 @@ class TurnEngine:
         # long silence, the question Arjun is waiting on. In memory only, never stored. Long-term facts: self.facts.
         self.memory = SessionMemory(history_exchanges, config.SESSION_IDLE_MIN)
         self.facts = FactBook(core, mono)
+        self.convstate = StateTracker(config.SESSION_IDLE_MIN)  # topic, entities, references: rules only, in memory only
+        self.last_prompt_info: dict[int, dict[str, int]] = {}
         self._last_fact: dict[int, tuple[int, str, float]] = {}  # user -> (fact id, text, mono) she just saved
         self._delivered: dict[int, tuple[int, str, str]] = {}  # delivery id -> (user, spoken text, kind)
         self._local = threading.local()  # nested handle() calls (a check-in "yes" opens media) record only once
@@ -830,12 +833,12 @@ class TurnEngine:
         if self._llm_remaining() < _MIN_LLM_BUDGET_S:
             return None, "no_budget", True
         view = self.memory.view(uid, now)
-        context = self._user_context(uid, now, user, text)
+        history, memory_block, context = self._fit(uid, now, user, text, view, self._topic_block(uid))
         try:
             data = self.evon.understand_turn(  # type: ignore[attr-defined]
-                text, lang, now, history=view.messages, context=context,
+                text, lang, now, history=history, context=context,
                 interests=user.get("interests") or [],
-                timeout=min(_UNDERSTAND_TIMEOUT_S, self._llm_remaining()), memory=view.block + self._topic_block(uid),
+                timeout=min(_UNDERSTAND_TIMEOUT_S, self._llm_remaining()), memory=memory_block,
             )
         except httpx.TimeoutException:
             remaining = self._llm_remaining()
@@ -845,8 +848,8 @@ class TurnEngine:
             log.info("understanding timeout; retrying with compact recent context")
             try:
                 data = self.evon.understand_turn(  # type: ignore[attr-defined]
-                    text, lang, now, history=view.messages[-12:], context=context,
-                    interests=user.get("interests") or [], timeout=remaining, memory=view.block + self._topic_block(uid),
+                    text, lang, now, history=history[-12:], context=context,
+                    interests=user.get("interests") or [], timeout=remaining, memory=memory_block,
                 )
             except httpx.TimeoutException:
                 log.info("understanding retry timed out")
@@ -933,17 +936,35 @@ class TurnEngine:
 
     def _user_context(self, uid: int, now: datetime, user: dict[str, Any], text: str = "") -> str:
         """The cached family/dashboard context plus the facts she told Arjun that fit THIS sentence (never cached)."""
+        base, facts = self._user_context_parts(uid, now, user, text)
+        return f"{base}\n{facts}" if facts else base
+
+    def _user_context_parts(self, uid: int, now: datetime, user: dict[str, Any], text: str = "") -> tuple[str, str]:
+        """(the dashboard context [+ the first-greeting follow-up], the facts block). Joined by _user_context."""
         base = self._base_context(uid, now, user)
         facts = self.facts.block(uid, text, now, config.FACTS_IN_CONTEXT)
-        context = f"{base}\n{facts}" if facts else base
         if text and self._is_greeting(text):
             followup = self._yesterday_followup(uid, now)
             if followup:
-                context += (
+                base += (
                     "\nFIRST GREETING FOLLOW-UP: Refer naturally to this one most recent unresolved item from yesterday, "
                     "and ask how it went. Do not introduce another event: " + followup
                 )
-        return context
+        return base, facts
+
+    def _fit(self, uid: int, now: datetime, user: dict[str, Any], text: str, view: Any, extra_memory: str = "") -> tuple[list[tuple[str, str]], str, str]:
+        """(history, memory block, context) for ONE LLM call: the conversation state in a fixed order under the token cap.
+        The open question (in view.block) and the last 2 exchanges are never dropped. ARJUN_CONTEXT_STATE=0 = the old assembly."""
+        base, facts = self._user_context_parts(uid, now, user, text)
+        if not config.CONTEXT_STATE:
+            return view.messages, view.block + extra_memory, (f"{base}\n{facts}" if facts else base)
+        flines = facts.split("\n") if facts else []
+        msgs, memory, context, info = fit_prompt(
+            messages=view.messages, block_memory=view.block + extra_memory, block_state=self.convstate.block(uid, text),
+            context_base=base, facts=flines[1:], facts_header=flines[0] if flines else "", cap_tokens=config.PROMPT_TOKEN_CAP,
+        )
+        self.last_prompt_info[uid] = info
+        return msgs, memory, context
 
     @staticmethod
     def _is_greeting(text: str) -> bool:
@@ -1109,6 +1130,7 @@ class TurnEngine:
         self._last_fact.pop(uid, None)
         self.facts.invalidate(uid)
         self.memory.scrub(uid, str(gone[0]["fact"]))
+        self.convstate.scrub(uid, str(gone[0]["fact"]))
         return out(r["memory_forgot"].format(fact=gone[0]["fact"]), "MEMORY_FORGOT")
 
     # ------------------------------------------------------------------ second layer and reply guard
@@ -1681,6 +1703,7 @@ class TurnEngine:
         self.memory.exchange(
             uid, now, said, res.reply, kind="chat" if companion else "care", limit=0 if companion else _HISTORY_CARE_CHARS,
         )
+        self.convstate.update(uid, now, said, res.reply)
         title = str(res.action.get("title") or "")
         if res.intent in ("OPEN_MEDIA", "NEWS_READ") and title:
             self.memory.event(uid, now, f"opened for her: {title[:80]}")
@@ -2780,7 +2803,7 @@ class TurnEngine:
         challenged = False
         view = self.memory.view(uid, now)
         user = self.core.user(uid)
-        context = self._user_context(uid, now, user, text)
+        history, memory_block, context = self._fit(uid, now, user, text, view)
         context += self._story_recall(uid, text)
         style = user.get("speech_style") or {}
         if style.get("simple"):
@@ -2795,8 +2818,8 @@ class TurnEngine:
             )
         if raw is None and self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
             raw = self.evon.companion_reply(
-                text, lang, now, history=view.messages, interests=user.get("interests") or [],
-                timeout=self._llm_remaining(), context=context, memory=view.block,
+                text, lang, now, history=history, interests=user.get("interests") or [],
+                timeout=self._llm_remaining(), context=context, memory=memory_block,
             )
         while raw is not None:
             # voice tags out first, so the boundary checks see only words
@@ -2818,8 +2841,8 @@ class TurnEngine:
                 break
             challenged = True  # one corrective retry, then the fixed line
             raw = self.evon.companion_reply(
-                text, lang, now, history=view.messages, interests=user.get("interests") or [],
-                timeout=self._llm_remaining(), correction=",".join(reasons), context=context, memory=view.block,
+                text, lang, now, history=history, interests=user.get("interests") or [],
+                timeout=self._llm_remaining(), correction=",".join(reasons), context=context, memory=memory_block,
             )
         if reply is not None:
             guarded = self._guard_reply_language(uid, text, lang, reply, now, view, user, context)

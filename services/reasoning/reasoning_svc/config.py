@@ -135,3 +135,7 @@ CONVERSATION_IDLE_S = float(os.environ.get("CONVERSATION_IDLE_S", "180"))
 SESSION_EXCHANGES = int(os.environ.get("ARJUN_SESSION_EXCHANGES", "20"))
 SESSION_IDLE_MIN = float(os.environ.get("ARJUN_SESSION_IDLE_MIN", "30"))
 FACTS_IN_CONTEXT = int(os.environ.get("ARJUN_FACTS_IN_CONTEXT", "10"))
+# Conversation state (convstate.py): the prompt is built from it in a fixed order under a token cap; ARJUN_CONTEXT_STATE=0 restores the
+# old assembly (all history, facts appended whole).
+CONTEXT_STATE = os.environ.get("ARJUN_CONTEXT_STATE", "1").strip() != "0"
+PROMPT_TOKEN_CAP = int(os.environ.get("ARJUN_PROMPT_TOKEN_CAP", "2600"))  # the variable part: history + state + context + facts

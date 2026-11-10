@@ -146,7 +146,8 @@ def test_twenty_exchanges_are_kept_and_older_ones_are_summarised(core_http, uid)
     eng, spy = make(core_http)
     for i in range(23):
         eng.handle(uid, f"आज मी बागेत गेले होते आणि फुलं पाहिली {i}")
-    assert len(spy.messages) == 41  # the 20 newest exchanges plus the new line; nothing beyond is sent as raw turns
+    assert len(eng.memory.session(uid).turns) == 40  # the session keeps the 20 newest exchanges
+    assert len(spy.messages) == 13  # the prompt sends the last 6 (conversation state, 2026-11-10) plus the new line
     assert eng.memory.session(uid).summary, "older exchanges were compressed, not dropped"
     assert "फुलं पाहिली" in spy.system
 

@@ -72,7 +72,16 @@ def test_medicine_turns_never_enter_the_llm_history(core_http, uid):
     assert not any("गोळी" in said for _, said in sent(llm))
 
 
-def test_only_the_last_eight_exchanges_are_sent_by_default(core_http, uid):
+def test_only_the_last_six_exchanges_are_sent_by_default(core_http, uid):
+    """Conversation state (2026-11-10): the prompt carries the last 6 exchanges; older talk lives in the session summary."""
+    eng, llm = make(core_http, history_exchanges=config.llm_settings({}).history_exchanges)
+    for i in range(12):
+        eng.handle(uid, f"आज मी बागेत गेले होते आणि फुलं पाहिली {i}")
+    assert len(sent(llm)) == 12
+
+
+def test_the_old_eight_exchange_history_is_still_there_behind_the_switch(core_http, uid, monkeypatch):
+    monkeypatch.setattr(config, "CONTEXT_STATE", False)
     eng, llm = make(core_http, history_exchanges=config.llm_settings({}).history_exchanges)
     for i in range(12):
         eng.handle(uid, f"आज मी बागेत गेले होते आणि फुलं पाहिली {i}")
