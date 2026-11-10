@@ -394,6 +394,12 @@ def _system_prompt(
             "intent=medicine_query. If the utterance is a story or background talk that merely mentions a "
             "medicine, media or family, it is chat, not an action."
         )
+    # LAST rule, so it is the one the model remembers (2026-11-10: an elder asked for Hindi and got Marathi that claimed to be Hindi)
+    lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
+    system += (
+        f" REPLY LANGUAGE (final rule): reply ONLY in {lang_name} ({script} script). Do not use words from other languages "
+        f"except names. This holds even if earlier messages in this conversation were in another language."
+    )
     return system
 
 

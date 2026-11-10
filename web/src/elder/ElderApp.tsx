@@ -18,6 +18,7 @@ import {
   StartScreen,
   TouchToHearScreen,
   setCompanionLabel,
+  setReplyLang,
 } from "../screens/ElderScreens";
 import type { ChatMsg, UpcomingItem } from "../screens/ElderScreens";
 import { failureText, shownFor } from "../voice/state";
@@ -26,7 +27,7 @@ import { useArjunVoice } from "../voice/useArjunVoice";
 import { LinkPrompt, MediaScreen } from "./MediaScreen";
 import { VideoCallScreen } from "./VideoCallScreen";
 import { elderLanguage, elderText, timeGreeting } from "./i18n";
-import { LANGUAGE_NAMES, setElderLang, t as tr } from "./strings";
+import { LANGUAGE_NAMES, setElderLang, t as tr, uiLanguage } from "./strings";
 import type { ElderLang } from "./strings";
 import { useAppActions } from "./useAppActions";
 import {
@@ -136,6 +137,12 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const lastAutoStart = useRef<number | null>(null);
 
   const voice = useArjunVoice(userId);
+  const uiLang = uiLanguage(voice.activeLang, displayLanguage); // a spoken switch changes the labels too, not only the reply
+  setElderLang(uiLang);
+  setReplyLang(voice.replyLang || uiLang);
+  useEffect(() => {
+    document.documentElement.lang = voice.replyLang || uiLang; // fonts and screen readers follow the text's language
+  }, [voice.replyLang, uiLang]);
   // The conversation as a WhatsApp-style thread (team notes 2026-11-10): each finished reply adds her last sentence
   // and Arjun's answer. Kept for this visit only; nothing is stored.
   const [chat, setChat] = useState<ChatMsg[]>([]);
@@ -686,8 +693,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
         return (
           <HomeScreen
             evening={evening}
-            languageLabel={LANGUAGE_NAMES[elderLanguage(displayLanguage)]}
-            greeting={`${timeGreeting(elderLanguage(displayLanguage), now.getHours())}, ${addressAs}`}
+            languageLabel={LANGUAGE_NAMES[uiLang]}
+            greeting={`${timeGreeting(uiLang, now.getHours())}, ${addressAs}`}
             dateLine={evening ? `${weekday(now)} · ${periodOfDay(now.getHours())}` : dateLine(now)}
             clock={timeLabel(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`)}
             items={items}

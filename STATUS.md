@@ -1,5 +1,29 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Reply language follows what she says and asks (2026-11-10)
+- **Bug:** "मुझसे हिंदी में बात करना" got a Marathi reply that claimed to be Hindi. Causes: the Marathi/Hindi rules trusted Prisma's mr label (and a
+  Hindi sentence with few known words), nothing handled "speak Hindi" as a request, and nothing checked the reply's language.
+- **Shared classifier:** `shared/langid.py` (+ byte-identical copies in `reasoning_svc/` and `voice-agent/`, a test fails if they drift) tells mr from hi
+  (word markers + endings), the other 7 scripts, and English. Reasoning uses it for the reply language (words beat the label when 2+ words agree) and
+  for the output guard; voice-agent refines Prisma's hi/mr label with it before calling reasoning. ~70 mixed Marathi/Hindi/code-mixed sentences pass.
+- **Language switch:** `langswitch.py`: "हिंदी में बात करो/बोलो", "हिंदीत बोला", "मराठीत बोल", "speak English", "तमिल में बोलो" (needs a language name AND a
+  speaking word, no negation: "हिंदी सिनेमा लावा", "हिंदीत बोलू नको" are not switches). It sets the reply language for 4 hours at once, confirms in the NEW language
+  (all ten languages; bn..te UNVERIFIED), and saves `language` + `preferred_languages` when she says "हमेशा / नेहमी / from now on" or answers yes to the one
+  "keep it?" question. Turn result carries `active_language`; the page labels, `html lang` and the reply `<p lang>` follow it.
+- **Prompt + guard:** every system prompt ends with "REPLY LANGUAGE (final rule): reply ONLY in <language> ... except names". An LLM reply whose language differs is
+  retried once with a stricter instruction, regenerated once more, else a fixed line in HER language replaces it; each checked reply logs
+  `reply_lang_expected / reply_lang_actual / retried` and `TurnEngine.lang_guard` counts them. The web-answer quality gate also uses it.
+- **Text = voice:** a reply is one string + `language`; the screen (`arjun.reply`, `arjun.reply_lang`), the history and the TTS (`tts_text`, locale from `tts_plan`) use
+  that same string (voice tags are the only difference; tested for hi / mr / en). A language with no Timbre locale logs `tts_fallback` and is spoken by the
+  configured voice. Recognition: mr/hi/en hints are sent together (Prisma auto-detects per utterance), so a switch among them needs no restart; another language
+  is pinned at session start, so a permanent switch to it takes effect next session.
+- **Eval (`scripts/eval_lang.py`, 20 mixed-language turns, live Gemini endpoint, scored with the shared classifier):** reply TEXT language 16/20 (80%) before
+  -> 20/20 (100%) after; TTS language the same. **Caveat:** the hosted LLM stopped answering during this run (it closes the connection), so most turns were
+  answered by the rules / fixed lines: the eval proves the language CHOICE, the switch and the fixed lines, NOT the LLM output guard live. The guard is
+  tested only with a mocked LLM.
+- **Not done:** many fixed Marathi strings inside `turn.py` (e.g. the "speak slower" lines) are still Marathi whatever the active language; real Gnani TTS /
+  STT were not exercised (mapping and fallback tested); the font stacks assume Noto / Nirmala UI are installed (nothing is bundled).
+
 ## Auth hardening for the deadline (2026-11-10)
 Small fixes from the 2026-11-10 auth audit. `ARJUN_AUTH` stays OFF (the demo still runs through the key-injecting proxy); these apply
 whenever account auth is on, and the Origin brake also when a session/device cookie is present.

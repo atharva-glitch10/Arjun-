@@ -46,6 +46,7 @@ class BridgeReply:
     speech_style: dict | None = None  # type: ignore[type-arg]
     silent: bool = False
     language: str = ""
+    active_language: str = ""  # a spoken language switch in force ("hi"); the elder screen follows it
 
 
 def ask_reasoning(
@@ -73,6 +74,7 @@ def ask_reasoning(
         speech_style=data.get("speech_style") or None,
         silent=bool(data.get("silent", False)),
         language=str(data.get("language") or language or ""),
+        active_language=str(data.get("active_language") or ""),
     )
 
 

@@ -18,6 +18,10 @@ export interface ArjunVoice {
   room: Room | null;
   /** The exact line Arjun is speaking ("arjun.reply"). */
   reply: string;
+  /** The language tag of that line ("mr" | "hi" | "en" ...), from the same reply: the page tags the text with it. */
+  replyLang: string;
+  /** A spoken language switch in force ("hi"), else "": the screen's labels follow it. */
+  activeLang: string;
   /** What Arjun heard the elder say (live transcription), best effort. */
   heard: string;
   /** Milliseconds from the tap to the agent listening, for the last session (console + here). */
@@ -72,6 +76,8 @@ export function useArjunVoice(userId: number): ArjunVoice {
   const [turn, setTurn] = useState(0);
   const [safetyDismissedTurn, setSafetyDismissedTurn] = useState(0);
   const [reply, setReply] = useState("");
+  const [replyLang, setReplyLang] = useState("");
+  const [activeLang, setActiveLang] = useState("");
   const [heard, setHeard] = useState("");
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [item, setItem] = useState("");
@@ -184,6 +190,10 @@ export function useArjunVoice(userId: number): ArjunVoice {
       }
       const text = p.attributes["arjun.reply"];
       if (typeof text === "string") setReply(text);
+      const rl = p.attributes["arjun.reply_lang"];
+      if (typeof rl === "string") setReplyLang(rl);
+      const al = p.attributes["arjun.active_lang"];
+      if (typeof al === "string") setActiveLang(al);
       if (a.agentState === "listening" && phaseRef.current === "waiting") {
         const ms = Math.round(performance.now() - t0);
         console.info(`[arjun] ready ${ms} ms after the tap`);
@@ -511,7 +521,7 @@ export function useArjunVoice(userId: number): ArjunVoice {
   };
   return {
     room: roomView,
-    snapshot, reply, heard, readyMs, item, family, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
+    snapshot, reply, replyLang, activeLang, heard, readyMs, item, family, arm, prewarm, start, unlockAudio, stop, sendText, dismissSafety,
     thinking, volume, setVolume, action, mediaDuck, reportMedia,
   };
 }

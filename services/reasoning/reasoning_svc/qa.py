@@ -7,6 +7,8 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from . import langid
+
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
            "November", "December")
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
@@ -154,7 +156,7 @@ def answers_question(question: str, reply: str, lang: str) -> tuple[bool, str]:
     reply = (reply or "").strip()
     if len(reply) < 3 or _GENERIC.match(reply):
         return False, "empty_or_generic"
-    if not in_her_language(reply, lang):
+    if not in_her_language(reply, lang) or not langid.matches(reply, lang):  # also Hindi vs Marathi (both Devanagari)
         return False, "wrong_language"
     if reply.endswith(("?", "？")):
         return True, ""  # a clarifying question naming the options is a valid answer to an ambiguous question

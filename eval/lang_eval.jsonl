@@ -1,0 +1,20 @@
+{"scenario":"s1","profile":"mr","text":"मुझसे हिंदी में बात करना","expect":"hi"}
+{"scenario":"s1","profile":"mr","text":"आप कैसे हैं आज","expect":"hi"}
+{"scenario":"s1","profile":"mr","text":"मुझे थोड़ा अकेलापन लग रहा है","expect":"hi"}
+{"scenario":"s2","profile":"mr","text":"तुम्ही कसे आहात","expect":"mr"}
+{"scenario":"s2","profile":"mr","text":"मला आज बागेत जायचं आहे","expect":"mr"}
+{"scenario":"s2","profile":"mr","text":"Please speak English with me","expect":"en"}
+{"scenario":"s2","profile":"mr","text":"what is the capital of France","expect":"en"}
+{"scenario":"s3","profile":"hi","text":"आप कैसे हैं","expect":"hi"}
+{"scenario":"s3","profile":"hi","text":"मेरी बेटी आज आने वाली है","expect":"hi"}
+{"scenario":"s3","profile":"hi","text":"मराठीत बोल","expect":"mr"}
+{"scenario":"s3","profile":"hi","text":"आज काय केलं तुम्ही","expect":"mr"}
+{"scenario":"s4","profile":"en","text":"How are you today","expect":"en"}
+{"scenario":"s4","profile":"en","text":"हिंदी में बोलो","expect":"hi"}
+{"scenario":"s4","profile":"en","text":"मुझे चाय पीनी है","expect":"hi"}
+{"scenario":"s5","profile":"mr","text":"तमिल में बोलो","expect":"ta"}
+{"scenario":"s5","profile":"mr","text":"நீங்கள் எப்படி இருக்கிறீர்கள்","expect":"ta"}
+{"scenario":"s6","profile":"mr","text":"मला doctor कडे जायचं आहे","expect":"mr"}
+{"scenario":"s7","profile":"hi","text":"मुझे doctor के पास जाना है","expect":"hi"}
+{"scenario":"s8","profile":"mr","text":"मी तुमच्याशी बोलतो आहे, तुम्ही ऐकताय ना","expect":"mr"}
+{"scenario":"s9","profile":"hi","text":"क्या आप मेरी बात सुन रहे हैं","expect":"hi"}

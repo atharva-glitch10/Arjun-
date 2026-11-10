@@ -60,6 +60,7 @@ try:  # TESTING switch (voiceprovider.py). Imported here: a plugin must be regis
     from livekit.plugins import sarvam
 except ImportError:  # the Gnani path does not need it
     sarvam = None
+import langid
 from livekit.plugins.gnani.tts import (
     RESTChunkedStream,
     SSEChunkedStream,
@@ -100,6 +101,7 @@ from voice import (
     stt_options,
     tts_choice,
     tts_language_for,
+    tts_plan,
     tts_text,
     tts_voice_for,
 )
@@ -493,6 +495,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     logger.info("session serves user %s (%s)", user_id, "dispatch metadata" if from_metadata else "ARJUN_USER_ID fallback")
 
     def detect_for(text: str) -> str:
+        guess = langid.classify(text)  # Prisma confuses Marathi and Hindi: clear word evidence beats its label (shared helper)
+        if guess.lang in ("mr", "hi") and langid.confident(guess):
+            return f"{guess.lang}-IN"
         normalized = " ".join(text.casefold().split())
         matching = [
             (len(key), value) for key, value in transcript_languages.items()
@@ -512,7 +517,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             # The fixed emergency template is about to be spoken: call family now, then the 10-second check.
             emergency_task[0] = asyncio.create_task(run_emergency_escalation(), name="emergency-escalation")
         detected = reply.language or transcript_languages.get("__current__", STT_LANGUAGE)
-        language = tts_language_for(detected, TTS_LANGUAGE)
+        language, fell_back = tts_plan(detected, TTS_LANGUAGE)
+        if fell_back:  # no Timbre locale for this language: the text is shown, the closest voice speaks it
+            logger.warning("tts_fallback: no voice for %s, speaking with %s", detected, language)
+        vlog("reply language %s -> tts %s", reply.language or "?", language)
         voice = TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"]
         voice = tts_voice_for(detected, language, voice)
         plugin = make_tts(active_model, voice, language)

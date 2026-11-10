@@ -22,7 +22,7 @@ from urllib.parse import quote
 
 import httpx
 
-from . import config, qa, replies_langs
+from . import config, langid, langswitch, qa, replies_langs
 from . import replies as rp
 from .app_replies import A
 from .appcmd import (
@@ -100,6 +100,9 @@ def _reply_language(language_code: str | None, text: str, default: str) -> str:
     Prisma's label is the start; the words win when they clearly disagree (Prisma confuses mr and hi, and a fully
     English sentence is English whatever the label says)."""
     detected = _detected_reply_language(language_code)
+    guess = langid.classify(text)
+    if guess.lang in ("mr", "hi") and langid.confident(guess):  # the words beat Prisma's mr/hi label (shared with voice-agent)
+        return guess.lang
     if detected in (None, "mr", "hi") and latin_share(text) > 0.9 and len(text.split()) >= 3:
         # Roman letters: English only if no romanised Marathi/Hindi words ("udya sakali", "kal subah") are in it
         words = re.findall(r"[a-z']+", text.lower())
@@ -183,6 +186,7 @@ _ACTION_CLAIM = re.compile(
     r"आठवण\s*(?:ठेवतो|ठेवली|नोंदवली|नोंदवतो)|याद\s*(?:रखता हूँ|रख ली|दिला दूँगा)|\bi(?:'ll| will)\s+remind you\b|reminder\s+(?:is\s+)?(?:set|saved)",
     re.IGNORECASE,
 )
+_LANG_SESSION_S = 4 * 3600  # a spoken language switch stays in force this long
 _MIN_LLM_BUDGET_S = 0.3  # less than this left in the turn's LLM budget: do not start a call
 _UNDERSTAND_TIMEOUT_S = 3.0
 _ACTION_CONFIDENCE_FLOOR = 0.4  # below this an LLM action intent is ignored and the rules decide
@@ -369,6 +373,8 @@ class TurnResult:
     # Spoken "बघतो…" for a turn that needed a live web lookup. The reply is only ready after the search, so a caller
     # that wants to say it first must play this before waiting; /turn itself still answers once.
     filler: str = ""
+    # The language she asked Arjun to speak ("hi"), while that switch is in force; "" = the profile / spoken language.
+    active_language: str = ""
 
 
 class TurnEngine:
@@ -416,6 +422,9 @@ class TurnEngine:
         self._listen_i: dict[int, int] = {}
         self._last_reply_simplifiable: dict[int, bool] = {}
         self._repeat_times: dict[int, deque[float]] = {}
+        self._lang_session: dict[int, tuple[str, float]] = {}  # uid -> (language she asked for, when): reply language for hours
+        self._lang_keep: dict[int, tuple[str, float]] = {}  # uid -> (language, expires): "keep it always?" is waiting for yes / no
+        self.lang_guard = {"checked": 0, "mismatch": 0, "retried": 0, "fallback": 0}  # reply-language guard counters (eval)
         self._topic: dict[int, tuple[str, str, str, float]] = {}  # uid -> (entity, query, her question, when): for follow-ups
         self._answer_cache: dict[tuple[str, str], tuple[float, str]] = {}  # (question, lang) -> (when, answer)
         self.last_web: dict[str, Any] = {}  # the last lookup, for the QA eval's "worst answers" report only
@@ -448,6 +457,7 @@ class TurnEngine:
             self._local.depth = depth
         if depth == 0:
             res = self._vary_repeat(user_id, res)
+            res = replace(res, active_language=self._active_lang(user_id))
             try:
                 self._record_turn(user_id, text, res)
             except Exception as exc:  # noqa: BLE001 - memory must never break the turn
@@ -456,6 +466,90 @@ class TurnEngine:
                 self._last_arjun_reply[user_id] = res.reply
                 self._last_reply_simplifiable[user_id] = res.intent == "CHAT" and res.mode == "companion"
         return res
+
+    # ---- spoken language switch + reply-language guard (2026-11-10) -------------------------------------------------
+    def _active_lang(self, uid: int) -> str:
+        """The language she asked Arjun to speak, while that is still in force (4 hours), else ""."""
+        hit = self._lang_session.get(uid)
+        if hit is None:
+            return ""
+        if self._mono() - hit[1] > _LANG_SESSION_S:
+            self._lang_session.pop(uid, None)
+            return ""
+        return hit[0]
+
+    def _save_language(self, uid: int, lang: str) -> None:
+        """Make the switch permanent: the profile language and the speech-recognition language (preferred_languages)."""
+        try:
+            self.core.patch_user(uid, {"language": lang, "preferred_languages": [lang]})
+        except (CoreError, httpx.HTTPError) as exc:
+            log.warning("could not save the language switch (%s)", type(exc).__name__)
+
+    def _language_turn(self, uid: int, text: str, trace: dict[str, Any], t0: float) -> TurnResult | None:
+        """"मुझसे हिंदी में बात करना": set the session reply language now and confirm IN THE NEW LANGUAGE; permanent when she
+        says so ("हमेशा", "नेहमी", "from now on") or when she answers yes to the one "keep it?" question."""
+        now = self._mono()
+        keep = self._lang_keep.pop(uid, None)
+        if keep is not None and now > keep[1]:
+            keep = None
+        sw = langswitch.parse(text)
+        if sw is not None:
+            self._lang_session[uid] = (sw.lang, now)
+            if sw.permanent:
+                self._save_language(uid, sw.lang)
+            else:
+                self._lang_keep[uid] = (sw.lang, now + 120)
+            return TurnResult(langswitch.confirm(sw.lang, sw.permanent), "LANGUAGE_SWITCH", "care", sw.lang, trace=self._t({**trace, "intent": "LANGUAGE_SWITCH"}, t0))
+        if keep is not None:
+            norm = normalize(text)
+            yes, no = has_any(norm, YES) and not has_any(norm, NO), has_any(norm, NO)
+            if yes or no:
+                if yes:
+                    self._save_language(uid, keep[0])
+                line = (langswitch.SAVED if yes else langswitch.SESSION_ONLY)[keep[0]]
+                return TurnResult(line, "LANGUAGE_SWITCH", "care", keep[0], trace=self._t({**trace, "intent": "LANGUAGE_SWITCH"}, t0))
+        return None
+
+    def _guard_reply_language(
+        self, uid: int, text: str, lang: str, reply: str, now: datetime, view: Any, user: dict[str, Any], context: str
+    ) -> str:
+        """The reply must be in the language she is being answered in (a Marathi reply to a Hindi speaker claimed to be Hindi).
+        Mismatch -> one retry with a stricter instruction -> one more regeneration -> a fixed in-language line, never the
+        wrong language. Every checked reply logs reply_lang_expected / reply_lang_actual / retried."""
+        self.lang_guard["checked"] += 1
+        if langid.matches(reply, lang):
+            log.info(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": lang, "retried": 0}))
+            return reply
+        self.lang_guard["mismatch"] += 1
+        actual = langid.classify(reply, default=lang).lang
+        name = langswitch.NAMES.get(lang, lang)
+        retried = 0
+        for correction in (
+            f"LANGUAGE ERROR: your last reply was in {actual or 'another language'}. Reply ONLY in {name}; do not use words from "
+            f"other languages except names.",
+            f"STRICT: write the ENTIRE reply in {name} ({lang}) only, in {name}'s own vocabulary and verb forms. Do not mix in "
+            f"any other language and do not mention which language you are using.",
+        ):
+            if self.evon is None or self._llm_remaining() < _MIN_LLM_BUDGET_S:
+                break
+            retried += 1
+            self.lang_guard["retried"] += 1
+            try:
+                raw = self.evon.companion_reply(
+                    text, lang, now, history=view.messages, interests=user.get("interests") or [],
+                    timeout=self._llm_remaining(), correction=correction, context=context, memory=view.block,
+                )
+                clean, _ = split_voice_tags(raw)
+                fixed, _ = sanitize_companion(clean, lang, user_text=text) if clean else (None, [])
+            except Exception as exc:  # noqa: BLE001 - a failed retry falls through to the fixed line
+                log.info("language retry failed: %s", type(exc).__name__)
+                break
+            if fixed and langid.matches(fixed, lang):
+                log.info(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": actual, "retried": retried, "fixed": True}))
+                return fixed
+        self.lang_guard["fallback"] += 1
+        log.warning(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": actual, "retried": retried, "fixed": False}))
+        return _VARIED.get(lang, _VARIED["en"])[0]  # a fixed line in HER language: never the wrong one
 
     def _vary_repeat(self, user_id: int, res: TurnResult) -> TurnResult:
         """A companion chat line never repeats one of Arjun's last 3 lines word for word (heard live 2026-11-08: the
@@ -524,6 +618,10 @@ class TurnEngine:
             r = rp.R[rp.lang_or_default(lang)]
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
         lang = _reply_language(language_code, text, user["language"])
+        switched = self._language_turn(user_id, text, trace, t0)  # "हिंदीत बोला": the reply language changes NOW
+        if switched is not None:
+            return switched
+        lang = self._active_lang(user_id) or lang  # a switch in force beats the language of this utterance
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
         style = user.get("speech_style") or {"rate": "normal", "volume": "normal", "simple": False}
@@ -2721,6 +2819,10 @@ class TurnEngine:
                 text, lang, now, history=view.messages, interests=user.get("interests") or [],
                 timeout=self._llm_remaining(), correction=",".join(reasons), context=context, memory=view.block,
             )
+        if reply is not None:
+            guarded = self._guard_reply_language(uid, text, lang, reply, now, view, user, context)
+            if guarded != reply:
+                reply, speech = guarded, ""  # the voice tags sat on the old words
         from_llm = reply is not None
         if reply is None:
             reply = self._specific_clarification(uid, text, lang)

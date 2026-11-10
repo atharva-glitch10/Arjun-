@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { dateLine, dayWord, periodOfDay, spokenTime, timeLabel, weekday } from "./format";
 import { elderLanguage, orbLabel, timeGreeting } from "./i18n";
-import { ALL_STRING_KEYS, ELDER_LANGUAGES, LANGUAGE_NAMES, getElderLang, setElderLang, t } from "./strings";
+import { ALL_STRING_KEYS, ELDER_LANGUAGES, LANGUAGE_NAMES, getElderLang, setElderLang, t, uiLanguage } from "./strings";
 
 afterEach(() => setElderLang("mr"));
 
@@ -73,5 +73,21 @@ describe("elder strings: all ten Gnani languages", () => {
     expect(periodOfDay(9)).toBe("காலை");
     setElderLang("en");
     expect(spokenTime("15:00")).toBe("afternoon 3");
+  });
+});
+
+describe("a spoken language switch drives the labels", () => {
+  it("the active switch wins over the profile language, else the profile, else Marathi", () => {
+    expect(uiLanguage("hi", "mr")).toBe("hi");
+    expect(uiLanguage("", "ta")).toBe("ta");
+    expect(uiLanguage(undefined, undefined)).toBe("mr");
+    expect(uiLanguage("xx", "en")).toBe("en"); // an unknown tag is ignored
+  });
+  it("the labels really change with it (no Marathi/Hindi mix)", () => {
+    setElderLang(uiLanguage("hi", "mr"));
+    expect(t("speak")).toBe("बोलिए");
+    expect(t("help")).toBe("मदद");
+    setElderLang(uiLanguage("", "mr"));
+    expect(t("speak")).toBe("बोला");
   });
 });

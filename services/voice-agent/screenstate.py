@@ -17,6 +17,8 @@ TURN = "arjun.turn"  # increases with every spoken reply, so the app can tell a 
 REPLY = "arjun.reply"  # the exact line being spoken, for the reply / story / safety screens
 ITEM = "arjun.item"  # reminder:<id> | dose:<id> for a delivered reminder / medicine prompt, else empty
 ACTION = "arjun.action"  # JSON {type: open|control|choice, kind, value, title, video_id, choices, turn} for the page; "" = none
+REPLY_LANG = "arjun.reply_lang"  # the language tag of the line in arjun.reply (mr | hi | en | ...): the page tags the text with it
+ACTIVE_LANG = "arjun.active_lang"  # a spoken language switch in force, else "": the page's labels follow it
 THINKING = "arjun.thinking"  # "1" while reasoning works out the answer: the elder screen shows "विचार करतोय…"
 MAX_REPLY_CHARS = 600
 _ACTION_KEYS = ("type", "kind", "value", "title", "video_id", "contact_id", "command", "query", "label", "choices")
@@ -27,7 +29,7 @@ def attributes_for(reply: BridgeReply, turn: int) -> dict[str, str]:
     screen = "safety" if reply.mode == "safety" else reply.screen
     return {
         SCREEN: screen, TURN: str(turn), REPLY: reply.text[:MAX_REPLY_CHARS], ITEM: "", THINKING: "0",
-        ACTION: action_json(reply, turn),
+        ACTION: action_json(reply, turn), REPLY_LANG: reply.language or "", ACTIVE_LANG: reply.active_language or "",
         "arjun.speech_style": json.dumps(reply.speech_style or {"rate": "normal", "volume": "normal", "simple": False}),
     }
 

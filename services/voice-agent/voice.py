@@ -88,6 +88,19 @@ def tts_language_for(detected: str | None, fallback: str) -> str:
     return TTS_LANGUAGE_MAP.get(prefix, fallback)
 
 
+def tts_plan(detected: str | None, fallback: str) -> tuple[str, bool]:
+    """(Timbre locale, fell_back). `fell_back` is True when the reply language has no Timbre locale of its own and the closest
+    configured one speaks it instead: the text is still shown, and the caller logs `tts_fallback`."""
+    prefix = (detected or "").replace("_", "-").split("-", 1)[0].lower()
+    if prefix == "hi-en" or (detected or "").lower() == "hi-en":
+        return "hi-en", False
+    if not prefix:
+        return fallback, False
+    if prefix in TTS_LANGUAGE_MAP:
+        return TTS_LANGUAGE_MAP[prefix], False
+    return fallback, True
+
+
 def tts_voice_for(detected: str | None, language: str, configured: str) -> str:
     """Choose from documented Timbre v3 catalogue where known; preserve configured v2.5 language voice otherwise."""
     prefix = (detected or "").replace("_", "-").split("-", 1)[0].lower()

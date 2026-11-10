@@ -487,3 +487,16 @@ a.media-start { display: inline-flex; align-items: center; text-decoration: none
 .acct-pick select { min-height: 40px; font-size: 16px; border-radius: 10px; padding: 0 8px; }
 .acct-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .acct-add .fam-input { min-height: 40px; }
+
+/* Script-specific font stacks. The page (html lang) and the reply text (p lang) carry the language tag (arjun.reply_lang), so the
+   right font is chosen per language. Only html/body and tagged text are touched, never the components' own fonts. Nothing is bundled. */
+html:lang(mr) body, p[lang="mr"] { font-family: "Noto Sans Devanagari Variable", "Noto Sans Devanagari", "Mukta", var(--font-ui); }
+html:lang(hi) body, p[lang="hi"] { font-family: "Noto Sans Devanagari Variable", "Noto Sans Devanagari", "Mukta", var(--font-ui); }
+html:lang(ta) body, p[lang="ta"] { font-family: "Noto Sans Tamil", "Nirmala UI", "Latha", var(--font-ui); }
+html:lang(te) body, p[lang="te"] { font-family: "Noto Sans Telugu", "Nirmala UI", "Gautami", var(--font-ui); }
+html:lang(kn) body, p[lang="kn"] { font-family: "Noto Sans Kannada", "Nirmala UI", "Tunga", var(--font-ui); }
+html:lang(ml) body, p[lang="ml"] { font-family: "Noto Sans Malayalam", "Nirmala UI", "Kartika", var(--font-ui); }
+html:lang(bn) body, p[lang="bn"] { font-family: "Noto Sans Bengali", "Nirmala UI", "Vrinda", var(--font-ui); }
+html:lang(gu) body, p[lang="gu"] { font-family: "Noto Sans Gujarati", "Nirmala UI", "Shruti", var(--font-ui); }
+html:lang(pa) body, p[lang="pa"] { font-family: "Noto Sans Gurmukhi", "Nirmala UI", "Raavi", var(--font-ui); }
+html:lang(en) body, p[lang="en"] { font-family: var(--font-latin); }

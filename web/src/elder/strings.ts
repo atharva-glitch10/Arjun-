@@ -240,6 +240,11 @@ export function setElderLang(lang: string | undefined | null): void {
   current = isElderLang(lang) ? lang : "mr";
 }
 
+/** The language the screen's labels use: a spoken switch in force ("हिंदीत बोला") wins over the profile language. */
+export function uiLanguage(active: string | undefined | null, profile: string | undefined | null): ElderLang {
+  return isElderLang(active) ? active : isElderLang(profile) ? profile : "mr";
+}
+
 export function getElderLang(): ElderLang {
   return current;
 }

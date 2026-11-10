@@ -119,6 +119,8 @@ def test_attributes_carry_screen_turn_and_the_spoken_text():
         "arjun.thinking": "0",  # a published reply always clears the thinking marker
         "arjun.action": "",  # and the previous action (the page performs each one once)
         "arjun.speech_style": '{"rate": "normal", "volume": "normal", "simple": false}',
+        "arjun.reply_lang": "",  # the language tag of the line (empty when reasoning gave none)
+        "arjun.active_lang": "",  # a spoken language switch in force, else empty
     }
 
 
@@ -144,6 +146,8 @@ def test_publish_screen_sets_attributes_on_the_participant():
     assert p.got == {
         "arjun.screen": "saved", "arjun.turn": "2", "arjun.reply": "ठीक आहे", "arjun.item": "", "arjun.thinking": "0", "arjun.action": "",
         "arjun.speech_style": '{"rate": "normal", "volume": "normal", "simple": false}',
+        "arjun.reply_lang": "",  # the language tag of the line (empty when reasoning gave none)
+        "arjun.active_lang": "",  # a spoken language switch in force, else empty
     }
 
 

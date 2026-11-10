@@ -13,6 +13,12 @@ import type { StringKey } from "@/elder/strings";
 
 
 /** What she calls her companion (family-set in Settings; blank = अर्जुन). Set by ElderApp after it loads the user. */
+/** The language tag of the line Arjun is saying (set by ElderApp from the same reply), so the text carries lang=. */
+let replyLangTag = "";
+export function setReplyLang(lang: string | undefined): void {
+  replyLangTag = (lang ?? "").trim();
+}
+
 let companionLabel = "अर्जुन";
 export function setCompanionLabel(name: string | undefined): void {
   const n = (name ?? "").trim();
@@ -413,7 +419,9 @@ export function ReplyScreen(p: {
         <ChatThread messages={p.thread} />
       ) : (
         <div className="panel" aria-live="polite">
-          <p style={{ fontSize: 27, lineHeight: 1.5, fontWeight: 600 }}>{p.reply}</p>
+          <p lang={replyLangTag || undefined} style={{ fontSize: 27, lineHeight: 1.5, fontWeight: 600 }}>
+            {p.reply}
+          </p>
         </div>
       )}
       <div className="stack-end">
