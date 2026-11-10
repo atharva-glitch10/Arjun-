@@ -55,3 +55,6 @@ _pytest_*/
 _qa/
 _dead*.py
 *.zip
+
+Arjun_pytest_active/
+_phase1_*_tmp/
