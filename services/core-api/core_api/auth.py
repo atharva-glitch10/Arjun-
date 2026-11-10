@@ -37,12 +37,14 @@ _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _RATE_LOCK = threading.Lock()
 _LOGIN_ATTEMPTS: dict[str, list[float]] = {}
 _PAIR_ATTEMPTS: dict[str, list[float]] = {}
+_SIGNUP_ATTEMPTS: dict[str, list[float]] = {}
 
 
 class SignupIn(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=10, max_length=256)
     name: str = Field(min_length=1, max_length=100)
+    signup_code: str | None = Field(default=None, max_length=100)
 
     @field_validator("email")
     @classmethod
@@ -269,6 +271,25 @@ def authorize_core_request(request: Request, response: Response, db: Session) ->
         raise HTTPException(401, "login required")
     if db.scalar(select(m.Membership.id).where(m.Membership.account_id == account[0].id)) is None:
         raise HTTPException(403, "no elder memberships")
+    _scope_global_route(request, db, account[0].id)
+
+
+# Global routes that are keyed by a QUERY user_id (not /users/{id}/...) or that show household-wide data: a session account may
+# use them only for an elder of its own household, or (the two with no elder) only as an owner.
+_QUERY_USER_ROUTES = frozenset({"/media/news", "/media/youtube/search"})
+_OWNER_ONLY_ROUTES = frozenset({"/metrics/voice", "/diag/base-url"})
+
+
+def _scope_global_route(request: Request, db: Session, account_id: int) -> None:
+    path = request.url.path
+    if path in _QUERY_USER_ROUTES:
+        raw = request.query_params.get("user_id", "")
+        if not raw.isdigit() or _membership(db, account_id, int(raw)) is None:
+            raise HTTPException(403, "not authorized for this elder")
+    elif path in _OWNER_ONLY_ROUTES:
+        owner = db.scalar(select(m.Membership.id).where(m.Membership.account_id == account_id, m.Membership.role == "owner").limit(1))
+        if owner is None:
+            raise HTTPException(403, "owner access required")
 
 
 def authorize_websocket(ws, user_id: int, db: Session) -> bool:  # type: ignore[no-untyped-def]
@@ -333,6 +354,19 @@ def reset_auth_limits_for_tests() -> None:
     with _RATE_LOCK:
         _LOGIN_ATTEMPTS.clear()
         _PAIR_ATTEMPTS.clear()
+        _SIGNUP_ATTEMPTS.clear()
+
+
+def _require_signup_code(given: str | None) -> None:
+    """Sign-up is closed unless the caller knows ARJUN_SIGNUP_CODE (or ARJUN_ALLOW_OPEN_SIGNUP=1, for local development).
+    This also covers the FIRST account, which owns every elder that already exists (the seeded demo household)."""
+    if os.environ.get("ARJUN_ALLOW_OPEN_SIGNUP", "").strip() == "1":
+        return
+    expected = os.environ.get("ARJUN_SIGNUP_CODE", "").strip()
+    if not expected:
+        raise HTTPException(403, "sign-up is closed", headers={"Cache-Control": "no-store"})
+    if not hmac.compare_digest((given or "").strip().encode(), expected.encode()):
+        raise HTTPException(403, "sign-up code required", headers={"Cache-Control": "no-store"})
 
 
 def _login_error() -> HTTPException:
@@ -342,6 +376,9 @@ def _login_error() -> HTTPException:
 @router.post("/auth/signup", status_code=201)
 def signup(body: SignupIn, request: Request, response: Response, db: Session = Depends(get_db)) -> dict[str, object]:
     _auth_required()
+    if not _within_rate(_SIGNUP_ATTEMPTS, _remote_key(request, "signup"), 5, 60):
+        raise HTTPException(429, "too many sign-up attempts", headers={"Retry-After": "60", "Cache-Control": "no-store"})
+    _require_signup_code(body.signup_code)  # BEFORE the duplicate-email check: no account enumeration without the code
     email = body.email
     if db.scalar(select(m.Account.id).where(m.Account.email == email)) is not None:
         raise HTTPException(409, "email unavailable")
@@ -389,9 +426,10 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
         if row is not None:
             db.delete(row)
             db.commit()
-    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=_secure(request), samesite="lax")
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    out = Response(status_code=204)  # the injected `response` has no status of its own: returning it dropped the connection
+    out.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=_secure(request), samesite="lax")
+    out.headers["Cache-Control"] = "no-store"
+    return out
 
 
 @router.get("/auth/me")

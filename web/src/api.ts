@@ -406,8 +406,8 @@ export const api = {
   authMe: () => core<AccountMe>("/auth/me", { credentials: "same-origin" }),
   login: (email: string, password: string) =>
     core<{ id: number }>("/auth/login", { ...post({ email, password }), credentials: "same-origin" }),
-  signup: (name: string, email: string, password: string) =>
-    core<{ id: number }>("/auth/signup", { ...post({ name, email, password }), credentials: "same-origin" }),
+  signup: (name: string, email: string, password: string, signup_code: string) =>
+    core<{ id: number }>("/auth/signup", { ...post({ name, email, password, signup_code }), credentials: "same-origin" }),
   logout: () => core<void>("/auth/logout", { method: "POST", credentials: "same-origin" }),
   addElder: (name: string, language: string) =>
     core<{ id: number }>("/parents", { ...post({ name, language }), credentials: "same-origin" }),

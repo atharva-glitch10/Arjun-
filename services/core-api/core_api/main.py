@@ -32,6 +32,7 @@ from .livekit_token import router as livekit_router
 from .media import router as media_router
 from .medicines import mark_snoozed, mark_taken, open_dose
 from .medicines import router as medicines_router
+from .origin_guard import origin_brake
 from .ratelimit import RateLimitMiddleware
 from .readings import router as readings_router
 from .recurrence import next_occurrence
@@ -61,6 +62,7 @@ async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
 
 
 app = FastAPI(title="Arjun core-api", lifespan=lifespan)
+app.middleware("http")(origin_brake)  # cross-site POST with a session cookie -> 403 (origin_guard.py)
 app.add_middleware(RateLimitMiddleware)
 router = APIRouter(dependencies=[Depends(require_key)])
 

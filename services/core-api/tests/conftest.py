@@ -24,6 +24,17 @@ NOW = datetime(2026, 10, 6, 9, 0)
 
 
 @pytest.fixture(autouse=True)
+def _open_signup_for_tests(monkeypatch):
+    """Sign-up needs ARJUN_SIGNUP_CODE in real life; the older suites sign up freely. test_auth_hardening.py closes it again."""
+    monkeypatch.setenv("ARJUN_ALLOW_OPEN_SIGNUP", "1")
+    monkeypatch.delenv("ARJUN_SIGNUP_CODE", raising=False)
+    from core_api import auth
+
+    auth.reset_auth_limits_for_tests()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _base_url_probe(monkeypatch):
     """The BASE_URL reachability probe never touches the network in tests: every URL answers 200 unless a test says otherwise."""
     baseurl.reset()

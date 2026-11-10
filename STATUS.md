@@ -1,5 +1,24 @@
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
+## Auth hardening for the deadline (2026-11-10)
+Small fixes from the 2026-11-10 auth audit. `ARJUN_AUTH` stays OFF (the demo still runs through the key-injecting proxy); these apply
+whenever account auth is on, and the Origin brake also when a session/device cookie is present.
+- **Logout:** `POST /auth/logout` returns a real 204, deletes the session and expires the cookie (it used to drop the connection: it returned
+  the injected `Response`, which has no status). Verified against a real uvicorn instance (`tests/test_auth_live.py`), not only TestClient.
+- **Closed sign-up:** an account (also the FIRST one, which owns the existing demo elder) needs `ARJUN_SIGNUP_CODE`; empty = sign-up closed;
+  `ARJUN_ALLOW_OPEN_SIGNUP=1` is the dev switch (both new vars are in `.env.example`, empty). The code is checked before the duplicate-email
+  test (no email probing), 5 sign-up attempts a minute per IP then 429.
+- **Household scoping of query-keyed routes:** `/media/news` and `/media/youtube/search` need a membership of the `user_id` elder (else 403);
+  `/metrics/voice` and `/diag/base-url` are owner-only. Two synthetic households tested (cross-household 403, family-only account 403).
+  NOTE: the browser proxy still injects the service key, so these checks protect direct/session callers, not the proxied browser path.
+- **Origin (CSRF) brake:** an unsafe request with an `Origin` that is not localhost or `BASE_URL` gets 403 when auth is on or an
+  `arjun_session`/`arjun_device` cookie is sent (`origin_guard.py`); requests without Origin and the API-key services are unaffected.
+- **Family auth screens** are Marathi / Hindi / English (`web/src/family/authText.ts`, with a language switch; the other 7 languages fall back to
+  English), a 429 shows "Too many attempts, wait a minute", sign-up has a sign-up-code field.
+- **After submission (NOT done, on purpose):** proxy cookie forwarding so core-api's membership check gates the browser path; elder device
+  pairing UI and binding `/livekit/token` to the device; hashing session tokens in `sessions.id`; password reset / email verification;
+  CSRF tokens, DB-backed rate limits and per-account lockout; invite/pairing UI; the rest of the audit's gaps.
+
 ## Call intent + invalid_json (2026-11-09)
 - **Bug 2, invalid_json (reproduced live with the real prompt):** the understanding JSON was cut off at `max_tokens=250`
   (`finish_reason=length`): the provider escaped every Devanagari letter as `\uXXXX`, and my answer-router fields made the object longer. So

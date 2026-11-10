@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 import { api } from "../api";
 import type { AccountMe } from "../api";
+import { AUTH_LANGS, at, authErrorKey, detectAuthLang, saveAuthLang } from "./authText";
+import type { AuthLang } from "./authText";
 
 type Phase = { kind: "checking" } | { kind: "off" } | { kind: "login" } | { kind: "in"; me: AccountMe };
 
@@ -10,10 +12,15 @@ type Phase = { kind: "checking" } | { kind: "off" } | { kind: "login" } | { kind
  * Family login (team notes 2026-11-10: "login and authentication so that we can create multiple users").
  * Only when core-api runs with ARJUN_AUTH=1; otherwise /auth/me answers 404 and the dashboard opens as before.
  * After login the family sees ONLY the elders their account belongs to, can add another elder, and log out.
- * The first account ever created owns the elders that already exist (the seeded demo household).
+ * Sign-up needs the sign-up code (ARJUN_SIGNUP_CODE). All words: authText.ts (mr / hi / en).
  */
 export function AccountGate(p: { userId: number; onUser: (id: number) => void; children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "checking" });
+  const [lang, setLangState] = useState<AuthLang>(detectAuthLang);
+  const setLang = (l: AuthLang) => {
+    saveAuthLang(l);
+    setLangState(l);
+  };
   const { onUser, userId } = p;
 
   const load = useCallback(async () => {
@@ -34,7 +41,7 @@ export function AccountGate(p: { userId: number; onUser: (id: number) => void; c
 
   if (phase.kind === "checking") return <div className="family" style={{ minHeight: "60vh" }} />;
   if (phase.kind === "off") return <>{p.children}</>;
-  if (phase.kind === "login") return <LoginPage onIn={() => void load()} />;
+  if (phase.kind === "login") return <LoginPage lang={lang} setLang={setLang} onIn={() => void load()} />;
 
   const { me } = phase;
   return (
@@ -42,7 +49,7 @@ export function AccountGate(p: { userId: number; onUser: (id: number) => void; c
       <div className="acct-bar" role="navigation" aria-label="Account">
         <span className="acct-who">{me.account.name}</span>
         <label className="acct-pick">
-          Elder
+          {at("elder", lang)}
           <select value={userId} onChange={(e) => onUser(Number(e.target.value))}>
             {me.elders.map((e) => (
               <option key={e.id} value={e.id}>
@@ -52,12 +59,14 @@ export function AccountGate(p: { userId: number; onUser: (id: number) => void; c
           </select>
         </label>
         <AddElder
-          onAdd={async (name, lang) => {
-            const made = await api.addElder(name, lang);
+          lang={lang}
+          onAdd={async (name, elderLang) => {
+            const made = await api.addElder(name, elderLang);
             await load();
             onUser(made.id);
           }}
         />
+        <LangSwitch lang={lang} setLang={setLang} />
         <button
           className="fbtn"
           onClick={async () => {
@@ -65,22 +74,34 @@ export function AccountGate(p: { userId: number; onUser: (id: number) => void; c
             setPhase({ kind: "login" });
           }}
         >
-          Log out
+          {at("logout", lang)}
         </button>
       </div>
       {me.elders.length ? (
         p.children
       ) : (
         <div className="acct-card">
-          <h2>Add the person you care for</h2>
-          <p>Use "Add elder" above. You can add more than one.</p>
+          <h2>{at("add_title", lang)}</h2>
+          <p>{at("add_help", lang)}</p>
         </div>
       )}
     </>
   );
 }
 
-function AddElder(p: { onAdd: (name: string, lang: string) => Promise<void> }) {
+function LangSwitch(p: { lang: AuthLang; setLang: (l: AuthLang) => void }) {
+  return (
+    <span role="group" aria-label="Language" className="acct-lang">
+      {AUTH_LANGS.map(([id, label]) => (
+        <button key={id} type="button" className="acct-link" aria-pressed={p.lang === id} style={{ fontWeight: p.lang === id ? 800 : 400 }} onClick={() => p.setLang(id)}>
+          {label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function AddElder(p: { lang: AuthLang; onAdd: (name: string, lang: string) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [lang, setLang] = useState("mr");
@@ -88,7 +109,7 @@ function AddElder(p: { onAdd: (name: string, lang: string) => Promise<void> }) {
   if (!open)
     return (
       <button className="fbtn" onClick={() => setOpen(true)}>
-        + Add elder
+        {at("add_elder", p.lang)}
       </button>
     );
   return (
@@ -101,12 +122,12 @@ function AddElder(p: { onAdd: (name: string, lang: string) => Promise<void> }) {
           setOpen(false);
           setName("");
         } catch (x) {
-          setErr(x instanceof Error ? x.message : "Could not add");
+          setErr(x instanceof Error ? x.message : at("add_failed", p.lang));
         }
       }}
     >
-      <input className="fam-input" aria-label="Elder's name" placeholder="Name (e.g. हीराबाई)" value={name} onChange={(e) => setName(e.target.value)} />
-      <select className="fam-input" aria-label="Language" value={lang} onChange={(e) => setLang(e.target.value)}>
+      <input className="fam-input" aria-label={at("elder_name", p.lang)} placeholder={at("name_ph", p.lang)} value={name} onChange={(e) => setName(e.target.value)} />
+      <select className="fam-input" aria-label={at("language", p.lang)} value={lang} onChange={(e) => setLang(e.target.value)}>
         <option value="mr">मराठी</option>
         <option value="hi">हिंदी</option>
         <option value="en">English</option>
@@ -119,21 +140,23 @@ function AddElder(p: { onAdd: (name: string, lang: string) => Promise<void> }) {
         <option value="ml">മലയാളം</option>
       </select>
       <button className="fbtn solid" type="submit" disabled={!name.trim()}>
-        Add
+        {at("add", p.lang)}
       </button>
       <button className="fbtn" type="button" onClick={() => setOpen(false)}>
-        Cancel
+        {at("cancel", p.lang)}
       </button>
       {err && <span className="acct-err">{err}</span>}
     </form>
   );
 }
 
-function LoginPage(p: { onIn: () => void }) {
+function LoginPage(p: { lang: AuthLang; setLang: (l: AuthLang) => void; onIn: () => void }) {
+  const { lang } = p;
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -141,20 +164,11 @@ function LoginPage(p: { onIn: () => void }) {
     setErr("");
     setBusy(true);
     try {
-      if (mode === "signup") await api.signup(name.trim(), email.trim(), password);
+      if (mode === "signup") await api.signup(name.trim(), email.trim(), password, code.trim());
       else await api.login(email.trim(), password);
       p.onIn();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "";
-      setErr(
-        msg.startsWith("401") || msg.startsWith("429")
-          ? "Wrong email or password."
-          : msg.startsWith("409")
-            ? "An account with this email already exists. Log in instead."
-            : msg.startsWith("422")
-              ? "Check the email, and use a password of at least 10 characters."
-              : "Could not reach Arjun. Is it running?",
-      );
+      setErr(at(authErrorKey(e instanceof Error ? e.message : "", mode), lang));
     } finally {
       setBusy(false);
     }
@@ -169,20 +183,21 @@ function LoginPage(p: { onIn: () => void }) {
           void submit();
         }}
       >
-        <h1>Arjun · Family</h1>
-        <p className="acct-sub">{mode === "login" ? "Log in to see how your loved one is doing." : "Create a family account."}</p>
+        <LangSwitch lang={lang} setLang={p.setLang} />
+        <h1>{at("title", lang)}</h1>
+        <p className="acct-sub">{mode === "login" ? at("login_sub", lang) : at("signup_sub", lang)}</p>
         {mode === "signup" && (
           <label>
-            Your name
+            {at("your_name", lang)}
             <input className="fam-input" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
         )}
         <label>
-          Email
+          {at("email", lang)}
           <input className="fam-input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label>
-          Password {mode === "signup" && <span className="acct-hint">(at least 10 characters)</span>}
+          {at("password", lang)} {mode === "signup" && <span className="acct-hint">{at("password_hint", lang)}</span>}
           <input
             className="fam-input"
             type="password"
@@ -191,16 +206,22 @@ function LoginPage(p: { onIn: () => void }) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
+        {mode === "signup" && (
+          <label>
+            {at("signup_code", lang)} <span className="acct-hint">{at("signup_code_hint", lang)}</span>
+            <input className="fam-input" autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
+          </label>
+        )}
         {err && (
           <p className="acct-err" role="alert">
             {err}
           </p>
         )}
-        <button className="fbtn solid" type="submit" disabled={busy || !email || !password || (mode === "signup" && !name.trim())}>
-          {mode === "login" ? "Log in" : "Create account"}
+        <button className="fbtn solid" type="submit" disabled={busy || !email || !password || (mode === "signup" && (!name.trim() || !code.trim()))}>
+          {mode === "login" ? at("login", lang) : at("create", lang)}
         </button>
         <button type="button" className="acct-link" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
-          {mode === "login" ? "New here? Create an account" : "Already have an account? Log in"}
+          {mode === "login" ? at("to_signup", lang) : at("to_login", lang)}
         </button>
       </form>
     </div>
