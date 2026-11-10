@@ -1,0 +1,192 @@
+D:\Arjun\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+LLM: gemini / gemini-flash-lite-latest (configured=True) | budgets=relaxed
+[1/75] OK  sci1     1904 ms route=know         पाण्याचं सूत्र काय आहे -> पाण्याचं रासायनिक सूत्र H2O असं आहे Aajiबाई.
+[2/75] OK  sci2     1816 ms route=know         सूर्य कोणत्या दिशेला उगवतो -> सूर्य नेहमी पूर्वेला उगवतो Aajiबाई.
+[3/75] OK  sci3     2194 ms route=know         प्रकाशाचा वेग किती आहे -> प्रकाशाचा वेग सेकंदाला सुमारे तीन लाख किलोमीटर असतो Aajiबाई.
+[4/75] BAD sci4     2747 ms route=know         मानवी शरीरात किती हाडं असतात -> प्रौढ मानवी शरीरात साधारणपणे दोन शे सहा हाडं असतात Aajiबाई.
+[5/75] OK  sci5     1790 ms route=know         पृथ्वीला सूर्याभोवती फिरायला किती वेळ ला -> पृथ्वीला सूर्याभोवती एक फेरी पूर्ण करायला सुमारे ३६५ दिवस लागतात Aajiब
+[6/75] BAD his1     4459 ms route=know         भारताला स्वातंत्र्य कधी मिळालं -> भारताला पंधरा ऑगस्ट एकोणीसशे सद्वेचाळीस रोजी स्वातंत्र्य मिळालं Aajiबा
+[7/75] BAD his2     1426 ms route=know         शिवाजी महाराजांचा राज्याभिषेक कधी झाला -> शिवाजी महाराजांचा राज्याभिषेक सहा जून सोळाशे चौऱ्याहत्तर रोजी झाला Aaj
+[8/75] BAD his3     1604 ms route=know         पानिपतची तिसरी लढाई कधी झाली -> पानिपतची तिसरी लढाई चौदा जानेवारी सत्रे शे एक्क्याऐंशी रोजी झाली Aajiब
+[9/75] OK  his4     1361 ms route=know         महात्मा गांधींचा जन्म कुठे झाला -> महात्मा गांधींचा जन्म गुजरातच्या पोरबंदर येथे झाला Aajiबाई.
+[10/75] OK  rel1     1084 ms route=know         गणेश चतुर्थीला कोणत्या देवाची पूजा करतात -> गणेश चतुर्थीला श्री गणेशाची पूजा केली जाते Aajiबाई.
+[11/75] OK  rel2     1297 ms route=know         दिवाळीला कोणत्या देवीची पूजा करतात -> दिवाळीत प्रामुख्याने लक्ष्मी देवीची पूजा केली जाते Aajiबाई.
+[12/75] OK  rel3     2795 ms route=know         भगवद्गीता कोणी सांगितली -> भगवद्गीता भगवंत श्रीकृष्णांनी अर्जुनाला सांगितली Aajiबाई.
+[13/75] OK  rel4     1150 ms route=know         एकादशी म्हणजे काय -> एकादशी हा महिन्यातील एक पवित्र उपवासाचा दिवस असतो Aajiबाई. या दिवशी प्
+[14/75] OK  rec1     1887 ms route=know         पुरणपोळी कशी करतात -> पुरणपोळी करण्यासाठी चणा डाळ शिजवून गूळ घालून पुरण तयार करतात आणि नंतर 
+[15/75] OK  rec2     1518 ms route=know         चहा कसा करायचा -> चहा करण्यासाठी पातेल्यात पाणी उकळवून त्यात चहा पावडर, साखर, आलं आणि दू
+[16/75] OK  mat1     1516 ms route=know         बारा गुणिले पंधरा किती होतात -> बारा गुणिले पंधरा एकशे ऐंशी होतात Aajiबाई.
+[17/75] OK  mat2     1546 ms route=know         अडीचशेचे दहा टक्के किती -> अडीचशेचे दहा टक्के पंचवीस होतात Aajiबाई.
+[18/75] OK  mat3     1069 ms route=know         शंभर मधून सदोतीस वजा केले तर किती राहतात -> शंभर मधून सदोतीस वजा केले तर त्रेसष्ठ राहतात Aajiबाई.
+[19/75] OK  lan1      960 ms route=know         आनंद या शब्दाचा अर्थ काय -> आनंद या शब्दाचा अर्थ खुशी किंवा सुख असा होतो Aajiबाई.
+[20/75] BAD lan2     1085 ms route=know         धन्यवाद इंग्रजीत काय म्हणतात -> इंग्रजीत 'धन्यवाद'ला थँक्यू म्हणतात Aajiबाई.
+[21/75] OK  geo1     1291 ms route=know         भारताची राजधानी कोणती -> भारताची राजधानी नवी दिल्ली ही आहे Aajiबाई.
+[22/75] OK  geo2     1169 ms route=know         महाराष्ट्राची राजधानी कोणती -> महाराष्ट्राची राजधानी मुंबई ही आहे Aajiबाई.
+[23/75] OK  geo3     1529 ms route=know         गंगा नदी कुठून उगम पावते -> गंगा नदीचा उगम गंगोत्री हिमनदीतून होतो Aajiबाई.
+[24/75] OK  geo4     1444 ms route=know         जगातील सर्वात उंच शिखर कोणतं -> जगातील सर्वात उंच शिखर माऊंट एव्हरेस्ट हे आहे Aajiबाई.
+[25/75] OK  hlt1     1273 ms route=refuse_safe  डोकं दुखत असेल तर कोणती गोळी घ्यावी -> हे डॉक्टरांना विचारा. घरच्यांच्या स्क्रीनवर कळवलं आहे.
+[26/75] OK  hlt2     2278 ms route=refuse_safe  बीपीची गोळी दोन वेळा घेतली तर चालेल का -> हे डॉक्टरांना विचारा. घरच्यांच्या स्क्रीनवर कळवलं आहे.
+[27/75] OK  hlt3     3041 ms route=know         मधुमेह म्हणजे काय -> मधुमेह हा रक्तातील साखरेची पातळी वाढल्यामुळे होणारा आजार आहे Aajiबाई.
+[28/75] OK  hlt4     2577 ms route=know         योग म्हणजे काय -> योग म्हणजे शारीरिक आणि मानसिक स्वास्थ्यासाठी केला जाणारा आसन आणि प्राण
+[29/75] OK  spo1     8036 ms route=search       आयपीएल दोन हजार पंचवीस कोणत्या संघाने जि -> रॉयल चॅलेंजर्स बंगळुरु संघाने, लोकसत्ता नुसार. यंदाच्या अंतिम सामन्यात
+[30/75] OK  spo2     1377 ms route=know         सचिन तेंडुलकरने किती आंतरराष्ट्रीय शतकं  -> सचिन तेंडुलकरने आंतरराष्ट्रीय क्रिकेटमध्ये शंभर शतकं केली आहेत Aajiबाई
+[31/75] OK  spo3     7654 ms route=search       सध्या भारतीय क्रिकेट संघाचा कर्णधार कोण  -> रोहित शर्मा भारतीय क्रिकेट संघाचा कर्णधार आहे, असं सकाळच्या बातमीत म्ह
+[32/75] OK  spo4     1326 ms route=know         दोन हजार अकरा चा क्रिकेट विश्वचषक कोण जि -> दोन हजार अकराचा क्रिकेट विश्वचषक भारताने जिंकला होता Aajiबाई.
+[33/75] OK  spo5     4687 ms route=search       भारताचा पुढचा क्रिकेट सामना कधी आहे -> १० नोव्हेंबर २०२६ रोजी आहे, असे स्पोर्टिंग न्यूज सांगतो. भारत आणि न्यू
+[34/75] OK  fil1      917 ms route=know         शोले चित्रपटाचे दिग्दर्शक कोण -> शोले चित्रपटाचे दिग्दर्शक रमेश सिप्पी हे होते Aajiबाई.
+[35/75] OK  fil2     1017 ms route=know         दादासाहेब फाळके पुरस्कार कशासाठी दिला जा -> दादासाहेब फाळके पुरस्कार चित्रपट सृष्टीतील उत्कृष्ट योगदानाबद्दल दिला 
+[36/75] OK  fil3     1171 ms route=know         सैराट चित्रपटात मुख्य भूमिका कोणी केली -> सैराट चित्रपटात मुख्य भूमिका आकाश ठोसर आणि रिंकू राजगुरु यांनी केली हो
+[37/75] OK  fil4     1919 ms route=know         लगान चित्रपटाचा नायक कोण -> लगान चित्रपटाचा नायक आमिर खान होता Aajiबाई.
+[38/75] OK  pol1     1176 ms route=know         भारताचे पंतप्रधान कोण आहेत -> नरेन्द्र मोदी हे भारताचे पंतप्रधान आहेत Aajiबाई.
+[39/75] OK  pol2     1610 ms route=know         भारताचे राष्ट्रपती कोण आहेत -> दौपदी मुर्मू या भारताच्या राष्ट्रपती आहेत Aajiबाई.
+[40/75] OK  pol3     7610 ms route=search       महाराष्ट्राचे मुख्यमंत्री कोण आहेत -> देवेंद्र फडणवीस हे महाराष्ट्राचे सध्याचे मुख्यमंत्री आहेत. जगरणजोशच्या
+[41/75] BAD pol4     9894 ms route=search       रिझर्व्ह बँकेचे गव्हर्नर कोण आहेत -> आत्ता माहिती मिळाली नाही.
+[42/75] OK  pol5     5592 ms route=search       अमेरिकेचे राष्ट्राध्यक्ष कोण आहेत -> डोनल्ड ट्रम्प, असे विकिपीडिया सांगते. सध्या ते अमेरिकेचे राष्ट्राध्यक्
+[43/75] BAD prc1     9571 ms route=search       आज सोन्याचा भाव किती आहे -> आत्ता माहिती मिळाली नाही.
+[44/75] BAD prc2     9403 ms route=search       पेट्रोलचा आजचा भाव किती आहे -> आत्ता माहिती मिळाली नाही.
+[45/75] BAD prc3    10387 ms route=search       डॉलरचा आजचा भाव रुपयांत किती -> आत्ता माहिती मिळाली नाही.
+[46/75] OK  new1     2949 ms route=news_read    आजच्या ताज्या बातम्या सांगा -> आत्ता बातम्या मिळाल्या नाहीत.
+[47/75] OK  new2     3378 ms route=news_read    आज महाराष्ट्रात काय घडलं -> आत्ता बातम्या मिळाल्या नाहीत.
+[48/75] OK  new3     2665 ms route=news_read    खेळाच्या ताज्या बातम्या सांगा -> आत्ता बातम्या मिळाल्या नाहीत.
+[49/75] OK  wea1     4612 ms route=tool         आज पुण्यात पाऊस पडेल का -> Puneमध्ये आत्ता आकाश स्वच्छ आहे, तापमान 25 अंश. आज 18 ते 30 अंश, पावसा
+[50/75] BAD wea2     1376 ms route=know         आज हवामान कसं आहे -> Puneमध्ये आज हवामान छान आणि स्वच्छ आहे Aajiबाई.
+[51/75] BAD wea3     1426 ms route=know         पुण्यात आज तापमान किती आहे -> Puneमध्ये आज तापमान पंचवीस अंश आहे Aajiबाई.
+[52/75] BAD amb1    10671 ms route=search       सचिनचं वय किती -> आत्ता माहिती मिळाली नाही.
+[53/75] OK  amb2     1075 ms route=know         राहुल कोण आहे -> राहुल हा तुमचा नातू आहे Aajiबाई.
+[54/75] OK  amb3     1090 ms route=know         अमितजी कोण आहेत -> अमितजी हे बॉलिवूडचे ज्येष्ठ अभिनेते अमिताभ बच्चन आहेत Aajiबाई.
+[55/75] OK  age1     6541 ms route=search       विराट कोहली किती वर्षांचा आहे -> विराट कोहली ३८ वर्षांचे आहेत आजीबाई, असे फेसबुक आणि इंस्टाग्रामवरून सम
+[56/75] BAD age2     3171 ms route=know         नरेंद्र मोदी यांचं वय किती -> नरेन्द्र मोदी हे सध्या चौऱ्याहत्तर वर्षांचे आहेत Aajiबाई.
+[57/75] OK  stt1     1787 ms route=know         बारत का परधान मंतरी कौन हे -> भारताचे पंतप्रधान नरेंद्र मोदी हे आहेत Aajiबाई.
+[58/75] OK  stt2     1844 ms route=know         भारताचा राष्ट्रपती कोन आहे मुरमु -> द्रौपदी मुर्मू या भारताच्या राष्ट्रपती आहेत Aajiबाई.
+[59/75] OK  stt3     1032 ms route=know         सचीन तेंडूलकर चा जनम कधी झाला -> सचिन तेंडुलकर यांचा जन्म २४ एप्रिल १९७३ रोजी झाला Aajiबाई.
+[60/75] BAD stt4     9931 ms route=search       who is the president of amerika -> I could not get that information right now.
+[61/75] OK  mul1     5628 ms route=know         भारत की राजधानी क्या है -> भारताची राजधानी नवी दिल्ली आहे Aajiबाई.
+[62/75] BAD mul2     1303 ms route=know         ताजमहल किसने बनवाया था -> ताजमहाल शाहजहान यांनी बांधला होता Aajiबाई.
+[63/75] BAD mul3     1242 ms route=know         who wrote the Ramayana -> महर्षी वाल्मिकी यांनी रामायण लिहिलं आहे Aajiबाई.
+companion reply rejected (script)
+companion reply rejected (script)
+[64/75] BAD mul4     5301 ms route=know         இந்தியாவின் தலைநகரம் எது -> 
+[65/75] OK  mul5     9359 ms route=search       what is the capital of Japan -> Tokyo, Aaji. As Britannica notes, it serves as the country's political
+[66/75] OK  fu1a     1123 ms route=know         भारताचे पंतप्रधान कोण आहेत -> भारताचे पंतप्रधान नरेंद्र मोदी हे आहेत Aajiबाई.
+[67/75] BAD fu1b    10365 ms route=search       आणि त्यांचं वय किती -> आत्ता माहिती मिळाली नाही.
+[68/75] OK  fu2a     2111 ms route=know         भारताचे राष्ट्रपती कोण आहेत -> द्रौपदी मुर्मू या भारताच्या राष्ट्रपती आहेत Aajiबाई.
+[69/75] BAD fu2b     1416 ms route=know         त्या कोणत्या राज्याच्या आहेत -> द्रौपदी मुर्मू या मूळच्या ओरिसा राज्यातील आहेत Aajiबाई.
+[70/75] OK  fu3a     1047 ms route=know         शोले चित्रपटाचे दिग्दर्शक कोण -> शोले चित्रपटाचे दिग्दर्शक रमेश सिप्पी हे आहेत Aajiबाई.
+[71/75] BAD fu3b    10100 ms route=search       त्यांचा जन्म कधी झाला -> आत्ता माहिती मिळाली नाही.
+[72/75] OK  fu4a     1350 ms route=know         विराट कोहली कोण आहे -> विराट कोहली हे भारताचे प्रसिद्ध क्रिकेटपटू आहेत Aajiबाई.
+[73/75] OK  fu4b     1514 ms route=know         आणि त्याची पत्नी कोण -> विराट कोहली यांच्या पत्नी अनुष्का शर्मा आहेत Aajiबाई.
+[74/75] BAD fu5a     2891 ms route=know         what is the capital of France -> फ्रान्सची राजधानी पॅरिस आहे Aajiबाई.
+[75/75] BAD fu5b    10117 ms route=search       and how many people live there -> I could not get that information right now.
+
+# QA eval (2026-11-09 20:32) - 75 questions, budgets=relaxed
+
+**Accuracy 71%** (53/75) | **routing 77%** (46/60) | latency p50 1790 ms, p95 10100 ms, mean 3354 ms
+wrong/unsafe (answered, but not the expected fact): 11
+
+| category | n | accuracy |
+|---|---|---|
+| science | 5 | 80% |
+| history | 4 | 25% |
+| religion | 4 | 100% |
+| recipe | 2 | 100% |
+| maths | 3 | 100% |
+| language | 2 | 50% |
+| geography | 4 | 100% |
+| health | 4 | 100% |
+| sports | 5 | 100% |
+| films | 4 | 100% |
+| roles | 5 | 80% |
+| prices | 3 | 0% |
+| news | 3 | 100% |
+| weather | 3 | 33% |
+| ambiguous | 3 | 67% |
+| computed-age | 2 | 50% |
+| stt-noisy | 4 | 75% |
+| multilingual | 5 | 40% |
+| follow-up | 10 | 50% |
+
+| route | n | p50 ms | p95 ms |
+|---|---|---|---|
+| know | 53 | 1426 | 3171 |
+| search | 16 | 9571 | 10387 |
+| tool | 1 | 4612 | 4612 |
+| refuse_safe | 2 | 1273 | 2278 |
+
+## The 15 worst (question -> query -> top result -> reply -> cause)
+
+- **age2** नरेंद्र मोदी यांचं वय किती
+  - queries: None
+  - top: None
+  - reply: नरेन्द्र मोदी हे सध्या चौऱ्याहत्तर वर्षांचे आहेत Aajiबाई.
+  - cause: routing (expected search, got know)
+- **fu2b** त्या कोणत्या राज्याच्या आहेत
+  - queries: None
+  - top: None
+  - reply: द्रौपदी मुर्मू या मूळच्या ओरिसा राज्यातील आहेत Aajiबाई.
+  - cause: routing (expected search, got know)
+- **fu5a** what is the capital of France
+  - queries: None
+  - top: None
+  - reply: फ्रान्सची राजधानी पॅरिस आहे Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **his1** भारताला स्वातंत्र्य कधी मिळालं
+  - queries: None
+  - top: None
+  - reply: भारताला पंधरा ऑगस्ट एकोणीसशे सद्वेचाळीस रोजी स्वातंत्र्य मिळालं Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **his2** शिवाजी महाराजांचा राज्याभिषेक कधी झाला
+  - queries: None
+  - top: None
+  - reply: शिवाजी महाराजांचा राज्याभिषेक सहा जून सोळाशे चौऱ्याहत्तर रोजी झाला Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **his3** पानिपतची तिसरी लढाई कधी झाली
+  - queries: None
+  - top: None
+  - reply: पानिपतची तिसरी लढाई चौदा जानेवारी सत्रे शे एक्क्याऐंशी रोजी झाली Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **lan2** धन्यवाद इंग्रजीत काय म्हणतात
+  - queries: None
+  - top: None
+  - reply: इंग्रजीत 'धन्यवाद'ला थँक्यू म्हणतात Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **mul2** ताजमहल किसने बनवाया था
+  - queries: None
+  - top: None
+  - reply: ताजमहाल शाहजहान यांनी बांधला होता Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **mul3** who wrote the Ramayana
+  - queries: None
+  - top: None
+  - reply: महर्षी वाल्मिकी यांनी रामायण लिहिलं आहे Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **mul4** இந்தியாவின் தலைநகரம் எது
+  - queries: None
+  - top: None
+  - reply: 
+  - cause: llm_unavailable_rules_replied
+- **sci4** मानवी शरीरात किती हाडं असतात
+  - queries: None
+  - top: None
+  - reply: प्रौढ मानवी शरीरात साधारणपणे दोन शे सहा हाडं असतात Aajiबाई.
+  - cause: wrong_or_missing_fact
+- **amb1** सचिनचं वय किती
+  - queries: ['Sachin Tendulkar age 9 November 2026', 'Sachin Tendulkar सचिनचं वय किती']
+  - top: None
+  - reply: आत्ता माहिती मिळाली नाही.
+  - cause: no_results
+- **fu1b** आणि त्यांचं वय किती
+  - queries: ['age of Prime Minister of Japan 9 November 2026', 'Prime Minister of Japan आणि त्यांचं वय किती']
+  - top: None
+  - reply: आत्ता माहिती मिळाली नाही.
+  - cause: no_results
+- **fu3b** त्यांचा जन्म कधी झाला
+  - queries: ['Ramesh Sippy birth date', 'Ramesh Sippy त्यांचा जन्म कधी झाला']
+  - top: None
+  - reply: आत्ता माहिती मिळाली नाही.
+  - cause: no_results
+- **fu5b** and how many people live there
+  - queries: ['population of Paris today 9 November 2026', 'Paris population and how many people live there']
+  - top: None
+  - reply: I could not get that information right now.
+  - cause: no_results

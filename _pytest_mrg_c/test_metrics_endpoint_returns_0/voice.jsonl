@@ -1,0 +1,4 @@
+{"turn": 1, "t_end_of_speech": 1794164723.632319, "t_final_transcript": 1794164723.832319, "eos_to_final_ms": 200, "endpointing_ms": 500, "reasoning_to_audio_ms": 400, "eos_to_speaking_ms": 1100, "complete": true, "transcript": "synthetic phrase", "reply": "synthetic reply"}
+{"turn": 2, "t_end_of_speech": 1794164725.632319, "t_final_transcript": 1794164725.832319, "eos_to_final_ms": 300, "endpointing_ms": 700, "reasoning_to_audio_ms": 600, "eos_to_speaking_ms": 1600, "complete": true}
+{"metric_event": "barge_in", "turn": 2, "t_event": 1794164726.632319, "barge_in_stop_ms": 250}
+{"turn": 3, "t_final_transcript": 1794064727.632319, "eos_to_final_ms": 9000}
