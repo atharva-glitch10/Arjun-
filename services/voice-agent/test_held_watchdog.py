@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 
 
 def _arjun(monkeypatch):
@@ -47,3 +48,16 @@ def test_not_answered_twice_when_a_later_turn_took_it(monkeypatch):
     a.hold.held = "नमस्कार अर्जुन आज"  # or replaced it with a longer held part (its own timer answers that)
     asyncio.run(a._answer_held_later("नमस्कार अर्जुन"))
     assert answered == []
+
+
+def test_second_dispatched_room_logs_both_room_ids(monkeypatch, caplog):
+    _arjun(monkeypatch)
+    import agent
+
+    monkeypatch.setattr(agent, "_active_rooms", set())
+    agent._register_active_room("room-one")
+    with caplog.at_level(logging.WARNING, logger="arjun.agent"):
+        agent._register_active_room("room-two")
+    assert "active_room=room-one dispatched_room=room-two" in caplog.text
+    agent._unregister_active_room("room-one")
+    agent._unregister_active_room("room-two")

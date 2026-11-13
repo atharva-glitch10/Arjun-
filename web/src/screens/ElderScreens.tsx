@@ -7,6 +7,9 @@ import type { DoseCheck, HealthProfile } from "@/api";
 import { Orb } from "@/components/Orb";
 import type { OrbState } from "@/components/orbState";
 import { t } from "@/elder/strings";
+
+import { ChatMessages } from "./ChatScreen";
+import type { ChatMsg } from "./ChatScreen";
 import type { StringKey } from "@/elder/strings";
 
 /** Presentational elder screens ("listens with care" design). No fetching and no hard-coded user data: all props. */
@@ -20,6 +23,7 @@ export function setReplyLang(lang: string | undefined): void {
 }
 
 let companionLabel = "अर्जुन";
+export const getCompanionLabel = (): string => companionLabel;
 export function setCompanionLabel(name: string | undefined): void {
   const n = (name ?? "").trim();
   companionLabel = !n || n.toLowerCase() === "arjun" ? "अर्जुन" : n;
@@ -81,6 +85,8 @@ export interface HomeProps {
   busy?: boolean;
   error?: string;
   onSpeak: () => void;
+  /** /chat already has its own record button, so the big orb is hidden there. */
+  hideSpeak?: boolean;
   onToday: () => void;
   onHelp: () => void;
   /** Opens the family-written information screen. */
@@ -183,6 +189,7 @@ export function HomeScreen(p: HomeProps) {
           </section>
         </div>
 
+        {!p.hideSpeak && (
         <div className="home-speak">
           <button className="speak-orb" onClick={p.onSpeak} disabled={p.busy} aria-label={t("talk_to", { name: companionLabel })}>
             <span className="orb-phone">
@@ -200,6 +207,7 @@ export function HomeScreen(p: HomeProps) {
             <span className="label">{t("tap_and_speak")}</span>
           </button>
         </div>
+        )}
       </div>
 
       {p.error && (
@@ -230,50 +238,20 @@ export function HomeScreen(p: HomeProps) {
   );
 }
 
-/* ---- WhatsApp-style conversation (team notes 2026-11-10) -------------------------------------------- */
-export interface ChatMsg {
-  id: number;
-  who: "me" | "arjun";
-  text: string;
-  /** "HH:MM" shown under the bubble, like WhatsApp. */
-  time: string;
-}
+/* ---- Conversation: shadcn message scroller + bubbles (ChatScreen.tsx) ---------------------------------------------- */
+export type { ChatMsg } from "./ChatScreen";
 
-/** Her words on the right in green, Arjun's on the left in white, newest at the bottom; the live sentence she is
- * still saying shows as a faded bubble with "…". Big type for old eyes. */
+/** The conversation so far for the elder screens that still carry a thread (hands-free / dashboard preview). /chat uses ChatScreen. */
 export function ChatThread(p: { messages: ChatMsg[]; live?: string; typing?: boolean }) {
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    end.current?.scrollIntoView?.({ block: "end" });
-  }, [p.messages.length, p.live, p.typing]);
   return (
-    <div className="wa-thread" aria-live="polite" role="log">
-      {p.messages.length === 0 && !p.live && <p className="wa-empty">{t("you_said")} …</p>}
-      {p.messages.map((m) => (
-        <div key={m.id} className={`wa-row ${m.who}`}>
-          <div className={`wa-bubble ${m.who}`}>
-            <span className="wa-text">{m.text}</span>
-            <span className="wa-time">{m.time}</span>
-          </div>
-        </div>
-      ))}
-      {p.live && (
-        <div className="wa-row me">
-          <div className="wa-bubble me live">
-            <span className="wa-text">{p.live} …</span>
-          </div>
-        </div>
-      )}
-      {p.typing && (
-        <div className="wa-row arjun">
-          <div className="wa-bubble arjun typing" aria-label="…">
-            <span />
-            <span />
-            <span />
-          </div>
-        </div>
-      )}
-      <div ref={end} />
+    <div className="ui-root flex h-[45vh] min-h-[220px] w-full">
+      <ChatMessages
+        messages={p.messages}
+        live={p.live}
+        status={p.typing ? "thinking" : "idle"}
+        statusLabel={p.typing ? t("thinking") : ""}
+        emptyText={`${t("you_said")} …`}
+      />
     </div>
   );
 }
@@ -282,6 +260,7 @@ export function ListenScreen(p: {
   heard: string;
   /** Only for the design gallery: in the live app Arjun decides when the sentence is finished. */
   onDone?: () => void;
+  hideStop?: boolean;
   onStop: () => void;
   /** Typed fallback (dev / gallery). */
   onType?: { value: string; set: (v: string) => void; send: () => void };
@@ -335,9 +314,9 @@ export function ListenScreen(p: {
             {t("done_next")}
           </button>
         )}
-        <button className="btn outline-white" onClick={p.onStop}>
+        {!p.hideStop && <button className="btn outline-white" onClick={p.onStop}>
           {t("stop")}
-        </button>
+        </button>}
       </div>
     </div>
   );
@@ -407,6 +386,7 @@ export function ReplyScreen(p: {
   onNo: () => void;
   onSpeak: () => void;
   onOk: () => void;
+  hideOk?: boolean;
   thread?: ChatMsg[];
 }) {
   return (
@@ -443,7 +423,7 @@ export function ReplyScreen(p: {
             {t("speak")}
           </button>
         )}
-        {p.ask === "none" && (
+        {p.ask === "none" && !p.hideOk && (
           <button className="btn primary big" onClick={p.onOk}>
             {t("ok")}
           </button>
@@ -700,7 +680,7 @@ export function SafetyScreen(p: { text: string; onOk: () => void }) {
 
 /* ---- Start tap, delivered reminder, touch to hear ----------------------------------------------- */
 /** The one-time tap on a fresh page. Browsers allow sound only after a tap, so Arjun cannot speak a reminder before it. */
-export function StartScreen(p: { onStart: () => void }) {
+export function StartScreen(p: { onStart: () => void; hideStart?: boolean }) {
   return (
     <div className="screen centered">
       <div className="center-block">
@@ -708,10 +688,10 @@ export function StartScreen(p: { onStart: () => void }) {
         <h1 className="h1">{t("start_hello", { name: companionLabel })}</h1>
         <p className="lead">{t("lets_chat")}</p>
       </div>
-      <button className="btn primary big" onClick={p.onStart}>
+      {!p.hideStart && <button className="btn primary big" onClick={p.onStart}>
         <Volume2 size={30} aria-hidden />
         {t("start_btn")}
-      </button>
+      </button>}
       <p className="foot">{aiDisclosure()}</p>
     </div>
   );

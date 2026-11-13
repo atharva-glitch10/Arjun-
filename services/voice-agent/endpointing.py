@@ -57,11 +57,14 @@ def settings_from_env(env: Mapping[str, str] | None = None) -> EndpointingSettin
         return v if v > 0 else default
 
     d = EndpointingSettings()
-    care_min = num("ARJUN_MIN_ENDPOINTING_S", d.care_min)
+    care_min = num("ARJUN_ENDPOINT_MIN_DELAY", num("ARJUN_MIN_ENDPOINTING_S", d.care_min))
     companion_min = num("ARJUN_COMPANION_MIN_ENDPOINTING_S", d.companion_min)
     return EndpointingSettings(
         care_min=care_min,
-        care_max=max(num("ARJUN_CARE_MAX_ENDPOINTING_S", d.care_max), care_min),
+        care_max=max(
+            num("ARJUN_ENDPOINT_MAX_DELAY", num("ARJUN_CARE_MAX_ENDPOINTING_S", d.care_max)),
+            care_min,
+        ),
         companion_min=companion_min,
         companion_max=max(num("ARJUN_MAX_ENDPOINTING_S", d.companion_max), companion_min),
     )

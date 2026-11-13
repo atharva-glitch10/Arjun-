@@ -132,6 +132,7 @@ class StreamClient:
         reply_language: str | None = None,
         on_ack: Callable[[dict], None] | None = None,  # type: ignore[type-arg]
         on_sentence: Callable[[int, str], None] | None = None,
+        on_llm_sentence: Callable[[int, str, str], None] | None = None,
         timeout: float = REASONING_TIMEOUT_S,
     ) -> BridgeReply | None:
         if not await self._ensure():
@@ -174,8 +175,14 @@ class StreamClient:
                     if on_ack:
                         on_ack(msg)
                 elif kind == "sentence":
+                    seq, sentence = int(msg.get("seq", 0)), str(msg.get("text", ""))
                     if on_sentence:
-                        on_sentence(int(msg.get("seq", 0)), str(msg.get("text", "")))
+                        on_sentence(seq, sentence)
+                    if (
+                        on_llm_sentence and seq == 0 and msg.get("source") == "llm"
+                        and msg.get("mode") in ("chat", "companion")
+                    ):
+                        on_llm_sentence(seq, sentence, str(msg.get("language") or ""))
                 elif kind == "final":
                     done = True
                     return reply_from_data(msg, language, (time.perf_counter() - t0) * 1000)
@@ -203,6 +210,7 @@ async def ask_with_fallback(
     reply_language: str | None = None,
     http_ask: Callable | None = None,  # type: ignore[type-arg]
     on_sentence: Callable[[int, str], None] | None = None,
+    on_llm_sentence: Callable[[int, str, str], None] | None = None,
 ) -> BridgeReply:
     """Stream first; the unchanged HTTP /turn (reply_or_fallback) when the turn never reached the server; the fixed fallback
     line when the socket died after the server accepted it (replaying could act twice). Never silent, never raises."""
@@ -212,7 +220,9 @@ async def ask_with_fallback(
     http_ask = http_ask or (lambda: asyncio.to_thread(reply_or_fallback, user_id, text, language, None, reply_language))
     t0 = time.perf_counter()
     try:
-        got = await client.ask(user_id, text, language, reply_language, on_sentence=on_sentence)
+        got = await client.ask(
+            user_id, text, language, reply_language, on_sentence=on_sentence, on_llm_sentence=on_llm_sentence,
+        )
     except StreamLost as exc:
         lang = reply_language or language
         log.error("stream lost after ack (%s): fixed fallback, no HTTP replay", exc)

@@ -56,6 +56,16 @@ def test_env_overrides_every_number():
     assert (s.care_min, s.care_max, s.companion_min, s.companion_max) == (0.5, 2.0, 2.2, 5.0)
 
 
+def test_new_care_delay_names_override_legacy_names():
+    s = settings_from_env({
+        "ARJUN_ENDPOINT_MIN_DELAY": "0.6",
+        "ARJUN_ENDPOINT_MAX_DELAY": "2.2",
+        "ARJUN_MIN_ENDPOINTING_S": "0.5",
+        "ARJUN_CARE_MAX_ENDPOINTING_S": "2",
+    })
+    assert (s.care_min, s.care_max) == (0.6, 2.2)
+
+
 def test_nonsense_env_values_fall_back_and_max_is_never_below_min():
     s = settings_from_env({"ARJUN_MIN_ENDPOINTING_S": "fast", "ARJUN_COMPANION_MIN_ENDPOINTING_S": "6",
                            "ARJUN_MAX_ENDPOINTING_S": "4"})

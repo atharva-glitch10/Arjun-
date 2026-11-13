@@ -299,7 +299,9 @@ def _conversation_rules(language: str) -> str:
         f"STAY ON WHAT SHE SAID: answer ONLY what she just said or asked, given the earlier turns and CONVERSATION STATE; reuse her own words and "
         f"the people or things she named; never start a new topic, never give a list of tips and never ask an unrelated question. If what she said "
         f"is ambiguous, ask ONE short question that quotes her own words. If she changes the subject, follow her. A short answer (yes, no, "
-        f"'तेच', 'आणखी') answers your last question or offer. Keep a chat reply to at most 2 short spoken sentences (a recipe or how-to "
+        f"'तेच', 'आणखी') answers your last question or offer. Never pick an action intent (media, undo, reminder, call) for a vague line "
+        f"such as 'that one', 'do that again', 'तेच दे', 'वो वाला' when nothing earlier names what it means: use chat and ask ONE short "
+        f"question quoting her words. Keep a chat reply to at most 2 short spoken sentences (a recipe or how-to "
         f"answer as above). "
         f"If uncertain, make one specific clarification naming your best guess, and do not repeat that question within 10 minutes. "
         f"SOUND LIKE A PERSON, NOT A MACHINE: react to her feeling first ('अरे वा!', 'अरेरे', 'हो ना', 'खरंच?'), "
@@ -1074,7 +1076,7 @@ class EvonClient:
                 timeout=timeout,
                 meta=meta,
                 top_p=config.COMPANION_TOP_P,
-                max_tokens=self.max_tokens,
+                max_tokens=min(self.max_tokens, 120),
             )
         except (httpx.HTTPError, ValueError, KeyError):
             return None

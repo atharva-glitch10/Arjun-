@@ -1,4 +1,4 @@
-import { Slot } from "@radix-ui/react-slot";
+import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 
@@ -28,23 +28,10 @@ export const buttonVariants = cva(
   },
 );
 
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
-  asChild?: boolean;
-}
+export type ButtonProps = ButtonPrimitive.Props & VariantProps<typeof buttonVariants>;
 
-export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, type, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
-    return (
-      <Comp
-        ref={ref}
-        className={cn(buttonVariants({ variant, size }), className)}
-        {...(asChild ? {} : { type: type ?? "button" })}
-        {...props}
-      />
-    );
-  },
-);
+/** shadcn Button (base-nova): the Base UI button primitive with this app's variants and 56 px touch targets. */
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ className, variant, size, ...props }, ref) => (
+  <ButtonPrimitive ref={ref} data-slot="button" className={cn(buttonVariants({ variant, size }), className as string | undefined)} {...props} />
+));
 Button.displayName = "Button";

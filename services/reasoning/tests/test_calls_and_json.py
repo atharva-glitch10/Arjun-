@@ -192,7 +192,7 @@ def test_a_network_failure_is_the_same_honest_line(core_http, uid, rahul, monkey
 
     monkeypatch.setattr(eng.core, "start_call", down)
     res = eng.handle(uid, "call Rahul")
-    assert res.reply == rp.R["mr"]["call_failed"] and not acted(res)
+    assert res.reply == rp.R["en"]["call_failed"] and not acted(res)  # typed English -> English
 
 
 # ---- 3. no action claims without an action ---------------------------------------------------------------------------------

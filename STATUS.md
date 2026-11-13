@@ -1,3 +1,13 @@
+# STATUS (2026-11-12, voice latency instrumentation)
+- Worker startup now allows 30 s for process initialization and keeps one idle process. Concurrent room dispatches log both room IDs; care endpoint delays accept `ARJUN_ENDPOINT_MIN_DELAY` / `ARJUN_ENDPOINT_MAX_DELAY` with legacy-name fallback. Prisma TLS context creation runs off the event loop; TTS already prewarms through the startup probe. `GNANI_STT_TRANSPORT=rest` remains the transport selector and is included in the startup log.
+- Verification after these changes: voice-agent 430 passed; root `ruff check .` clean.
+- Turnlog now includes EOS-to-final, first guarded LLM sentence, first audio, EOS-to-speaking, and TTS prewarm status. The stream emits only complete guarded sentences, not raw provider token deltas; the `final_to_llm_first_token_ms` name measures arrival of the first safe sentence frame. It is unavailable on the HTTP-only path.
+- **Before/after (startup TTS):** before, the first reply could pay the reported 4.4 s TLS-context setup; after, the worker synthesizes a one-word probe at startup and reuses the warmed TTS plugin. The after value is UNMEASURED here; this checkout has not run a real provider-backed voice turn.
+- **Before/after (chat TTS):** before, synthesis started after the full `/turn/stream` result; after, the first guarded LLM sentence is submitted to TTS while the stream's final frame is in flight. No real device latency comparison has been run.
+- **Before/after (chat tokens):** companion generation was capped only by `LLM_MAX_TOKENS` (250 default); it now uses `min(LLM_MAX_TOKENS, 120)` per call. TTS/LLM model, temperature, and environment values are unchanged.
+- **Endpointing review:** care 0.8 s and companion 1.6 s minimums are unchanged. Without synthetic/own-voice samples from elderly speakers, changing those delay values would be an unverified behavior change.
+- Added `scripts/voice_latency_report.py` and `scripts/eval_realvoice.py`. The real-voice eval uses the existing Prisma REST recognizer and reasoning `/turn`, reads only local WAV clips/labels, and does not print transcripts or WER. No real-voice results are claimed.
+
 # STATUS (2026-11-04, LLM-first understanding + companion context)
 
 ## Reply language follows what she says and asks (2026-11-10)

@@ -18,15 +18,20 @@ import {
   StartScreen,
   TouchToHearScreen,
   setCompanionLabel,
+  getCompanionLabel,
   setReplyLang,
 } from "../screens/ElderScreens";
 import type { ChatMsg, UpcomingItem } from "../screens/ElderScreens";
 import { failureText, shownFor } from "../voice/state";
 import { REST_AFTER_MS, cardFor, restingScreen, shouldAutoStart, shouldConnectHandsFree } from "./cards";
 import { useArjunVoice } from "../voice/useArjunVoice";
+import { usePushToRecord } from "../voice/usePushToRecord";
+import { ChatScreen } from "../screens/ChatScreen";
+import type { ChatStatus } from "../screens/ChatScreen";
+import { RecorderBar } from "./RecorderBar";
 import { LinkPrompt, MediaScreen } from "./MediaScreen";
 import { VideoCallScreen } from "./VideoCallScreen";
-import { elderLanguage, elderText, timeGreeting } from "./i18n";
+import { elderLanguage, elderText, orbLabel, timeGreeting } from "./i18n";
 import { LANGUAGE_NAMES, setElderLang, t as tr, uiLanguage } from "./strings";
 import type { ElderLang } from "./strings";
 import { useAppActions } from "./useAppActions";
@@ -74,7 +79,7 @@ function pendingToCard(p: PendingAction, now: Date) {
  * component never uses a browser speech API and never calls reasoning itself. The screen MIRRORS the
  * agent (shownFor); a tapped हो/नको is sent to the agent as text and takes the same path as speech.
  */
-export function ElderApp({ userId, forceEvening }: { userId: number; forceEvening?: boolean }) {
+export function ElderApp({ userId, forceEvening, showRecorder = false, landOnHome = false }: { userId: number; forceEvening?: boolean; showRecorder?: boolean; landOnHome?: boolean }) {
   const [now, setNow] = useState(() => new Date());
   // Household clock = server time. skewMs = (server wall clock) - (this device's clock), so a phone
   // with the wrong time or timezone still shows the right time.
@@ -136,7 +141,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   } | null>(null);
   const lastAutoStart = useRef<number | null>(null);
 
-  const voice = useArjunVoice(userId, displayLanguage); // the screen's language goes to the backend with the token and every change
+  const voice = useArjunVoice(userId, displayLanguage, !HANDS_FREE);
+  const rec = usePushToRecord(voice.room, voice.snapshot.agentState, voice.thinking); // the screen's language goes to the backend with the token and every change
   const uiLang = uiLanguage(voice.activeLang, displayLanguage); // a spoken switch changes the labels too, not only the reply
   setElderLang(uiLang);
   setReplyLang(voice.replyLang || uiLang);
@@ -151,6 +157,15 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   useEffect(() => {
     if (voice.heard.trim()) lastHeard.current = voice.heard.trim();
   }, [voice.heard]);
+  // Push-to-record: her words appear as a bubble the moment Prisma returns them, before Arjun's reply.
+  useEffect(() => {
+    const said = rec.transcript.trim();
+    if (!said) return;
+    const at = new Date();
+    const time = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+    lastHeard.current = said; // the reply effect then skips a duplicate "me" bubble
+    setChat((c) => [...c, { id: ++chatId.current, who: "me" as const, text: said, time }].slice(-40));
+  }, [rec.transcript]);
   useEffect(() => {
     const reply = (voice.reply ?? "").trim();
     if (!reply) return;
@@ -169,7 +184,8 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const deliveredCard = cardFor(open, voice.item);
   const snapshot = { ...voice.snapshot, armed: armed || HANDS_FREE, hasCard: deliveredCard !== undefined };
   const [restedTurn, setRestedTurn] = useState(0);
-  const shown = restingScreen(shownFor(snapshot), voice.snapshot.turn, restedTurn, HANDS_FREE);
+  const selectedScreen = restingScreen(shownFor(snapshot), voice.snapshot.turn, restedTurn, HANDS_FREE);
+  const shown = landOnHome && (selectedScreen === "start" || selectedScreen === "listen") ? "home" : selectedScreen;
   const { phase } = voice.snapshot;
   // Apps by voice: a video, WhatsApp or a family link opens on this page (agent attribute "arjun.action").
   const apps = useAppActions(voice, userId, contacts, shown === "safety", () => {
@@ -265,20 +281,26 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
     }
   }, [userId]);
 
-  const loadHome = useCallback(async () => {
-    void syncClock();
+  const loadProfile = useCallback(async () => {
     try {
-      const [reminders, appt, people, user] = await Promise.all([
-        api.reminders(userId),
-        api.nextAppointment(userId),
-        api.contacts(userId),
-        api.getUser(userId),
-      ]);
+      const user = await api.getUser(userId);
       const lang = elderLanguage(user.preferred_languages?.[0] || user.language);
-      setElderLang(lang); // before any time/day text below is built
       setDisplayLanguage(lang);
       setAddressAs(user.address_as?.trim() || defaultAddress(lang));
       setCompanionLabel(user.speech_style?.companion_name);
+    } catch {
+      // Keep the current language until the profile can be fetched again.
+    }
+  }, [userId]);
+
+  const loadHome = useCallback(async () => {
+    void syncClock();
+    try {
+      const [reminders, appt, people] = await Promise.all([
+        api.reminders(userId),
+        api.nextAppointment(userId),
+        api.contacts(userId),
+      ]);
       setContacts(people);
       const t = clockNow();
       const upcoming: { at: Date; item: UpcomingItem }[] = [];
@@ -330,6 +352,17 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       // medicine data is optional for the home screen
     }
   }, [userId]);
+
+  useEffect(() => {
+    void loadProfile();
+    const onFocus = () => void loadProfile();
+    window.addEventListener("focus", onFocus);
+    const id = window.setInterval(() => void loadProfile(), 15_000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(id);
+    };
+  }, [loadProfile]);
 
   useEffect(() => {
     void loadHome();
@@ -520,7 +553,56 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
   const isHome =
     !infoOpen && !NOT_HOME.includes(shown as string) && !(cardDone && shown === "home") && !(medicineOpen && shownDose);
 
+  // /chat: ONE conversation screen for every talking state (start, listening, reply, story, saved, a yes/no question). Delivered
+  // cards, the reminder confirm card, safety, failure and the "tap to hear" screen keep their own screens (they need their own action).
+  const chatMode =
+    showRecorder &&
+    !HANDS_FREE &&
+    ["start", "listen", "home", "reply", "story", "confirm", "saved"].includes(shown as string) &&
+    !(shown === "confirm" && card) &&
+    !(shown === "home" && (infoOpen || cardDone || (medicineOpen && shownDose))) &&
+    !apps.videoCall &&
+    !apps.videoCallStarting;
+  const chatStatus: ChatStatus =
+    rec.state === "recording" || rec.state === "sending"
+      ? rec.state
+      : phase === "connecting" || phase === "waiting"
+        ? "connecting"
+        : rec.state === "speaking" || rec.state === "thinking"
+          ? rec.state
+          : "idle";
+  const chatStatusLabel =
+    chatStatus === "sending"
+      ? tr("rec_sending")
+      : chatStatus === "thinking"
+        ? tr("thinking")
+        : chatStatus === "connecting" || chatStatus === "speaking"
+          ? orbLabel(uiLang, chatStatus)
+          : "";
+
   const body = () => {
+    if (chatMode)
+      return (
+        <ChatScreen
+          title={getCompanionLabel()}
+          disclosure={tr("ai_disclosure", { name: getCompanionLabel() })}
+          messages={chat}
+          status={chatStatus}
+          statusLabel={chatStatusLabel}
+          orbLabel={orbLabel(uiLang, chatStatus === "recording" ? "listening" : chatStatus === "sending" ? "thinking" : chatStatus)}
+          emptyText={tr("tap_and_speak")}
+          error={error}
+          ask={shown === "confirm" ? { yesLabel: tr("yes"), noLabel: tr("no"), busy: !tapOpen, onYes: yes, onNo: no } : undefined}
+          footer={
+            <RecorderBar
+              rec={rec}
+              ready={phase === "live"}
+              failed={phase === "failed"}
+              onConnect={() => void voice.arm().then(() => voice.start())}
+            />
+          }
+        />
+      );
     if (infoOpen && shown === "home" && !(medicineOpen && shownDose))
       return <MyInfoScreen profile={info.profile} doses={info.doses} failed={info.failed} onBack={() => setInfoOpen(false)} />;
     if (cardDone && (shown === "home" || shown === "card"))
@@ -540,6 +622,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       case "start":
         return (
           <StartScreen
+            hideStart={showRecorder}
             onStart={() => {
               setArmed(true);
               void voice.arm();
@@ -549,7 +632,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       case "touch":
         return <TouchToHearScreen onTouch={() => void voice.unlockAudio()} />;
       case "card": {
-        if (!deliveredCard) return <ListenScreen heard={voice.heard} onStop={toHome} thread={chat} />;
+        if (!deliveredCard) return <ListenScreen heard={voice.heard} onStop={toHome} thread={chat} hideStop={showRecorder} />;
         const dl = deliveredCard.delivery;
         if (dl.kind === "medicine") {
           const dose = due.current.find((x) => x.id === dl.ref_id);
@@ -592,7 +675,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
       case "safety":
         return <SafetyScreen text={voice.reply} onOk={voice.dismissSafety} />;
       case "listen":
-        return <ListenScreen heard={voice.heard} onStop={toHome} thread={chat} />;
+        return <ListenScreen heard={voice.heard} onStop={toHome} thread={chat} hideStop={showRecorder} />;
       case "confirm":
         if (card)
           return (
@@ -620,7 +703,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
                 onYes: yes,
                 onNo: no,
               }}
-              onSpeak={() => void voice.start()}
+              onSpeak={showRecorder ? undefined : () => void voice.start()}
               onBack={toHome}
             />
           );
@@ -654,7 +737,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
             noteTitle={weekday(now)}
             transcript={voice.heard}
             hint={tr("hint_listen_slow")}
-            onSpeak={() => void voice.start()}
+            onSpeak={showRecorder ? undefined : () => void voice.start()}
             onBack={toHome}
           />
         );
@@ -664,6 +747,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
             reply={voice.reply}
             thread={chat}
             ask="none"
+            hideOk={showRecorder}
             onYes={yes}
             onNo={no}
             onSpeak={() => void voice.start()}
@@ -708,7 +792,18 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
                 : undefined
             }
             error={error}
-            onSpeak={() => begin()}
+            hideSpeak={showRecorder}
+            onSpeak={() => {
+              if (!landOnHome) {
+                begin();
+                return;
+              }
+              const chatUrl = new URL("/chat", window.location.origin);
+              chatUrl.search = window.location.search;
+              for (const key of ["view", "ui", "debug", "handsfree"]) chatUrl.searchParams.delete(key);
+              chatUrl.searchParams.set("user", String(userId));
+              window.location.assign(chatUrl.toString());
+            }}
             onToday={() => begin(tr("cmd_today"))}
             onHelp={() => begin(tr("cmd_help"))}
             onInfo={openInfo}
@@ -743,7 +838,7 @@ export function ElderApp({ userId, forceEvening }: { userId: number; forceEvenin
           {tr("family_speaking", { name: voice.family })}
         </div>
       )}
-      {live && voice.thinking && (
+      {live && voice.thinking && !chatMode && (
         <div className="thinking-marker" role="status" aria-live="polite">
           <span className="dots" aria-hidden>
             <i />

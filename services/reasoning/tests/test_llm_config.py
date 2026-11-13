@@ -121,6 +121,17 @@ def test_limits_go_into_the_request():
     assert timeout["read"] == 2.0
 
 
+def test_companion_reply_token_budget_is_capped():
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ठीक आहे"}}]})
+
+    _client(handler, max_tokens=250).companion_reply("नमस्कार", "mr")
+    assert seen[0]["max_tokens"] == 120
+
+
 def test_running_token_totals_are_kept_for_the_compare_script():
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "ठीक आहे"}}],

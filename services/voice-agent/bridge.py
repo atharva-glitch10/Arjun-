@@ -193,11 +193,16 @@ CLOSING_REPLY = {
     "mr": "ठीक आहे. गरज लागली तर 'बोला' दाबा.",
     "hi": "ठीक है। ज़रूरत हो तो 'बोला' दबाइए।",
     "en": "Okay. If you need me, press 'बोला'.",
+    "kn": "ಸರಿ. ಬೇಕಾದರೆ 'ಮಾತನಾಡಿ' ಒತ್ತಿ.",  # UNVERIFIED by a native speaker
 }
 
 
 def closing_text(language: str) -> str:
-    return CLOSING_REPLY.get((language or "mr").split("-")[0].lower(), CLOSING_REPLY["mr"])
+    """The idle-close line in the language of the last reply of the session. Marathi only when no turn has happened yet
+    (empty `language`); a language without a line here gets English, never Marathi."""
+    if not language:
+        return CLOSING_REPLY["mr"]
+    return CLOSING_REPLY.get(language.split("-")[0].lower(), CLOSING_REPLY["en"])
 
 
 # ---- T8: queued reminders / medicine prompts (the agent only knows reasoning, never core-api) ----------------

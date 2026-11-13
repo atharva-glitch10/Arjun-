@@ -85,7 +85,6 @@ from .parser import (
 from .readings import format_bp, parse_bp
 from .textutil import (
     collapse_repeats,
-    detect_language,
     has_any,
     hindi_evidence,
     latin_share,
@@ -95,26 +94,42 @@ from .textutil import (
 )
 from .tools import weather, web_search
 
+_LAST_RESORT_LANG = "mr"  # only when core-api is down on the very first turn and the turn shows no language
+_STT_LANGS = frozenset({"mr", "hi", "en", "kn"})  # what Prisma's Auto ASR chooses between (mr-IN, hi-IN, en-IN, kn-IN)
+
+
+def _language_signal(language_code: str | None, text: str, previous: str | None) -> str | None:
+    """The language of THIS turn, strict priority (owner, 2026-11-10), or None when the turn carries no signal:
+    a. the text's own non-Latin script when unambiguous (Kannada, ..., Devanagari with Marathi / Hindi word markers)
+    b. Prisma's detected_language_code when it is mr / hi / en / kn
+    c. Latin-script text: English words -> en; romanised Marathi / Hindi -> the language of the last turn (else its word markers)
+    A mixed text goes to its dominant script (langid counts letters per script)."""
+    guess = langid.classify(text)
+    if guess.lang and guess.lang != "en":
+        if guess.lang not in ("mr", "hi"):
+            if guess.confidence >= 0.5:
+                return guess.lang
+        else:  # Devanagari: Marathi vs Hindi by word markers FIRST; a tie (no markers) falls through to Prisma's label, then the last turn
+            mr, hi = marathi_evidence(text), hindi_evidence(text)
+            if langid.confident(guess):
+                return guess.lang
+            if mr != hi:
+                return "mr" if mr > hi else "hi"
+    detected = _detected_reply_language(language_code)
+    if detected in _STT_LANGS:
+        return detected
+    if latin_share(text) > 0.9 and re.search(r"[a-zA-Z]{2}", text):
+        words = re.findall(r"[a-z']+", text.lower())
+        if _ROMAN_INDIC.search(text):
+            return previous if previous in ("mr", "hi") else None  # romanised: keep the last turn's language (else the caller's fallback)
+        if words and sum(w in _EN_COMMON for w in words) / len(words) >= 0.3:
+            return "en"
+    return None
+
 
 def _reply_language(language_code: str | None, text: str, default: str) -> str:
-    """Answer in the language she SPOKE (notes 2026-11-10: "it understands but does not reply in my language").
-    Prisma's label is the start; the words win when they clearly disagree (Prisma confuses mr and hi, and a fully
-    English sentence is English whatever the label says)."""
-    detected = _detected_reply_language(language_code)
-    guess = langid.classify(text)
-    if guess.lang in ("mr", "hi") and langid.confident(guess):  # the words beat Prisma's mr/hi label (shared with voice-agent)
-        return guess.lang
-    if detected in (None, "mr", "hi") and latin_share(text) > 0.9 and len(text.split()) >= 3:
-        # Roman letters: English only if no romanised Marathi/Hindi words ("udya sakali", "kal subah") are in it
-        words = re.findall(r"[a-z']+", text.lower())
-        if words and sum(w in _EN_COMMON for w in words) / len(words) >= 0.3 and not _ROMAN_INDIC.search(text):
-            return "en"
-    mr, hi = marathi_evidence(text), hindi_evidence(text)
-    if detected in (None, "hi", "en") and mr >= 1 and mr >= hi:
-        return "mr"
-    if detected in (None, "mr", "en") and hi >= 2 and mr == 0:
-        return "hi"
-    return detected or detect_language(text, default)
+    """`_language_signal`, else `default` (the previous turn's reply language, or the profile language on the first turn)."""
+    return _language_signal(language_code, text, default) or default
 
 
 def _detected_reply_language(language_code: str | None) -> str | None:
@@ -428,6 +443,7 @@ class TurnEngine:
         self._listen_i: dict[int, int] = {}
         self._last_reply_simplifiable: dict[int, bool] = {}
         self._repeat_times: dict[int, deque[float]] = {}
+        self._last_reply_lang: dict[int, str] = {}  # uid -> language of the previous reply (the "no signal" fallback)
         self._lang_session: dict[int, tuple[str, float]] = {}  # uid -> (language she asked for, when): reply language for hours
         self._lang_keep: dict[int, tuple[str, float]] = {}  # uid -> (language, expires): "keep it always?" is waiting for yes / no
         self.lang_guard = {"checked": 0, "mismatch": 0, "retried": 0, "fallback": 0}  # reply-language guard counters (eval)
@@ -464,6 +480,9 @@ class TurnEngine:
         if depth == 0:
             res = self._vary_repeat(user_id, res)
             res = replace(res, active_language=self._active_lang(user_id))
+            if res.reply and not res.silent and res.language in _REPLY_LANGS:
+                self._last_reply_lang[user_id] = res.language
+            log.info(json.dumps({"user_lang": language_code or "-", "reply_lang": res.language}))
             try:
                 self._record_turn(user_id, text, res)
             except Exception as exc:  # noqa: BLE001 - memory must never break the turn
@@ -474,6 +493,20 @@ class TurnEngine:
         return res
 
     # ---- spoken language switch + reply-language guard (2026-11-10) -------------------------------------------------
+    def _resolve_lang(self, uid: int, language_code: str | None, text: str, profile: str | None) -> str:
+        """This turn's language, else the previous reply's, else (first turn, no signal at all) the profile language, logged."""
+        prev = self._last_reply_lang.get(uid)
+        signal = _language_signal(language_code, text, prev)
+        if signal:
+            return signal
+        if prev:
+            return prev
+        if profile in _REPLY_LANGS:
+            log.info("first turn with no language signal: using the profile language %s", profile)
+            return profile  # type: ignore[return-value]
+        log.warning("no language signal, no previous turn and no profile language: using %s", _LAST_RESORT_LANG)
+        return _LAST_RESORT_LANG
+
     def _active_lang(self, uid: int) -> str:
         """The language she asked Arjun to speak, while that is still in force (4 hours), else ""."""
         hit = self._lang_session.get(uid)
@@ -588,9 +621,9 @@ class TurnEngine:
             self._noise_count[user_id] = count
             if count < 2:
                 log.info("turn silent: empty/noise transcript")
-                return TurnResult("", "NOISE", "care", _detected_reply_language(language_code) or "mr", silent=True)
+                return TurnResult("", "NOISE", "care", self._resolve_lang(user_id, language_code, "", None), silent=True)
             self._noise_count[user_id] = 0
-            language = _detected_reply_language(language_code) or "mr"
+            language = self._resolve_lang(user_id, language_code, "", None)
             prompt = {"mr": "आवाज नीट आला नाही, जरा जवळ येऊन सांगाल?", "hi": "आवाज़ ठीक से नहीं आई, ज़रा पास आकर बताएँगे?", "en": "I couldn't hear that clearly. Could you come a little closer and tell me?"}
             prompt.update(replies_langs.NOISE)
             return TurnResult(prompt.get(language, prompt["mr"]), "NOISE", "companion", language)
@@ -608,10 +641,10 @@ class TurnEngine:
         if emergency or distress:
             self._media_choice.pop(user_id, None)  # an emergency closes the cards: nothing is playing
             try:
-                default_lang = self.core.user(user_id)["language"]
+                profile_lang = self.core.user(user_id)["language"]
             except (CoreError, httpx.HTTPError, KeyError):
-                default_lang = "mr"
-            lang = forced or _reply_language(language_code, text, default_lang)
+                profile_lang = None
+            lang = forced or self._resolve_lang(user_id, language_code, text, profile_lang)
             if emergency:
                 return self._safety(user_id, lang, trace, t0, kind="emergency")
             return self._distress(user_id, lang, trace, t0)
@@ -621,14 +654,21 @@ class TurnEngine:
             user = self.core.user(user_id)
         except (CoreError, httpx.HTTPError) as exc:
             log.error("core-api unavailable for user lookup: %s", exc)
-            lang = detect_language(text, "mr")
+            lang = self._resolve_lang(user_id, language_code, text, None)
             r = rp.R[rp.lang_or_default(lang)]
             return TurnResult(r["error"], "UNKNOWN", "care", lang, trace=self._t(trace, t0))
-        lang = forced or _reply_language(language_code, text, user["language"])
+        # The screen's language, when a caller forces it, is authoritative: a spoken switch it no longer shows is dropped.
+        stale = self._active_lang(user_id)
+        if forced and stale and stale != forced:
+            self._lang_session.pop(user_id, None)
         switched = self._language_turn(user_id, text, trace, t0)  # "हिंदीत बोला": the reply language changes NOW
         if switched is not None:
             return switched
-        lang = forced or self._active_lang(user_id) or lang  # the frontend's language, else a spoken switch, else what she spoke
+        # The language of THIS turn wins (Hindi now, Marathi next turn -> each answered in its own language). Order: a language the
+        # caller forces, else the signal in this turn, else (no signal: a bare "ok", a number) a spoken "speak Hindi" switch still in
+        # force, else the previous turn's language, else (first turn only) the profile language.
+        signal = None if forced else _language_signal(language_code, text, self._last_reply_lang.get(user_id))
+        lang = forced or signal or self._active_lang(user_id) or self._resolve_lang(user_id, language_code, text, user["language"])
         r = rp.R[rp.lang_or_default(lang)]
         now = self.clock()
         style = user.get("speech_style") or {"rate": "normal", "volume": "normal", "simple": False}
@@ -2388,6 +2428,14 @@ class TurnEngine:
 
         if intent == "CONFIRM_YES":
             if pending is None:
+                if self.evon is not None and self.memory.pending(uid, now) is not None:
+                    # Arjun's own chat question is open ("भजन ऐकायचं का?"): her "हो" answers THAT, in context (conversation state)
+                    reply, speech, from_llm = self._chat_reply(uid, text, lang, now, llm_reply=str((llm or {}).get("reply") or ""),
+                                                               self_check=(llm or {}).get("self_check"))
+                    if from_llm:
+                        res = out(reply, "companion")
+                        res.speech, res.source = speech, "llm"
+                        return res
                 return out(r["nothing_pending"])
             done = self.core.confirm(uid, pending["id"])
             key = {
@@ -2860,10 +2908,12 @@ class TurnEngine:
         if not reply and len(text.split()) >= 2:
             # No model reply (none configured, busy, timed out) and no topic to ask about: a real sentence still gets
             # a short listening line, never silence (live run 2026-11-09: five chat turns in a row got no answer).
-            pool = _VARIED.get(lang, _VARIED["mr"])
-            n = self._listen_i.get(uid, 0)
-            self._listen_i[uid] = n + 1
-            reply = pool[n % len(pool)]
+            reply = relevance.listening(text, lang)  # her own words back, never a generic "सांगा ना"
+            if not reply:
+                pool = _VARIED.get(lang, _VARIED["mr"])
+                n = self._listen_i.get(uid, 0)
+                self._listen_i[uid] = n + 1
+                reply = pool[n % len(pool)]
         if from_llm:  # at most one question, not in every reply, never the same one twice in a day
             shaped = shape_questions(reply, self.memory.asked_today(uid, now), self.memory.previous_reply_was_question(uid, now))
             if shaped != reply:
@@ -2937,22 +2987,22 @@ class TurnEngine:
         self.relevance["clarified"] += 1
         self.last_relevance[uid] = info
         log.info(json.dumps({"relevance_score": info["score"], "retried": info["retried"], "clarified": True}))
-        return relevance.clarify(text, lang), ""
+        return relevance.clarify_or_ack(text, lang), ""
 
     # ---- live web facts ---------------------------------------------------------------------------------
     def prepare(self, text: str, language_code: str | None = None, reply_language: str | None = None) -> dict[str, Any]:
         """FAST pre-check for the voice agent (no core-api, no LLM, no search): will this turn probably need a live
         web lookup? Rules only. A safety / medicine / health sentence is never web. A wrong "yes" only costs one
         spoken "बघतो…"; the real decision is still the LLM's in /turn."""
-        lang = reply_language if reply_language in _REPLY_LANGS else (_detected_reply_language(language_code) or detect_language(text, "mr"))
-        r = rp.R[rp.lang_or_default(lang)]
+        lang = reply_language if reply_language in _REPLY_LANGS else (_language_signal(language_code, text, None) or langid.classify(text).lang)
+        r = rp.R[rp.lang_or_default(lang)] if lang else {"web_filler": "", "web_hold": ""}  # no signal: no filler (never a default language)
         web = (
             bool(_WEB_LIKELY.search(text))
             and not (is_emergency(text) or is_distress(text) or has_failsafe_word(text) or has_health_word(text))
             and not _WEB_BLOCK.search(text)
             and not symptom_category(text)
         )
-        return {"needs_web": web, "filler": r["web_filler"] if web else "", "hold": r["web_hold"], "language": lang}
+        return {"needs_web": web, "filler": r["web_filler"] if web else "", "hold": r["web_hold"], "language": lang or ""}
 
     def _city_for(self, uid: int) -> str:
         """Her city: the family's profile value, else the household ARJUN_CITY. Never guessed."""

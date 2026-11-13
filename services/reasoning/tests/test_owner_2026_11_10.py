@@ -22,5 +22,6 @@ def test_self_care_line_for_a_cut(engine, uid):
 def test_reply_follows_the_spoken_language():
     assert _reply_language("mr-IN", "मैं आज बाजार गई थी", "mr") == "hi"
     assert _reply_language("hi-IN", "आज मी बाजारात गेले होते", "mr") == "mr"
-    assert _reply_language("mr-IN", "I went to the temple today", "mr") == "en"
+    assert _reply_language("en-IN", "I went to the temple today", "mr") == "en"
+    assert _reply_language(None, "I went to the temple today", "mr") == "en"  # no label: the English words decide
     assert _reply_language("mr-IN", "tu manus aahes ka", "mr") == "mr"

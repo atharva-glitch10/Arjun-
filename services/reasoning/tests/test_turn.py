@@ -11,7 +11,7 @@ def _reminders(core_http, uid):
 
 def test_prisma_detected_language_reaches_turn_language(engine, uid):
     result = engine.handle(uid, "hello there", "mr-IN")
-    assert result.language == "mr"
+    assert result.language == "mr"  # Prisma's label outranks Latin-script word guesses (priority b before c)
 
 
 def test_prisma_detected_language_allows_ten_language_reply_selection(engine, uid):

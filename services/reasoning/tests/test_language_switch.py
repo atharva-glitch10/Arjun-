@@ -68,6 +68,29 @@ def test_after_a_switch_the_next_replies_follow_it_and_the_prompt_says_so_last(c
     assert "REPLY LANGUAGE (final rule): reply ONLY in Hindi (Devanagari script)" in system
 
 
+def test_a_stale_switch_is_dropped_when_the_screen_says_another_language(core_http, uid):
+    """Kannada labels on an English screen: the 4-hour switch kept reporting active_language=kn after the screen went back to en."""
+    eng = make(core_http, llm_chat("Fine, thank you."))
+    eng._lang_session[uid] = ("kn", eng._mono())
+    res = eng.handle(uid, "how are you today", reply_language="en")
+    assert res.language == "en" and res.active_language == ""
+
+
+def test_each_turn_is_answered_in_the_language_it_was_spoken_in(core_http, uid):
+    """Hindi now, Marathi next turn, English after: no reply_language is sent, every reply follows its own turn."""
+    eng = make(core_http, llm_chat("ठीक है।"))
+    assert eng.handle(uid, "मुझे आज बहुत अच्छा लग रहा है, आप कैसे हैं", language_code="hi-IN").language == "hi"
+    assert eng.handle(uid, "मला आज खूप छान वाटतंय, तुम्ही कसे आहात", language_code="mr-IN").language == "mr"
+    assert eng.handle(uid, "I am feeling quite well today, how are you", language_code="en-IN").language == "en"
+
+
+def test_a_switch_the_screen_follows_stays_in_force(core_http, uid):
+    eng = make(core_http, llm_chat("ठीक है, मैं ठीक हूँ।"))
+    eng.handle(uid, HI_ASK)
+    res = eng.handle(uid, "आज क्या खाना बनाऊं", reply_language="hi")
+    assert res.active_language == "hi"
+
+
 def test_without_a_switch_the_reply_language_is_the_language_of_her_last_utterance(core_http, uid):
     eng = make(core_http, llm_chat("ठीक आहे, मी ठीक आहे."))
     assert eng.handle(uid, "तुम्ही कसे आहात").language == "mr"
@@ -180,3 +203,62 @@ def test_a_reply_in_the_right_language_is_not_retried(core_http, uid):
     eng = make(core_http, llm)
     eng.handle(uid, "आप कैसे हैं, आज मौसम बहुत अच्छा है")
     assert eng.lang_guard["checked"] == 1 and eng.lang_guard["mismatch"] == 0
+
+
+# ---- strict per-turn language priority (owner 2026-11-10): script -> Prisma label -> Latin markers -> previous reply -> profile ----
+@pytest.mark.parametrize("text,code,lang", [
+    ("मला आज खूप छान वाटतंय, तुम्ही कसे आहात", "mr-IN", "mr"),
+    ("मुझे आज बहुत अच्छा लग रहा है, आप कैसे हैं", "hi-IN", "hi"),
+    ("I am feeling quite well today, how are you", "en-IN", "en"),
+    ("ನನಗೆ ಇಂದು ತುಂಬಾ ಚೆನ್ನಾಗಿದೆ", "kn-IN", "kn"),
+    ("hello", "en-IN", "en"),
+])
+def test_each_language_is_answered_in_itself(core_http, uid, text, code, lang):
+    eng = make(core_http, llm_chat("ok"))
+    assert eng.handle(uid, text, language_code=code).language == lang
+
+
+def test_script_beats_a_wrong_prisma_label(core_http, uid):
+    eng = make(core_http, llm_chat("ok"))
+    assert eng.handle(uid, "ನನಗೆ ಇಂದು ತುಂಬಾ ಚೆನ್ನಾಗಿದೆ", language_code="mr-IN").language == "kn"
+    assert eng.handle(uid, "मुझे आज बहुत अच्छा लग रहा है, आप कैसे हैं", language_code="mr-IN").language == "hi"
+
+
+def test_the_language_is_recomputed_on_every_turn(core_http, uid):
+    eng = make(core_http, llm_chat("ok"))
+    got = [eng.handle(uid, t, language_code=c).language for t, c in [
+        ("मुझे आज बहुत अच्छा लग रहा है, आप कैसे हैं", "hi-IN"),
+        ("मला आज खूप छान वाटतंय, तुम्ही कसे आहात", "mr-IN"),
+        ("I am feeling quite well today, how are you", "en-IN"),
+        ("ನನಗೆ ಇಂದು ತುಂಬಾ ಚೆನ್ನಾಗಿದೆ", "kn-IN"),
+        ("मला आज खूप छान वाटतंय, तुम्ही कसे आहात", "mr-IN"),
+    ]]
+    assert got == ["hi", "mr", "en", "kn", "mr"]
+
+
+def test_an_empty_or_unsupported_detected_code_falls_back_to_the_text_then_the_last_turn(core_http, uid):
+    eng = make(core_http, llm_chat("ok"))
+    assert eng.handle(uid, "मुझे आज बहुत अच्छा लग रहा है, आप कैसे हैं", language_code="").language == "hi"  # empty code: script decides
+    assert eng.handle(uid, "I am feeling quite well today, how are you", language_code="xx-IN").language == "en"  # unsupported code
+    assert eng.handle(uid, "12345", language_code=None).language == "en"  # no signal at all: the previous turn's language
+
+
+def test_romanised_input_keeps_the_language_of_the_last_turn(core_http, uid):
+    eng = make(core_http, llm_chat("ok"))
+    assert eng.handle(uid, "मला आज खूप छान वाटतंय, तुम्ही कसे आहात", language_code="mr-IN").language == "mr"
+    assert eng.handle(uid, "mala aaj kay karaycha aahe", language_code=None).language == "mr"
+    assert eng.handle(uid, "मुझे आज बहुत अच्छा लग रहा है, आप कैसे हैं", language_code="hi-IN").language == "hi"
+    assert eng.handle(uid, "mujhe aaj kya karna hai", language_code=None).language == "hi"
+
+
+def test_the_profile_language_is_used_only_on_the_very_first_turn(core_http, uid):
+    eng = make(core_http, llm_chat("ok"))
+    first = eng.handle(uid, "12345", language_code=None)  # no signal at all, no earlier turn: profile language (mr in the fixture)
+    assert first.language == core_http.get(f"/users/{uid}").json()["language"]
+    assert eng.handle(uid, "I am feeling quite well today, how are you", language_code="en-IN").language == "en"
+    assert eng.handle(uid, "12345", language_code=None).language == "en"  # now the previous turn, not the profile
+
+
+def test_prepare_never_invents_a_default_language(core_http, uid):
+    eng = make(core_http, llm_chat("ok"))
+    assert eng.prepare("12345", None)["language"] == ""

@@ -5,7 +5,7 @@ import animate from "tailwindcss-animate";
 // Tailwind's own `/60` opacity suffix does not work on var() colours: use the *-muted tokens instead.
 const config: Config = {
   // Only the new UI layer is scanned, so no Tailwind utility can leak into the screens still on ghar.css.
-  content: ["./src/components/**/*.{ts,tsx}", "./src/preview/**/*.{ts,tsx}", "./src/screens/**/*.{ts,tsx}"],
+  content: ["./src/components/**/*.{ts,tsx}", "./src/preview/**/*.{ts,tsx}", "./src/screens/**/*.{ts,tsx}", "./src/elder/RecorderBar.tsx"],
   // Preflight (Tailwind's global reset) is off until the old ghar.css screens are retired; `.ui-root` carries a
   // scoped reset instead (see ui-tokens.css).
   corePlugins: { preflight: false },

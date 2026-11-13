@@ -41,10 +41,10 @@ describe("Button", () => {
     expect(buttonVariants({ size: "lg" })).toContain("min-h-[72px]");
     expect(buttonVariants({ size: "icon" })).toContain("size-touch");
   });
-  it("can render as its child (asChild)", () => {
+  it("can render as another element (Base UI `render`)", () => {
     const html = renderToStaticMarkup(
-      <Button asChild>
-        <a href="/x">go</a>
+      <Button render={<a href="/x" />} nativeButton={false}>
+        go
       </Button>,
     );
     expect(html).toContain("<a ");

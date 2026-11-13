@@ -5,7 +5,8 @@ Client -> server (JSON text frames):
   {"type": "cancel", "turn_id": "t1"}                                      (barge-in / tap: drop whatever is not yet spoken)
 Server -> client, per turn, in this order:
   {"type": "ack", "turn_id", "filler", "language"}          at once (rules only, no LLM): the web-lookup filler, else ""
-  {"type": "sentence", "turn_id", "seq", "text"}            one per complete sentence of what is to be SPOKEN (guards already applied)
+  {"type": "sentence", "turn_id", "seq", "text", "mode", "source", "language"}
+                                                           one per complete, guarded sentence (voice metadata included)
   {"type": "final", "turn_id", "reply", "speech", "intent", "mode", "language", ...}   the full /turn result (same fields as TurnOut)
   {"type": "action", "turn_id", "action"}                   only when the screen should open / do something
   {"type": "error", "turn_id", "status", "detail"} or {"type": "cancelled", "turn_id"}
@@ -113,7 +114,10 @@ async def serve(
                     if tid in cancelled:
                         await send({"type": "cancelled", "turn_id": tid})
                         return
-                    await send({"type": "sentence", "turn_id": tid, "seq": i, "text": s})
+                    await send({
+                        "type": "sentence", "turn_id": tid, "seq": i, "text": s,
+                        "mode": res.mode, "source": res.source, "language": res.language,
+                    })
             await send({"type": "final", "turn_id": tid, **res.__dict__})
             if (res.action or {}).get("type", "none") != "none":
                 await send({"type": "action", "turn_id": tid, "action": res.action})

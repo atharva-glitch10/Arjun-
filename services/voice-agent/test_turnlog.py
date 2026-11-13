@@ -101,6 +101,10 @@ def test_close_flushes_unanswered_turns_as_incomplete(tmp_path):
     log.close()
     (row,) = _rows(tmp_path / "t.jsonl")
     assert row["complete"] is False and "eos_to_audio_ms" not in row
+    assert row["eos_to_final_ms"] == 200
+    assert all(row[key] is None for key in (
+        "final_to_llm_first_token_ms", "llm_to_first_audio_ms", "eos_to_speaking_ms",
+    ))
 
 
 def test_timing_splits_endpointing_from_reasoning_from_audio(tmp_path):
@@ -115,6 +119,32 @@ def test_timing_splits_endpointing_from_reasoning_from_audio(tmp_path):
     assert row["endpointing_ms"] == 2200  # final transcript -> reasoning call started
     assert row["reasoning_ms"] == 310  # the /turn round trip itself
     assert row["reasoning_to_audio_ms"] == 1100  # TTS + playout
+
+
+def test_streamed_sentence_and_tts_prewarm_timings(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.end_of_speech(10.0)
+    log.final_transcript(10.4, "काही सांगा", "mr-IN")
+    idx = log.reasoning_started("काही सांगा", t=10.5)
+    log.llm_first_token(idx, 11.0)  # first complete, already-guarded stream sentence
+    log.reasoning_done(idx, 11.2, "ठीक आहे", "companion")
+    log.speaking_for(idx, 11.2)
+    log.set_tts_prewarm("hit", idx)
+    log.agent_speaking(11.6)
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["final_to_llm_first_token_ms"] == 600
+    assert row["llm_to_first_audio_ms"] == 600
+    assert row["eos_to_speaking_ms"] == 1600
+    assert row["tts_prewarm"] == "hit"
+
+
+def test_tts_prewarm_default_is_recorded_per_turn(tmp_path):
+    log = TurnLog("mr-IN", tmp_path / "t.jsonl")
+    log.set_tts_prewarm("hit")
+    idx = log.reasoning_started("नमस्कार", t=1.0, source="tap")
+    log.not_spoken(idx, "no_reply")
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert row["tts_prewarm"] == "hit"
 
 
 def test_a_tapped_turn_gets_its_own_row_and_is_marked(tmp_path):

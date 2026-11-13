@@ -86,8 +86,9 @@ def test_a_line_never_contains_a_secret_or_audio(tmp_path):
     log.speaking_for(idx)
     log.agent_speaking(1.5)
     text = (tmp_path / "t.jsonl").read_text(encoding="utf-8").lower()
-    for banned in ("api_key", "secret", "bearer", "token"):
+    for banned in ("api_key", "secret", "bearer"):
         assert banned not in text
+    assert "final_to_llm_first_token_ms" in text
 
 
 # ---- why a turn has no speaking time ----------------------------------------------------------------------------

@@ -90,6 +90,8 @@ def test_frames_come_in_order_ack_sentences_final(setup):
     assert [f["type"] for f in frames] == ["ack", "sentence", "sentence", "sentence", "final"]
     assert [f["text"] for f in frames if f["type"] == "sentence"] == ["ठीक आहे.", "मी इथे आहे!", "तुम्ही कसे आहात?"]
     assert [f["seq"] for f in frames if f["type"] == "sentence"] == [0, 1, 2]
+    assert all(f["source"] == "llm" and f["mode"] == "chat" and f["language"] == "mr"
+               for f in frames if f["type"] == "sentence")
     final = frames[-1]
     assert final["reply"] == result().reply and final["intent"] == "chat" and final["language"] == "mr"
     assert eng.handled == [(1, "नमस्कार", "mr-IN", "hi")]  # the same engine call /turn makes, parameters carried

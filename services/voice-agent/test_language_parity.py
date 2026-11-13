@@ -3,10 +3,9 @@ choice for hi / mr / en, the fallback when a language has no voice, and the spee
 
 import httpx
 import pytest
-from agent import prisma_language_hints
 from bridge import BridgeReply, ask_reasoning
 from screenstate import attributes_for
-from voice import strip_tags, tts_plan, tts_text, tts_voice_for
+from voice import strip_tags, tts_language_for, tts_plan, tts_text, tts_voice_for
 
 LINES = {
     "hi": "ठीक है, अब मैं हिंदी में बात करूंगा।",
@@ -75,13 +74,13 @@ def test_the_voice_for_each_language_defaults_to_the_configured_one(monkeypatch)
     assert tts_voice_for("mr", "mr-IN", "Omkar") == "Omkar"  # the multilingual voice is for hi / en only
 
 
-# ---- speech recognition follows the switch ----------------------------------------------------------------------------
-def test_recognition_hints_cover_mr_hi_en_so_a_switch_between_them_needs_no_restart(monkeypatch):
-    monkeypatch.delenv("GNANI_STT_LANGUAGE_HINTS", raising=False)
-    assert prisma_language_hints(["mr"]) == ["mr-IN", "hi-IN", "en-IN"]  # several hints -> Prisma auto-detects per utterance
-    assert prisma_language_hints(["hi"]) == ["hi-IN", "en-IN"]
-    assert prisma_language_hints(["en"]) == ["en-IN", "hi-IN"]
-    assert prisma_language_hints(["ta"]) == ["ta-IN"]  # another language is pinned: a permanent switch takes effect next session
+# ---- speech recognition is always Auto ASR ---------------------------------------------------------------------------
+def test_recognition_is_always_indic_auto(monkeypatch):
+    import prisma_v3
+
+    monkeypatch.setenv("GNANI_STT_LANGUAGE", "ta-IN")  # the old pin is ignored
+    assert prisma_v3.rest_language_code() == "indic-auto"
+    assert prisma_v3.RETRY_LANGS == "mr-IN,hi-IN,en-IN,kn-IN"  # used only by the one empty-transcript retry
 
 
 # ---- the frontend's language reaches reasoning (body parameter) ---------------------------------------------------------
@@ -124,3 +123,30 @@ def test_the_spoken_fallback_line_is_in_the_screen_language_when_reasoning_is_do
     http = httpx.Client(transport=httpx.MockTransport(down))
     got = reply_or_fallback(1, "आज कैसा है", "mr-IN", http, "hi")
     assert got.language == "hi" and got.mode == "fallback"
+
+
+def test_esha_is_never_requested_from_a_timbre_v3_model(monkeypatch):
+    """timbre-v3.0 answers 400 for "Esha": every English / Hindi reply was silent (live 2026-11-10)."""
+    monkeypatch.setenv("GNANI_TTS_MULTILINGUAL_VOICE", "1")
+    assert tts_voice_for("en-IN", "en-IN", "Avinash", "timbre-v3.0") == "Avinash"
+    assert tts_voice_for("hi-IN", "hi-IN", "Avinash", "timbre-v3.0") == "Avinash"
+    assert tts_voice_for("en-IN", "en-IN", "Omkar", "timbre-v2.5") == "Esha"
+
+
+# ---- TTS language is the reply's own language, never a default (owner 2026-11-10) ------------------------------------------
+def test_tts_locale_comes_from_the_reply_language_with_no_static_default(monkeypatch):
+    monkeypatch.delenv("GNANI_TTS_LANGUAGE", raising=False)
+    from voice import tts_choice
+
+    assert tts_choice()["language"] == ""  # no mr-IN default any more
+    for lang, locale in [("mr", "mr-IN"), ("hi", "hi-IN"), ("en", "en-IN"), ("kn", "kn-IN")]:
+        assert tts_language_for(lang) == locale
+    assert tts_language_for("") == "" and tts_language_for(None) == ""
+
+
+def test_idle_close_line_uses_the_last_reply_language():
+    from bridge import closing_text
+
+    assert "बोला" in closing_text("") and closing_text("").startswith("ठीक आहे")  # no turn yet: Marathi
+    assert closing_text("hi").startswith("ठीक है") and closing_text("en").startswith("Okay")
+    assert closing_text("kn") != closing_text("mr") and closing_text("ta") == closing_text("en")  # never Marathi by default

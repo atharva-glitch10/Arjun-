@@ -131,6 +131,7 @@ the script reports that limitation while seeding the other requested data.
   `/memory-book` returns shared stories only; "he visar" deletes.
 
 ## Known limitations (honest list)
+- **Voice latency instrumentation (2026-11-12):** `scripts/voice_latency_report.py` summarizes turnlog timings; first-token timing is the first complete, guarded sentence received from `/turn/stream`, not a raw provider token, and is absent on HTTP-only turns. Startup TTS prewarming and sentence pre-synthesis are implemented, but no provider-backed before/after voice measurement has been run. `scripts/eval_realvoice.py` requires synthetic/own-voice WAV clips, labels, a Gnani key in the process environment, and running REST STT/reasoning services; no WER is emitted.
 - **Ten languages (2026-11-09):** mr/hi/en plus bn, gu, kn, ml, pa, ta, te. The bn..te fixed replies, elder screens and safety words are UNVERIFIED (no native speaker); untranslated reply keys fall back to English. Times/dates in those languages are understood by the LLM only.
 - Emergency auto-calls need a Twilio account (`CALLS_ENABLED=1`); untested with a real call. Trial Twilio accounts can
   only call verified numbers. Arjun never dials 112; live location works only if the browser grants location.

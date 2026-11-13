@@ -71,10 +71,13 @@ def test_stream_uses_documented_headers_and_carries_detected_language(monkeypatc
     monkeypatch.setattr(websockets, "connect", connect)
     adapter = PrismaV3STT(api_key="unit-test-key", sample_rate=8000, keyterms=["one"], speaker_names=["family"])
     async def run():
+        # Drive the stream the way LiveKit does: its own task owns _run(); we only push input and read events.
         stream = adapter.stream(conn_options=DEFAULT_API_CONNECT_OPTIONS)
-        stream._input_ch.close()
-        await stream._run()
-        return await stream.__anext__()
+        stream.end_input()
+        try:
+            return await stream.__anext__()
+        finally:
+            await stream.aclose()
 
     event = asyncio.run(run())
     assert captured["url"] == "wss://api.vachana.ai/stt/v3/stream"
@@ -90,7 +93,7 @@ def test_stream_uses_documented_headers_and_carries_detected_language(monkeypatc
     assert event.alternatives[0].metadata == {"detected_language_code": "ta-IN"}
 
 
-def test_preferred_languages_are_sent_as_locale_hints(monkeypatch):
+def test_websocket_always_sends_indic_auto_only(monkeypatch):
     captured = {}
 
     class Socket:
@@ -110,12 +113,12 @@ def test_preferred_languages_are_sent_as_locale_hints(monkeypatch):
 
     monkeypatch.setattr(websockets, "connect", connect)
     async def run():
-        adapter = PrismaV3STT(api_key="unit-test-key", language_hints=["ta-IN", "en-IN"])
+        adapter = PrismaV3STT(api_key="unit-test-key")
         await adapter.stream()._run()
 
     asyncio.run(run())
-    # Gnani refuses a comma list ("exactly one locale is required"); several languages -> automatic identification.
     assert captured["additional_headers"]["language_code"] == "indic-auto"
+    assert "multi_lang_code" not in captured["additional_headers"]
 
 
 def test_old_plugin_compatibility_no_extra_prisma_headers():
@@ -174,10 +177,11 @@ def test_refused_handshake_reports_gnanis_reason(monkeypatch):
         asyncio.run(run())
 
 
-def test_single_hint_is_sent_as_that_locale(monkeypatch):
-    captured, run = _capture_headers(monkeypatch, language_hints=["mr-IN"])
+def test_language_is_never_pinned(monkeypatch):
+    monkeypatch.setenv("GNANI_STT_LANGUAGE", "mr-IN")
+    captured, run = _capture_headers(monkeypatch)
     asyncio.run(run())
-    assert captured["additional_headers"]["language_code"] == "mr-IN"
+    assert captured["additional_headers"]["language_code"] == "indic-auto"
 
 
 def test_topic_hint_is_sent_ascii_and_can_be_turned_off(monkeypatch):

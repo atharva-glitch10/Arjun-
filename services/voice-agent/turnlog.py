@@ -11,6 +11,9 @@ A turn is identified by its transcript, not by whichever event arrives next. The
 (2026-10-24) showed why: the user spoke again before the previous reply was ready, and a log that kept
 a single "current turn" paired replies and audio with the wrong sentence. Here every turn keeps its own
 index from the first final transcript until its audio starts (or it is skipped), however many are open.
+
+The stream transport exposes the first complete, already-guarded reply sentence, not raw LLM token deltas.
+`t_llm_first_token` records that first safe output chunk so the voice pipeline can measure/prewarm against it.
 """
 
 import json
@@ -52,13 +55,15 @@ class TurnLog:
         self._speaking: int | None = None  # the turn whose reply is being spoken now
         self._active_speech_turn: int | None = None
         self._barge_in_started_at: float | None = None
+        self.tts_prewarm = "miss"
 
     # ---- helpers -----------------------------------------------------------------------------
     def _new(self) -> dict:
         self.index += 1
         turn = {"turn": self.index, "n": self.index - self.start, "language_selected": self.language_selected,
                 "action_type": "", "ignored_media": False,
-                "stt_provider": self.stt_provider, "tts_provider": self.tts_provider}
+                "stt_provider": self.stt_provider, "tts_provider": self.tts_provider,
+                "tts_prewarm": self.tts_prewarm}
         if self.session:
             turn["session"] = self.session
         self._open[self.index] = turn
@@ -70,6 +75,10 @@ class TurnLog:
             if i not in self._taken:
                 return self._open[i]
         return None
+
+    def active_turn(self) -> int | None:
+        """The newest turn currently being handled by reasoning."""
+        return max(self._taken, default=None)
 
     def bump(self) -> int:
         """A new, larger event number for something that is not a spoken turn (a delivery, a close), so the app
@@ -135,11 +144,26 @@ class TurnLog:
             if reasoning_ms is not None:  # the /turn round trip itself, apart from the end-of-turn wait
                 self._open[idx]["reasoning_ms"] = round(reasoning_ms)
 
+    def llm_first_token(self, idx: int, t: float) -> None:
+        if idx in self._open and self._open[idx].get("t_llm_first_token") is None:
+            self._open[idx]["t_llm_first_token"] = t
+
+    def set_tts_prewarm(self, status: str, idx: int | None = None) -> None:
+        if status not in ("hit", "miss"):
+            raise ValueError("tts prewarm status must be hit or miss")
+        if idx is None:
+            self.tts_prewarm = status
+        elif idx in self._open:
+            self._open[idx]["tts_prewarm"] = status
+
     def speaking_for(self, idx: int, t: float | None = None) -> None:
         """The reply for turn `idx` is about to be spoken: the next playout start belongs to it."""
         self._speaking = idx
         if idx in self._open:
             self._open[idx]["t_say_start"] = time.time() if t is None else t
+
+    def speaking_turn(self) -> int | None:
+        return self._speaking
 
     def not_spoken(self, idx: int, reason: str) -> None:
         """The reply for turn `idx` never played (she spoke again, or TTS failed): write the line now, with the reason."""
@@ -214,8 +238,12 @@ class TurnLog:
         # a tapped turn has no speech: the tap itself marks its start
         start = turn.get("t_end_of_speech") or (turn.get("t_final_transcript") if turn.get("source") == "tap" else None)
         turn.setdefault("t_last_final", turn.get("t_final_transcript"))
+        for key in ("eos_to_final_ms", "final_to_llm_first_token_ms", "llm_to_first_audio_ms", "eos_to_speaking_ms"):
+            turn.setdefault(key, None)
         for name, a, b in (
             ("eos_to_final_ms", "t_end_of_speech", "t_final_transcript"),
+            ("final_to_llm_first_token_ms", "t_final_transcript", "t_llm_first_token"),
+            ("llm_to_first_audio_ms", "t_llm_first_token", "t_agent_speaking"),
             ("endpointing_ms", "t_last_final", "t_reasoning_start"),  # from the LAST final: she may talk on for a minute
             ("final_to_reasoning_ms", "t_final_transcript", "t_reasoning_done"),
             ("reasoning_to_audio_ms", "t_reasoning_done", "t_agent_speaking"),

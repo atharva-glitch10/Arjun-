@@ -69,6 +69,10 @@ def test_low_overlap_asks_the_model_and_a_yes_lets_it_through(core_http, uid):
     assert res.reply == reply and s.kinds == ["understand", "relevance"]
 
 
+def test_a_vague_line_still_gets_a_clarifying_question():
+    assert relevance.clarify_or_ack("तेच दे", "mr") == relevance.clarify("तेच दे", "mr")
+
+
 def test_an_off_topic_reply_is_retried_once_with_her_exact_sentence(core_http, uid):
     s = Script(OFF, retries=[ON])
     eng = engine(core_http, s)
@@ -78,12 +82,13 @@ def test_an_off_topic_reply_is_retried_once_with_her_exact_sentence(core_http, u
     assert eng.last_relevance[uid]["retried"] == 1 and eng.relevance["retried"] == 1 and eng.relevance["clarified"] == 0
 
 
-def test_still_off_topic_after_the_retry_asks_a_question_quoting_her_words(core_http, uid):
+def test_still_off_topic_after_the_retry_quotes_her_words_back(core_http, uid):
+    """A full statement (3+ content words) gets an acknowledgement quoting her words, not "what do you mean?" (relevance.clarify_or_ack)."""
     s = Script(OFF, retries=["शेअर बाजार आज वर गेला."])
     eng = engine(core_http, s)
     res = eng.handle(uid, HER)
-    assert res.reply == relevance.clarify(HER, "mr") and "आर्यन" in res.reply and "स्पर्धेला" in res.reply
-    assert res.reply.endswith("?") and not relevance.is_generic(res.reply)
+    assert res.reply == relevance.clarify_or_ack(HER, "mr") == relevance.listening(HER, "mr")
+    assert "आर्यन" in res.reply and "स्पर्धेला" in res.reply and not relevance.is_generic(res.reply)
     assert eng.last_relevance[uid]["clarified"] is True and eng.relevance["clarified"] == 1
     assert OFF not in res.reply and "क्रिकेट" not in res.reply  # the wandering reply is never spoken
 

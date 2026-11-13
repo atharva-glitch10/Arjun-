@@ -17,3 +17,14 @@ def test_hindi_stays_hindi():
 def test_hindi_emergency_words_not_marathi():
     for t in ("खून बह रहा है", "सांस नहीं आ रही", "मैं गिर गया", "सीने में दर्द है"):
         assert marathi_evidence(t) == 0, t
+
+
+def test_devanagari_word_markers_decide_before_the_prisma_label():
+    assert _reply_language("hi-IN", "माझ्या छातीत दुखतंय", "hi") == "mr"  # Marathi words, label hi-IN -> mr
+    assert _reply_language("mr-IN", "मुझे दवाई के बारे में बताओ", "mr") == "hi"  # Hindi words, label mr-IN -> hi
+
+
+def test_devanagari_without_markers_follows_the_label_then_the_previous_reply():
+    assert _reply_language("hi-IN", "राम सीता", "mr") == "hi"
+    assert _reply_language("mr-IN", "राम सीता", "hi") == "mr"
+    assert _reply_language(None, "राम सीता", "hi") == "hi"  # no label either: the previous reply's language

@@ -50,7 +50,7 @@ async def _select_voice() -> tuple[str, str]:
         candidates.append(fallback)
     for model, voice in candidates:
         probe = gnani.TTS(
-            model=model, voice=voice, language=choice["language"], synthesize_method=choice["method"]
+            model=model, voice=voice, language=choice["language"] or None, synthesize_method=choice["method"]
         )
         try:
             async with utils.http_context.open():
@@ -99,7 +99,7 @@ async def synthesize(body: SynthesisIn, x_api_key: str | None = Header(default=N
     async with _lock:
         model, voice = await _select_voice()
         choice = tts_choice()
-        synthesizer = gnani.TTS(model=model, voice=voice, language=choice["language"], synthesize_method=choice["method"])
+        synthesizer = gnani.TTS(model=model, voice=voice, language=choice["language"] or None, synthesize_method=choice["method"])
         try:
             async with utils.http_context.open():
                 frames = await asyncio.wait_for(synthesizer.synthesize(body.text).collect(), timeout=45)

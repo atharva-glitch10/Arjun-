@@ -39,8 +39,9 @@ class FakeWs:
 
 
 def happy(f):
-    return [{"type": "ack", "filler": "", "language": "mr"}, {"type": "sentence", "seq": 0, "text": "ठीक आहे."},
-            {"type": "sentence", "seq": 1, "text": "चला."}, FINAL]
+    return [{"type": "ack", "filler": "", "language": "mr"},
+            {"type": "sentence", "seq": 0, "text": "ठीक आहे.", "mode": "chat", "source": "llm", "language": "mr"},
+            {"type": "sentence", "seq": 1, "text": "चला.", "mode": "chat", "source": "llm", "language": "mr"}, FINAL]
 
 
 def client_for(script, ws_list=None, clock=None):
@@ -76,6 +77,16 @@ def test_a_turn_returns_the_final_as_a_bridge_reply_and_reports_sentences():
     assert isinstance(r, BridgeReply) and r.text == "ठीक आहे. चला." and r.mode == "chat" and r.language == "mr"
     assert got == [(0, "ठीक आहे."), (1, "चला.")] and acks[0]["type"] == "ack"
     assert ws.sent[0]["user"] == 7 and ws.sent[0]["lang"] == "mr-IN" and ws.sent[0]["reply_language"] == "hi" and ws.sent[0]["turn_id"]
+
+def test_llm_sentence_callback_receives_only_first_guarded_chat_sentence():
+    async def go():
+        c, _, _ = client_for(happy)
+        got = []
+        await c.ask(7, "नमस्कार", on_llm_sentence=lambda seq, text, lang: got.append((seq, text, lang)))
+        await c.close()
+        return got
+
+    assert run(go()) == [(0, "ठीक आहे.", "mr")]
 
 
 def test_turn_ids_are_unique_and_turns_in_a_row_work():

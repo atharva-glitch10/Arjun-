@@ -7,18 +7,20 @@ token/room config dispatches that name (see scripts/make_token.py). The tested l
 """
 
 import asyncio
+import json
 import logging
 import os
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
 import aiohttp
 import applog
+import clip as clips
 import clonedvoice
 import emergencycall
-import httpx
 import voiceprovider
 from audiowarm import warm_audio_resampler
 from bridge import (
@@ -43,7 +45,7 @@ from endpointing import (
 )
 from familyroom import FamilyPresence
 from idle import IdleCloser, IdlePolicy
-from livekit import agents
+from livekit import agents, rtc
 from livekit.agents import (
     DEFAULT_API_CONNECT_OPTIONS,
     Agent,
@@ -97,17 +99,35 @@ from ttsgate import TtsGate
 from turnlog import TurnLog
 from usermeta import language_from_metadata, user_id_from_metadata
 from voice import (
+    TTS_LANGUAGE_MAP,
     slower_text,
     strip_tags,
     stt_options,
     tts_choice,
     tts_language_for,
-    tts_plan,
     tts_text,
     tts_voice_for,
 )
 
 logger = logging.getLogger("arjun.agent")
+_active_rooms: set[str] = set()
+_active_rooms_lock = threading.Lock()
+
+
+def _register_active_room(room_id: str) -> None:
+    with _active_rooms_lock:
+        for active_room_id in sorted(_active_rooms - {room_id}):
+            logger.warning(
+                "second room dispatched while a session is active: active_room=%s dispatched_room=%s",
+                active_room_id,
+                room_id,
+            )
+        _active_rooms.add(room_id)
+
+
+def _unregister_active_room(room_id: str) -> None:
+    with _active_rooms_lock:
+        _active_rooms.discard(room_id)
 
 LANG_CODES = frozenset({"mr", "hi", "en", "bn", "gu", "kn", "ml", "pa", "ta", "te", "or"})  # what reasoning accepts as reply_language
 REQUIRED_ENV = ("GNANI_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
@@ -158,35 +178,6 @@ AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
 
 
 TTS_GATE = TtsGate()  # Timbre allows ONE active request at a time (429 RATE_LIMITED otherwise); see ttsgate.py
-
-
-def _fetch_user_languages(user_id: int) -> dict:
-    base = os.environ.get("CORE_API_URL", "http://127.0.0.1:8000").rstrip("/")
-    headers = {"X-API-Key": os.environ["CORE_API_KEY"]} if os.environ.get("CORE_API_KEY") else {}
-    response = httpx.get(f"{base}/users/{user_id}", headers=headers, timeout=2.0)
-    response.raise_for_status()
-    return response.json()
-
-
-def prisma_language_hints(preferred: list[str]) -> list[str]:
-    """Languages Arjun expects (max 4): the elder's own first, then Hindi and English, because elders switch into
-    Hinglish mid-sentence. Any other first language is pinned alone (see below). More than one -> Prisma v3 gets language_code=indic-auto (Gnani accepts exactly one locale,
-    else automatic identification). GNANI_STT_LANGUAGE_HINTS="mr-IN" pins one locale; "auto" = indic-auto."""
-    override = os.environ.get("GNANI_STT_LANGUAGE_HINTS", "").strip()
-    if override.lower() == "auto":
-        return []
-    codes = [c.strip() for c in override.split(",") if c.strip()] if override else [
-        f"{str(c).split('-')[0].lower()}-IN" for c in preferred if str(c).strip()
-    ] + ["hi-IN", "en-IN"]
-    # Her own language outside Marathi / Hindi / English (Tamil, Kannada...) is PINNED: indic-auto heard a short
-    # Tamil "இனிய இரவு" as Hindi (live, 2026-11-08). Prisma's codemix output still keeps her English words.
-    if not override and codes and codes[0].split("-")[0] not in {"mr", "hi", "en"}:
-        return [codes[0]]
-    out: list[str] = []
-    for code in codes:
-        if code not in out:
-            out.append(code)
-    return out[:4]
 
 
 def _timbre_busy(exc: Exception) -> bool:
@@ -290,31 +281,81 @@ class ClonedTimbre(gnani.TTS):
 
 
 def make_tts(model: str, voice: str, language: str | None = None):  # type: ignore[no-untyped-def]
-    kw = {"model": model, "voice": voice, "language": language or TTS_LANGUAGE}
+    language = language or TTS_LANGUAGE or None
+    loop = asyncio.get_running_loop()
+    key = (loop, model, voice, language)
+    if key in _TTS_PLUGINS:
+        return _TTS_PLUGINS[key]
+    if loop not in _TTS_SESSIONS:
+        _TTS_SESSIONS[loop] = aiohttp.ClientSession()
+        logger.info("TTS HTTP session created on job loop")
+    kw = {"model": model, "voice": voice, "language": language}  # TTS_LANGUAGE is unset unless GNANI_TTS_LANGUAGE is
     if TTS["method"] == "sse":
-        return SseTimbre(**kw)
-    return gnani.TTS(synthesize_method=TTS["method"], **kw)  # "websocket" / "rest", the old path
+        plugin = SseTimbre(**kw)
+    else:
+        plugin = gnani.TTS(synthesize_method=TTS["method"], **kw)  # "websocket" / "rest", the old path
+    plugin._session = _TTS_SESSIONS[loop]
+    _TTS_PLUGINS[key] = plugin
+    return plugin
 
 
-_PROBED: dict[str, bool] = {}  # model -> works, per worker process
+_PROBED: dict[tuple[asyncio.AbstractEventLoop, str, str, str | None], bool] = {}
+_TTS_PLUGINS: dict[tuple[asyncio.AbstractEventLoop, str, str, str | None], gnani.TTS] = {}
+_TTS_SESSIONS: dict[asyncio.AbstractEventLoop, aiohttp.ClientSession] = {}
+
+
+async def close_tts_session() -> None:
+    loop = asyncio.get_running_loop()
+    session = _TTS_SESSIONS.pop(loop, None)
+    if session is not None:
+        await session.close()
+    for cache in (_TTS_PLUGINS, _PROBED):
+        for key in [key for key in cache if key[0] is loop]:
+            del cache[key]
+
+
+def _tts_prewarm_language() -> str:
+    candidate = STT_LANGUAGE.split(",", 1)[0].strip()
+    return TTS_LANGUAGE or (candidate if candidate in TTS_LANGUAGE_MAP.values() else "mr-IN")
 
 
 async def working_tts():  # type: ignore[no-untyped-def]
     """(tts, model) for this session: the configured Timbre if a one-word probe works, else the verified one."""
-    primary = make_tts(TTS_MODEL, TTS_VOICE)
-    if TTS_MODEL == TTS["fallback_model"] and TTS_VOICE == TTS["fallback_voice"]:
-        return primary, TTS_MODEL
-    if _PROBED.get(TTS_MODEL) is None:
+    language = _tts_prewarm_language()
+    loop = asyncio.get_running_loop()
+    primary_key = (loop, TTS_MODEL, TTS_VOICE, language)
+    primary = make_tts(*primary_key[1:])
+    fallback_key = (loop, TTS["fallback_model"], TTS["fallback_voice"], language)
+    if primary_key == fallback_key:
         try:
             await asyncio.wait_for(primary.synthesize("नमस्कार").collect(), timeout=8)
-            _PROBED[TTS_MODEL] = True
+            _PROBED[primary_key] = True
+            logger.info("TTS TLS prewarm succeeded for %s", TTS_MODEL)
+        except Exception as exc:  # noqa: BLE001 - a failed prewarm must not prevent the session from starting
+            _PROBED[primary_key] = False
+            logger.warning("TTS TLS prewarm failed (%s); first reply may pay setup latency", type(exc).__name__)
+        return primary, TTS_MODEL
+    if _PROBED.get(primary_key) is None:
+        try:
+            await asyncio.wait_for(primary.synthesize("नमस्कार").collect(), timeout=8)
+            _PROBED[primary_key] = True
+            logger.info("TTS TLS prewarm succeeded for %s", TTS_MODEL)
         except Exception as exc:  # noqa: BLE001 - any failure means: use the voice we know works
             logger.error("TTS %s / %s failed its probe (%s); using %s / %s", TTS_MODEL, TTS_VOICE,
                          type(exc).__name__, TTS["fallback_model"], TTS["fallback_voice"])
-            _PROBED[TTS_MODEL] = False
-    if _PROBED[TTS_MODEL]:
+            _PROBED[primary_key] = False
+    if _PROBED[primary_key]:
         return primary, TTS_MODEL
-    return make_tts(TTS["fallback_model"], TTS["fallback_voice"]), TTS["fallback_model"]
+    fallback = make_tts(*fallback_key[1:])
+    if _PROBED.get(fallback_key) is None:
+        try:
+            await asyncio.wait_for(fallback.synthesize("नमस्कार").collect(), timeout=8)
+            _PROBED[fallback_key] = True
+            logger.info("TTS TLS prewarm succeeded for %s", TTS["fallback_model"])
+        except Exception as exc:  # noqa: BLE001 - retain the existing fallback even if its warm-up fails
+            _PROBED[fallback_key] = False
+            logger.warning("TTS fallback prewarm failed (%s)", type(exc).__name__)
+    return fallback, TTS["fallback_model"]
 
 
 class Arjun(Agent):
@@ -426,10 +467,18 @@ def prewarm(proc: agents.JobProcess) -> None:
 async def entrypoint(ctx: agents.JobContext) -> None:
     warm_audio_resampler()  # idempotent, a safety net
     applog.setup_file_log() # the CLI may have reset logging after import; make sure the file handler is on
+    room_id = ctx.room.name
+    _register_active_room(room_id)
+
+    async def unregister_room() -> None:
+        _unregister_active_room(room_id)
+
+    ctx.add_shutdown_callback(unregister_room)
+    ctx.add_shutdown_callback(close_tts_session)
     await ctx.connect()
     from_metadata = user_id_from_metadata(ctx.job.metadata, 0)
-    # The language the elder SCREEN is set to (the frontend owns it): from the token's dispatch metadata, then kept current by the
-    # page's "arjun.ui_lang" attribute. Every turn sends it to reasoning as `reply_language`, which answers in it.
+    # The language the elder SCREEN is set to (labels, the empty-line prompt). It is NOT sent as `reply_language` any more
+    # (2026-11-10): each turn is answered in the language she spoke in that turn (Hindi -> Hindi, next turn Marathi -> Marathi).
     ui_language: list[str | None] = [language_from_metadata(ctx.job.metadata)]
     user_id = from_metadata or USER_ID
     use_sarvam = voiceprovider.provider() == "sarvam"  # TESTING switch; the default is the Gnani path below
@@ -446,15 +495,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if stt_impl == "v3":
             sample_rate = int(os.environ.get("GNANI_STT_SAMPLE_RATE", "16000"))
             keyterms, speakers = await asyncio.to_thread(user_context_terms, user_id)
-            try:
-                user = await asyncio.to_thread(_fetch_user_languages, user_id)
-                language_hints = prisma_language_hints(user.get("preferred_languages") or [user.get("language", "mr")])
-            except Exception:
-                language_hints = []
-            stt_plugin = PrismaV3STT(
-                sample_rate=sample_rate, keyterms=keyterms, speaker_names=speakers, language_hints=language_hints,
-            )
-            logger.info("voice provider: gnani (stt prisma-v3.0, tts %s)", active_model)
+            stt_plugin = PrismaV3STT(sample_rate=sample_rate, keyterms=keyterms, speaker_names=speakers)  # always indic-auto + multi_lang_code
+            if stt_plugin.transport == "rest":
+                asyncio.create_task(stt_plugin.warmup())  # client + TLS pre-connect, off the critical path
+            logger.info("voice provider: gnani (stt prisma-v3.0 %s, tts %s)", stt_plugin.transport, active_model)
         else:
             stt_plugin = gnani.STT(use_streaming=USE_STREAMING, **STT_OPTIONS)
             logger.info("voice provider: gnani (stt prisma plugin, tts %s)", active_model)
@@ -464,7 +508,16 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     endpointing = EndpointingPolicy()  # starts in care timing; each reply's mode sets the next turn's
     handling: dict = turn_handling_options()  # type: ignore[assignment]
     detection = turn_detection_from_env()  # "vad" by default; None = LiveKit's cloud detector (see endpointing.py)
-    logger.info("turn detection %s, endpointing %s", detection or "auto (cloud)", endpointing.options())
+    settings = endpointing.settings
+    logger.info(
+        "turn detection %s, endpointing care min_delay=%.2f max_delay=%.2f, "
+        "companion min_delay=%.2f max_delay=%.2f",
+        detection or "auto (cloud)",
+        settings.care_min,
+        settings.care_max,
+        settings.companion_min,
+        settings.companion_max,
+    )
     session = AgentSession(
         stt=stt_plugin,  # Prisma (GNANI_API_KEY) or, with the testing switch, Saaras (SARVAM_API_KEY)
         tts=tts_plugin,  # Timbre or, with the testing switch, Bulbul
@@ -492,9 +545,12 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     # One JSON line per turn, tagged with this LiveKit job id. The numbers start from the wall clock, so a browser that
     # drops and rejoins (a new job, a new TurnLog) continues ABOVE the old session instead of restarting at 1.
     turns = TurnLog(
-        language_selected=STT_LANGUAGE, session=ctx.job.id, start=TurnLog.base_for(time.time()),
+        language_selected="indic-auto" if os.environ.get("GNANI_STT_IMPL", "plugin").strip().lower() == "v3" else STT_LANGUAGE, session=ctx.job.id, start=TurnLog.base_for(time.time()),
         stt_provider="sarvam" if use_sarvam else "gnani", tts_provider="sarvam" if use_sarvam else "gnani",
     )
+    active_voice = TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"]
+    turns.set_tts_prewarm("hit" if _PROBED.get((asyncio.get_running_loop(), active_model, active_voice, _tts_prewarm_language())) is True else "miss")
+    prefetched_audio: dict[int, tuple[str, asyncio.Task[list[rtc.AudioFrame]]]] = {}
 
     # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
     logger.info("session serves user %s (%s)", user_id, "dispatch metadata" if from_metadata else "ARJUN_USER_ID fallback")
@@ -508,30 +564,64 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             (len(key), value) for key, value in transcript_languages.items()
             if key != "__current__" and key and key in normalized
         ]
-        return max(matching)[1] if matching else transcript_languages.get("__current__", STT_LANGUAGE)
+        if matching:
+            return max(matching)[1]
+        # No label for THIS text (typed, or a clip): its own script, never the previous turn's label or a configured default
+        return f"{guess.lang}-IN" if guess.lang and (guess.lang not in ("mr", "hi") or langid.confident(guess)) else ""
+
+    last_reply_lang = [""]  # language of the last reply SPOKEN this session (for the idle-close line); "" = no turn yet
 
     stream_client = streamclient.StreamClient() if streamclient.enabled() else None  # ARJUN_STREAM=1: WebSocket /turn/stream
 
+    async def prewarm_sentence(sentence: str, detected: str) -> list[rtc.AudioFrame]:
+        detected = detected or langid.classify(sentence).lang
+        language = tts_language_for(detected, f"{detected}-IN" if detected else "")
+        voice = tts_voice_for(detected, language, TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"], active_model)
+        plugin = make_tts(active_model, voice, language)
+        async with plugin.synthesize(sentence) as stream:
+            return [ev.frame async for ev in stream]
+
+    def on_llm_sentence(seq: int, sentence: str, language: str) -> None:
+        if use_sarvam or not sentence:
+            return
+        idx = turns.active_turn()
+        if idx is None:
+            return
+        turns.llm_first_token(idx, time.time())
+        task = asyncio.create_task(prewarm_sentence(sentence, language))
+
+        def log_prefetch_failure(done: asyncio.Task[list[rtc.AudioFrame]]) -> None:
+            if not done.cancelled() and done.exception() is not None:
+                logger.warning("first-sentence TTS prewarm failed (%s)", type(done.exception()).__name__)
+
+        task.add_done_callback(log_prefetch_failure)
+        prefetched_audio[idx] = (sentence, task)
+
     async def ask(text: str):  # type: ignore[no-untyped-def]
         if stream_client is not None:  # falls back to the HTTP /turn below by itself
-            return await streamclient.ask_with_fallback(stream_client, user_id, text, detect_for(text), ui_language[0])
-        return await asyncio.to_thread(reply_or_fallback, user_id, text, detect_for(text), None, ui_language[0])
+            return await streamclient.ask_with_fallback(
+                stream_client, user_id, text, detect_for(text), None, on_llm_sentence=on_llm_sentence,
+            )
+        return await asyncio.to_thread(reply_or_fallback, user_id, text, detect_for(text), None, None)  # reply_language None: answer in the language of THIS turn
 
     async def prepare(text: str):  # type: ignore[no-untyped-def]
-        return await asyncio.to_thread(prepare_reasoning, user_id, text, detect_for(text), None, ui_language[0])
+        return await asyncio.to_thread(prepare_reasoning, user_id, text, detect_for(text), None, None)  # reply_language None: answer in the language of THIS turn
 
     async def say_reply(reply) -> bool:  # type: ignore[no-untyped-def]
         """Synthesize this reply in Prisma's detected language using the verified session model/voice."""
         if emergencycall.is_emergency(reply) and (emergency_task[0] is None or emergency_task[0].done()):
             # The fixed emergency template is about to be spoken: call family now, then the 10-second check.
             emergency_task[0] = asyncio.create_task(run_emergency_escalation(), name="emergency-escalation")
-        detected = reply.language or transcript_languages.get("__current__", STT_LANGUAGE)
-        language, fell_back = tts_plan(detected, TTS_LANGUAGE)
-        if fell_back:  # no Timbre locale for this language: the text is shown, the closest voice speaks it
-            logger.warning("tts_fallback: no voice for %s, speaking with %s", detected, language)
-        vlog("reply language %s -> tts %s", reply.language or "?", language)
+        detected = reply.language or langid.classify(reply.text).lang  # the reply's OWN language (reasoning always sets it)
+        language = tts_language_for(detected, f"{detected}-IN" if detected else "")
+        if reply.language:
+            last_reply_lang[0] = reply.language
+        logger.info("turn languages: user_lang=%s reply_lang=%s tts_lang=%s", transcript_languages.get("__current__") or "-",
+                    reply.language or "-", language or "-")
+        if (reply.language or "").split("-")[0] != language.split("-")[0]:
+            logger.warning("tts_lang %s != reply_lang %s", language or "-", reply.language or "-")
         voice = TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"]
-        voice = tts_voice_for(detected, language, voice)
+        voice = tts_voice_for(detected, language, voice, active_model)
         plugin = make_tts(active_model, voice, language)
         text = tts_text(reply.text, reply.speech, active_model)
         if (reply.speech_style or {}).get("rate") == "slow":
@@ -562,7 +652,28 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 logger.warning("cloned voice synthesis failed (%s); speaking as Arjun", cause)
                 cloned_voices.forget()
                 before = state.speaking_count
-            handle = session.say(text, audio=tts_audio(plugin, text))
+            idx = turns.speaking_turn()
+            cached = prefetched_audio.pop(idx, None) if idx is not None else None
+            audio = None
+            if cached is not None:
+                cached_text, task = cached
+                try:
+                    frames = await task
+                    if frames and text.startswith(cached_text):
+                        turns.set_tts_prewarm("hit", idx)
+                        remainder = text[len(cached_text):].lstrip()
+
+                        async def cached_audio():
+                            for frame in frames:
+                                yield frame
+                            if remainder:
+                                async for frame in tts_audio(plugin, remainder):
+                                    yield frame
+
+                        audio = cached_audio()
+                except Exception:  # noqa: BLE001 - prewarm errors are logged by the task callback; use normal synthesis
+                    pass
+            handle = session.say(text, audio=audio if audio is not None else tts_audio(plugin, text))
             await handle
             return not handle.interrupted and handle.exception() is None and state.speaking_count > before
 
@@ -574,9 +685,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     async def say_locked(text: str) -> None:
         async with speech_lock:
-            detected = transcript_languages.get("__current__", TTS_LANGUAGE)
-            language = tts_language_for(detected, TTS_LANGUAGE)
-            voice = tts_voice_for(detected, language, TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"])
+            detected = langid.classify(text).lang  # a fixed line is spoken in the language it is written in
+            language = tts_language_for(detected, f"{detected}-IN" if detected else "")
+            voice = tts_voice_for(detected, language, TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"], active_model)
             plugin = make_tts(active_model, voice, language)
             await session.say(text, audio=tts_audio(plugin, text))
 
@@ -874,6 +985,58 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         room_options=room_io.RoomOptions(text_input=room_io.TextInputOptions(text_input_cb=on_tapped_text)),
     )
 
+    # Push-to-record (default): the elder taps to record, taps to send; ONE whole clip arrives on the byte-stream topic
+    # "arjun.clip", goes through Prisma v3 REST and then the normal turn. The always-on mic loop (VAD auto-send, auto-listen
+    # after a reply) stays off unless ARJUN_HANDSFREE=1.
+    if os.environ.get("ARJUN_HANDSFREE", "0").strip() != "1":
+        session.input.set_audio_enabled(False)
+    clip_stt: PrismaV3STT | None = None
+    if not use_sarvam and os.environ.get("GNANI_API_KEY"):
+        clip_terms, clip_speakers = await asyncio.to_thread(user_context_terms, user_id)
+        clip_stt = PrismaV3STT(transport="rest", keyterms=clip_terms, speaker_names=clip_speakers)
+        background.append(asyncio.create_task(clip_stt.warmup()))
+    clip_busy = asyncio.Lock()
+
+    async def handle_clip(reader, identity) -> None:  # type: ignore[no-untyped-def]
+        cid = str((getattr(reader.info, "attributes", None) or {}).get("id", ""))
+        async with clip_busy:  # one clip at a time (Gnani allows one request in flight)
+            try:  # any failure must still answer the screen, or the button stays on "sending"
+                # Draining the reader waits for the sender's stream close (Stop or 30 s auto-send).
+                # Do not parse audio or call STT while the user is still recording.
+                data = b"".join([chunk async for chunk in reader])
+                if clip_stt is None:
+                    res = clips.ClipResult("error")
+                else:
+                    res = await asyncio.wait_for(clips.process_clip(data, clip_stt._rest_recognizer()), timeout=45)
+            except Exception as exc:  # noqa: BLE001
+                logger.info("clip failed (%s)", type(exc).__name__)
+                res = clips.ClipResult("error")
+            vlog("clip: %s, %.1f s, %d chars", res.status, res.seconds, len(res.text))
+            try:  # the screen shows her words (or the hint) before Arjun answers
+                await ctx.room.local_participant.set_attributes({clips.ATTRIBUTE: json.dumps(
+                    {"id": cid, "status": res.status, "text": res.text, "lang": res.lang}, ensure_ascii=False)})
+            except Exception as exc:  # noqa: BLE001
+                logger.info("clip status publish failed (%s)", type(exc).__name__)
+            if res.status == "empty":
+                await say_locked(clips.empty_line(transcript_languages.get("__current__") or ui_language[0]))
+            elif res.status == "heard":
+                if family.present():
+                    return
+                code = res.lang or ""
+                if code:
+                    transcript_languages["__current__"] = code
+                    transcript_languages[" ".join(res.text.casefold().split())] = code
+                policy.touch()
+                await session.interrupt()
+                async with state.turn():
+                    await responder.respond(res.text, "voice")  # emergency / distress rules run on this transcript
+                policy.touch()
+
+    def on_clip(reader, identity) -> None:  # type: ignore[no-untyped-def]
+        background.append(asyncio.create_task(handle_clip(reader, identity), name="push-to-record-clip"))
+
+    ctx.room.register_byte_stream_handler(clips.TOPIC, on_clip)
+
     if sound_events_enabled():
         model_path = os.environ.get("ARJUN_SOUND_MODEL_PATH", "").strip()
         try:
@@ -917,7 +1080,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     async def say_closing() -> str:
         try:
-            return "done" if await speak_checked(closing_text(STT_LANGUAGE)) else "interrupted"
+            return "done" if await speak_checked(closing_text(last_reply_lang[0])) else "interrupted"
         except Exception:  # noqa: BLE001 - even if the line cannot be spoken, an idle session still ends
             logger.exception("could not speak the closing line")
             return "done"
@@ -944,4 +1107,10 @@ if __name__ == "__main__":
     from briefing_audio import start_server
 
     start_server()
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name=AGENT_NAME))
+    agents.cli.run_app(agents.WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        prewarm_fnc=prewarm,
+        agent_name=AGENT_NAME,
+        initialize_process_timeout=30,
+        num_idle_processes=1,
+    ))

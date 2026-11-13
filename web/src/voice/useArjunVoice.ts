@@ -69,7 +69,9 @@ const isAgent = (p: Participant): p is RemoteParticipant => p.kind === Participa
 
 /** `language` = the profile language of the elder screen. The language SENT to the backend is the spoken switch in force (activeLang)
  *  if any, else this one: in the token body at join, then as the "arjun.ui_lang" attribute whenever it changes. */
-export function useArjunVoice(userId: number, language?: string): ArjunVoice {
+export function useArjunVoice(userId: number, language?: string, pushToRecord = false): ArjunVoice {
+  const pushRef = useRef(pushToRecord); // push-to-record: the mic is NOT published; usePushToRecord sends whole clips
+  pushRef.current = pushToRecord;
   const [roomView, setRoomView] = useState<Room | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [failure, setFailure] = useState<Failure | undefined>();
@@ -80,6 +82,13 @@ export function useArjunVoice(userId: number, language?: string): ArjunVoice {
   const [reply, setReply] = useState("");
   const [replyLang, setReplyLang] = useState("");
   const [activeLang, setActiveLang] = useState("");
+  const profileLanguage = useRef(language);
+  useEffect(() => {
+    if (profileLanguage.current !== language) {
+      profileLanguage.current = language;
+      setActiveLang("");
+    }
+  }, [language]);
   const sendLang = activeLang || language || ""; // what the backend must reply in: the switch in force, else the screen language
   const sendLangRef = useRef(sendLang);
   sendLangRef.current = sendLang;
@@ -382,7 +391,7 @@ export function useArjunVoice(userId: number, language?: string): ArjunVoice {
     try {
       await r.startAudio(); // inside the tap's user gesture (or after the Start tap), so playback is allowed
       setAudioBlocked(!r.canPlaybackAudio);
-      await r.localParticipant.setMicrophoneEnabled(true);
+      if (!pushRef.current) await r.localParticipant.setMicrophoneEnabled(true);
     } catch {
       fail("mic");
       return;
@@ -428,7 +437,7 @@ export function useArjunVoice(userId: number, language?: string): ArjunVoice {
       await r.startAudio(); // resumes LiveKit's suspended AudioContext after browser tab suspension
       const pub = r.localParticipant.getTrackPublication(Track.Source.Microphone);
       const mediaTrack = pub?.track?.mediaStreamTrack;
-      const micNeedsRepublish = !pub || pub.isMuted || microphoneNeedsRepublish(mediaTrack);
+      const micNeedsRepublish = !pushRef.current && (!pub || pub.isMuted || microphoneNeedsRepublish(mediaTrack));
       if (micNeedsRepublish) {
         await r.localParticipant.setMicrophoneEnabled(false);
         await r.localParticipant.setMicrophoneEnabled(true);

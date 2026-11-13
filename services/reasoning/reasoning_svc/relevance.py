@@ -28,6 +28,19 @@ _CLARIFY = {
     "ta": "“{q}” என்றால் சரியாக என்ன, கொஞ்சம் சொல்வீர்களா?",
     "te": "“{q}” అంటే సరిగ్గా ఏమిటి, కొంచెం చెప్తారా?",
 }
+# No LLM reply (down / busy): a line that quotes what she said and invites the rest, not a generic filler. One question mark at most.
+_LISTEN = {
+    "mr": "“{q}” - ऐकतोय, पुढे सांगा.",
+    "hi": "“{q}” - सुन रहा हूँ, आगे बताइए।",
+    "en": "“{q}” - I'm listening, please go on.",
+    "bn": "“{q}” - শুনছি, বলুন।",
+    "gu": "“{q}” - સાંભળું છું, આગળ કહો.",
+    "kn": "“{q}” - ಕೇಳುತ್ತಿದ್ದೇನೆ, ಮುಂದೆ ಹೇಳಿ.",
+    "ml": "“{q}” - കേൾക്കുന്നുണ്ട്, തുടരൂ.",
+    "pa": "“{q}” - ਸੁਣ ਰਿਹਾ ਹਾਂ, ਅੱਗੇ ਦੱਸੋ।",
+    "ta": "“{q}” - கேட்கிறேன், தொடருங்கள்.",
+    "te": "“{q}” - వింటున్నాను, చెప్పండి.",
+}
 _WORD = re.compile(r"[\wऀ-ॿঀ-෿]+")
 
 
@@ -57,6 +70,24 @@ def score(text: str, reply: str, *, topic: str = "", entities: list[str] | None 
         if a:
             best = max(best, len(a & reply_stems) / len(a))
     return round(min(1.0, best), 3)
+
+
+def _quote(text: str) -> str:
+    words = content_words(text)[:6] or norm(text).split()[:6]
+    return " ".join(words).strip() or text.strip()[:40]
+
+
+def listening(text: str, lang: str) -> str:
+    """"" when there is too little to quote (one or two words): the caller keeps its fixed line."""
+    if len(content_words(text)) < 3:
+        return ""
+    return _LISTEN.get(lang, _LISTEN["en"]).format(q=_quote(text))
+
+
+def clarify_or_ack(text: str, lang: str) -> str:
+    """After a failed relevance retry: a vague line (<= 2 content words: "तेच दे") gets a question quoting her words; a full statement
+    gets her words back as an acknowledgement (asking "what do you mean?" about "आज गर्मी आहे" would be absurd)."""
+    return listening(text, lang) or clarify(text, lang)
 
 
 def clarify(text: str, lang: str) -> str:

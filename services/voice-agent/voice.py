@@ -72,15 +72,15 @@ def tts_choice() -> dict[str, str]:
     return {
         "model": os.environ.get("GNANI_TTS_MODEL", "timbre-v3.0"),
         "voice": os.environ.get("GNANI_TTS_VOICE", "Avinash"),
-        "language": os.environ.get("GNANI_TTS_LANGUAGE", "mr-IN"),
+        "language": os.environ.get("GNANI_TTS_LANGUAGE", "").strip(),  # empty = none: every reply names its own language
         "method": os.environ.get("GNANI_TTS_METHOD", "sse"),
         "fallback_model": os.environ.get("GNANI_TTS_FALLBACK_MODEL", "timbre-v2.5"),
         "fallback_voice": os.environ.get("GNANI_TTS_FALLBACK_VOICE", "Omkar"),
     }
 
 
-def tts_language_for(detected: str | None, fallback: str) -> str:
-    """Map a supported Prisma locale to a Timbre locale; unsupported or absent values use configured default."""
+def tts_language_for(detected: str | None, fallback: str = "") -> str:
+    """Map a language code ("hi", "hi-IN") to its Timbre locale. Unknown / absent -> `fallback` (callers pass none)."""
     normalized = (detected or "").replace("_", "-").lower()
     if normalized == "hi-en":
         return "hi-en"
@@ -101,9 +101,12 @@ def tts_plan(detected: str | None, fallback: str) -> tuple[str, bool]:
     return fallback, True
 
 
-def tts_voice_for(detected: str | None, language: str, configured: str) -> str:
-    """Choose from documented Timbre v3 catalogue where known; preserve configured v2.5 language voice otherwise."""
+def tts_voice_for(detected: str | None, language: str, configured: str, model: str = "") -> str:
+    """Choose from documented Timbre v3 catalogue where known; preserve configured v2.5 language voice otherwise.
+    "Esha" is NOT in timbre-v3.0's catalogue (live 400 on 2026-11-10: every English / Hindi reply was silent), so it is only
+    used when the model in force is not a v3 one."""
     prefix = (detected or "").replace("_", "-").split("-", 1)[0].lower()
     if prefix in {"en", "hi"} or language == "hi-en":
-        return "Esha" if os.environ.get("GNANI_TTS_MULTILINGUAL_VOICE", "0") == "1" else configured
+        if os.environ.get("GNANI_TTS_MULTILINGUAL_VOICE", "0") == "1" and "v3" not in model.lower():
+            return "Esha"
     return configured
