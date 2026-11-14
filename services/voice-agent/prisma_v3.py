@@ -13,6 +13,7 @@ import ssl
 from functools import lru_cache
 from typing import Any
 
+import certifi
 import httpx
 from livekit import rtc
 from livekit.agents import (
@@ -112,9 +113,20 @@ def user_context_terms(user_id: int) -> tuple[list[str], list[str]]:
 
 @lru_cache(maxsize=1)
 def _tls() -> ssl.SSLContext:
-    """One TLS context for every Prisma reconnect. Building it loads the CA bundle (~100 ms, blocking): live logs showed
-    "event loop blocked ... load_default_certs" on each reconnect, delaying audio."""
-    return ssl.create_default_context()
+    """One TLS context for every Prisma reconnect. Built from the certifi bundle, never from the Windows cert store:
+    ssl.create_default_context() with the store blocked the event loop 1.2-1.8 s and timed out the first assignment
+    (2026-11-13). Call `warm_tls()` in a thread at worker start so no session ever builds it."""
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+def tls_context() -> ssl.SSLContext:
+    """The ONE process-wide TLS context (already built when `warm_tls()` ran at worker start)."""
+    return _tls()
+
+
+def warm_tls() -> ssl.SSLContext:
+    """Build the context now (blocking, ~10 ms with certifi): call it from a thread, never from the event loop."""
+    return _tls()
 
 class PrismaV3STT(stt.STT):
     def __init__(

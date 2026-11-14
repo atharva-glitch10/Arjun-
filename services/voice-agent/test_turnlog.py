@@ -147,6 +147,26 @@ def test_tts_prewarm_default_is_recorded_per_turn(tmp_path):
     assert row["tts_prewarm"] == "hit"
 
 
+def test_a_rest_clip_turn_fills_all_four_latencies_and_is_complete(tmp_path):
+    """REST STT (push-to-record) has no VAD end-of-speech event: the end of the clip and the REST answer are its times.
+    Before this, every REST turn logged all four latency fields as null and complete=False."""
+    log = TurnLog("indic-auto", tmp_path / "t.jsonl")
+    clip = log.clip_transcript(100.0, 100.8, "आज काय केलं", "mr-IN")  # recording end, REST answer
+    idx = log.reasoning_started("आज काय केलं", t=100.9)  # responder.respond claims the clip turn
+    assert idx == clip
+    log.llm_first_token(idx, 101.1)  # no token stream on REST: the reply text is the first output
+    log.reasoning_done(idx, 101.2, "ठीक आहे", "companion")
+    log.speaking_for(idx, 101.2)
+    log.agent_speaking(101.6)
+    (row,) = _rows(tmp_path / "t.jsonl")
+    assert (
+        row["eos_to_final_ms"], row["final_to_llm_first_token_ms"],
+        row["llm_to_first_audio_ms"], row["eos_to_speaking_ms"],
+    ) == (800, 300, 500, 1600)
+    assert row["complete"] is True and row["language_detected"] == "mr-IN"
+    assert row["t_end_of_speech"] == 100.0 and row["t_final_transcript"] == 100.8
+
+
 def test_a_tapped_turn_gets_its_own_row_and_is_marked(tmp_path):
     log = TurnLog("mr-IN", tmp_path / "t.jsonl")
     log.final_transcript(1.0, "उद्या सकाळी", None)  # a spoken sentence still being collected

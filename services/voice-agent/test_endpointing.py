@@ -66,6 +66,16 @@ def test_new_care_delay_names_override_legacy_names():
     assert (s.care_min, s.care_max) == (0.6, 2.2)
 
 
+def test_new_companion_delay_names_override_legacy_names():
+    s = settings_from_env({
+        "ARJUN_ENDPOINT_COMPANION_MIN_DELAY": "1.8",
+        "ARJUN_ENDPOINT_COMPANION_MAX_DELAY": "3.5",
+        "ARJUN_COMPANION_MIN_ENDPOINTING_S": "2.2",
+        "ARJUN_MAX_ENDPOINTING_S": "5",
+    })
+    assert (s.companion_min, s.companion_max) == (1.8, 3.5)
+
+
 def test_nonsense_env_values_fall_back_and_max_is_never_below_min():
     s = settings_from_env({"ARJUN_MIN_ENDPOINTING_S": "fast", "ARJUN_COMPANION_MIN_ENDPOINTING_S": "6",
                            "ARJUN_MAX_ENDPOINTING_S": "4"})

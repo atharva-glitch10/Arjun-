@@ -51,6 +51,9 @@ class Responder:
             reply = await self._ask_with_filler(transcript)
         finally:
             await self._mark_thinking(False)
+        # HTTP /turn (and the REST STT path) has no token stream: the reply text is the first output, so this is the
+        # moment it was available. The stream path (on_llm_sentence) already set an earlier, real first token.
+        self.turns.llm_first_token(idx, time.time())
         self.turns.reasoning_done(
             idx, time.time(), reply.text, reply.mode, reply.round_trip_ms, intent=reply.intent, source=reply.source,
             action_type=(reply.action or {}).get("type", ""),

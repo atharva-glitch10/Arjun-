@@ -18,6 +18,7 @@ from pathlib import Path
 
 import aiohttp
 import applog
+import certifi
 import clip as clips
 import clonedvoice
 import emergencycall
@@ -80,7 +81,7 @@ from media import (
     should_send,
     strip_wake_word,
 )
-from prisma_v3 import PrismaV3STT, user_context_terms
+from prisma_v3 import PrismaV3STT, tls_context, user_context_terms, warm_tls
 from responder import Responder
 from safety_words import is_safety_phrase
 from screenstate import publish_closed, publish_delivery, publish_screen, publish_thinking
@@ -160,6 +161,13 @@ def load_agent_env(env_file: Path | None = None) -> None:
 load_agent_env()  # job subprocesses re-import this module; they inherit the already-set env
 applog.setup_file_log()  # logs/voice-agent.app.log, written from inside this process (see applog.py)
 
+# TLS at worker start, never on the event loop: the Windows cert store made ssl.create_default_context block 1.2-1.8 s
+# and the first assignment timed out (2026-11-13). ONE context from the certifi bundle, built in a thread; SSL_CERT_FILE
+# makes LiveKit's own job http session use the same bundle instead of the store (livekit.utils.http_context honours it).
+os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+_TLS_WARM = threading.Thread(target=warm_tls, name="ssl-context-prewarm", daemon=True)
+_TLS_WARM.start()
+
 USER_ID = int(os.environ.get("ARJUN_USER_ID", "1"))  # demo: one synthetic user per deployment
 # "mr-IN", or "en-IN,hi-IN" for the plugin's code-mixed mode. Marathi *streaming* support is still
 # unconfirmed (CLAUDE.md open question 1); set GNANI_USE_STREAMING=0 to fall back to non-streaming.
@@ -178,6 +186,7 @@ AGENT_NAME = os.environ.get("ARJUN_AGENT_NAME", "arjun")
 
 
 TTS_GATE = TtsGate()  # Timbre allows ONE active request at a time (429 RATE_LIMITED otherwise); see ttsgate.py
+TTS_PROBE_RETRY_S = 5.0  # a failed timbre-v3.0 probe is retried once after this, so one blip does not cost the session
 
 
 def _timbre_busy(exc: Exception) -> bool:
@@ -287,8 +296,10 @@ def make_tts(model: str, voice: str, language: str | None = None):  # type: igno
     if key in _TTS_PLUGINS:
         return _TTS_PLUGINS[key]
     if loop not in _TTS_SESSIONS:
-        _TTS_SESSIONS[loop] = aiohttp.ClientSession()
-        logger.info("TTS HTTP session created on job loop")
+        # The ONE certifi TLS context (built at worker start), so aiohttp never loads the Windows cert store on the
+        # event loop. Without this the TTS prewarm paid the 1.2-1.8 s block and could time out at startup.
+        _TTS_SESSIONS[loop] = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=tls_context()))
+        logger.info("TTS HTTP session created on job loop (certifi TLS context)")
     kw = {"model": model, "voice": voice, "language": language}  # TTS_LANGUAGE is unset unless GNANI_TTS_LANGUAGE is
     if TTS["method"] == "sse":
         plugin = SseTimbre(**kw)
@@ -319,6 +330,30 @@ def _tts_prewarm_language() -> str:
     return TTS_LANGUAGE or (candidate if candidate in TTS_LANGUAGE_MAP.values() else "mr-IN")
 
 
+async def _probe_tts(tts_obj, model: str) -> tuple[bool, bool]:
+    """ONE one-word synthesis: does this Timbre model + voice work on our key right now?"""
+    try:
+        await asyncio.wait_for(tts_obj.synthesize("नमस्कार").collect(), timeout=8)
+        return True, False
+    except Exception as exc:  # noqa: BLE001 - any failure means: use the voice we know works
+        logger.warning("TTS %s / probe failed (%s)", model, type(exc).__name__)
+        return False, isinstance(exc, TimeoutError)
+
+
+async def _probe_tts_with_retry(tts_obj, model: str) -> bool:
+    """A timed-out probe is often a cold TLS / rate-limit blip: retry ONCE after 5 s instead of staying on v2.5 for
+    the whole session (2026-11-13)."""
+    worked, timed_out = await _probe_tts(tts_obj, model)
+    if worked:
+        return True
+    if not timed_out:
+        return False
+    logger.info("TTS %s probe timed out; retrying once in %.0f s", model, TTS_PROBE_RETRY_S)
+    await asyncio.sleep(TTS_PROBE_RETRY_S)
+    worked, _ = await _probe_tts(tts_obj, model)
+    return worked
+
+
 async def working_tts():  # type: ignore[no-untyped-def]
     """(tts, model) for this session: the configured Timbre if a one-word probe works, else the verified one."""
     language = _tts_prewarm_language()
@@ -327,34 +362,25 @@ async def working_tts():  # type: ignore[no-untyped-def]
     primary = make_tts(*primary_key[1:])
     fallback_key = (loop, TTS["fallback_model"], TTS["fallback_voice"], language)
     if primary_key == fallback_key:
-        try:
-            await asyncio.wait_for(primary.synthesize("नमस्कार").collect(), timeout=8)
+        if await _probe_tts_with_retry(primary, TTS_MODEL):
             _PROBED[primary_key] = True
-            logger.info("TTS TLS prewarm succeeded for %s", TTS_MODEL)
-        except Exception as exc:  # noqa: BLE001 - a failed prewarm must not prevent the session from starting
+            logger.info("TTS prewarm succeeded for %s / %s", TTS_MODEL, TTS_VOICE)
+        else:
             _PROBED[primary_key] = False
-            logger.warning("TTS TLS prewarm failed (%s); first reply may pay setup latency", type(exc).__name__)
+            logger.warning("TTS prewarm failed (%s); first reply may pay setup latency", TTS_MODEL)
         return primary, TTS_MODEL
     if _PROBED.get(primary_key) is None:
-        try:
-            await asyncio.wait_for(primary.synthesize("नमस्कार").collect(), timeout=8)
-            _PROBED[primary_key] = True
-            logger.info("TTS TLS prewarm succeeded for %s", TTS_MODEL)
-        except Exception as exc:  # noqa: BLE001 - any failure means: use the voice we know works
-            logger.error("TTS %s / %s failed its probe (%s); using %s / %s", TTS_MODEL, TTS_VOICE,
-                         type(exc).__name__, TTS["fallback_model"], TTS["fallback_voice"])
-            _PROBED[primary_key] = False
+        _PROBED[primary_key] = await _probe_tts_with_retry(primary, TTS_MODEL)
+        if not _PROBED[primary_key]:
+            logger.error("TTS %s / %s probe failed; using %s / %s", TTS_MODEL, TTS_VOICE,
+                         TTS["fallback_model"], TTS["fallback_voice"])
     if _PROBED[primary_key]:
         return primary, TTS_MODEL
     fallback = make_tts(*fallback_key[1:])
     if _PROBED.get(fallback_key) is None:
-        try:
-            await asyncio.wait_for(fallback.synthesize("नमस्कार").collect(), timeout=8)
-            _PROBED[fallback_key] = True
-            logger.info("TTS TLS prewarm succeeded for %s", TTS["fallback_model"])
-        except Exception as exc:  # noqa: BLE001 - retain the existing fallback even if its warm-up fails
-            _PROBED[fallback_key] = False
-            logger.warning("TTS fallback prewarm failed (%s)", type(exc).__name__)
+        _PROBED[fallback_key], _ = await _probe_tts(fallback, TTS["fallback_model"])
+        if _PROBED[fallback_key]:
+            logger.info("TTS prewarm succeeded for %s / %s", TTS["fallback_model"], TTS["fallback_voice"])
     return fallback, TTS["fallback_model"]
 
 
@@ -460,6 +486,7 @@ def vlog(msg: str, *args: object) -> None:
 
 def prewarm(proc: agents.JobProcess) -> None:
     """Once per job process, before any session: warm the resampler and load the VAD model."""
+    _TLS_WARM.join(timeout=15)  # the ONE certifi TLS context is ready before the first STT/TTS connection
     warm_audio_resampler()
     proc.userdata["vad"] = silero.VAD.load()
 
@@ -548,7 +575,11 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         language_selected="indic-auto" if os.environ.get("GNANI_STT_IMPL", "plugin").strip().lower() == "v3" else STT_LANGUAGE, session=ctx.job.id, start=TurnLog.base_for(time.time()),
         stt_provider="sarvam" if use_sarvam else "gnani", tts_provider="sarvam" if use_sarvam else "gnani",
     )
-    active_voice = TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"]
+    active_voice = (os.environ.get("ARJUN_SARVAM_SPEAKER", voiceprovider.DEFAULT_SPEAKER).strip()
+                    or voiceprovider.DEFAULT_SPEAKER) if use_sarvam else (
+                        TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"])
+    logger.info("TTS active for this session: model=%s voice=%s language=%s",
+                active_model, active_voice, _tts_prewarm_language())  # which voice this session really speaks with
     turns.set_tts_prewarm("hit" if _PROBED.get((asyncio.get_running_loop(), active_model, active_voice, _tts_prewarm_language())) is True else "miss")
     prefetched_audio: dict[int, tuple[str, asyncio.Task[list[rtc.AudioFrame]]]] = {}
 
@@ -1004,10 +1035,15 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 # Draining the reader waits for the sender's stream close (Stop or 30 s auto-send).
                 # Do not parse audio or call STT while the user is still recording.
                 data = b"".join([chunk async for chunk in reader])
+                t_clip_end = time.time()  # the recording stopped here: this turn's end of speech (no VAD event on REST)
                 if clip_stt is None:
                     res = clips.ClipResult("error")
                 else:
                     res = await asyncio.wait_for(clips.process_clip(data, clip_stt._rest_recognizer()), timeout=45)
+                    if res.status == "heard":
+                        # The REST answer is this turn's final transcript: EOS and final are both real times, so the
+                        # latency log fills eos_to_final / final_to_llm_first_token / llm_to_first_audio / eos_to_speaking.
+                        turns.clip_transcript(t_clip_end, time.time(), res.text, res.lang or None)
             except Exception as exc:  # noqa: BLE001
                 logger.info("clip failed (%s)", type(exc).__name__)
                 res = clips.ClipResult("error")

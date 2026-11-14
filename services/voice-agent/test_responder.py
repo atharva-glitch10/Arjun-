@@ -95,6 +95,27 @@ def test_a_publish_failure_never_silences_the_reply(tmp_path):
     assert _run(f.r.respond("आज काय आहे", "voice")) == "spoken" and f.said == ["ठीक आहे"]
 
 
+def test_respond_marks_the_first_llm_output_for_the_turn(tmp_path):
+    """HTTP /turn has no token stream, so the reply text IS the first output: the turn log must record when it arrived
+    (final_to_llm_first_token / llm_to_first_audio were null on every REST turn before this)."""
+    f = Fakes(tmp_path, [_reply()])
+    assert _run(f.r.respond("नमस्कार", "voice")) == "spoken"
+    idx = f.turns.active_turn()
+    assert f.turns._open[idx]["t_llm_first_token"] is not None
+
+
+def test_a_streamed_first_token_is_not_overwritten_by_the_http_marker(tmp_path):
+    f = Fakes(tmp_path, [_reply()])
+
+    async def ask(text):
+        f.turns.llm_first_token(f.turns.active_turn(), 1.5)  # on_llm_sentence: the first complete, guarded sentence
+        return await Fakes.ask(f, text)
+
+    f.r.ask = ask
+    _run(f.r.respond("नमस्कार", "voice"))
+    assert f.turns._open[f.turns.active_turn()]["t_llm_first_token"] == 1.5
+
+
 def test_tts_failure_speaks_the_fixed_fallback_once(tmp_path):
     f = Fakes(tmp_path, [_reply("hello")])
     calls = []

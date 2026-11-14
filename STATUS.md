@@ -1,3 +1,9 @@
+# Deploy prep Step 1 (2026-11-14)
+- REST clip turns now record clip completion, final transcript, first reply output, and first spoken audio in the turn log; synthetic tests cover all requested timing fields and `complete`.
+- The worker warms a shared certifi TLS context in a startup thread for Prisma and the Timbre session. LiveKit's job HTTP context has no public context-injection hook, so its own session still builds a separate context from the certifi bundle.
+- A timed-out Timbre probe retries once after the configured wait; the active model and voice are logged per session. Endpointing accepts care and companion `ARJUN_ENDPOINT_*` names, with the prior defaults and legacy names retained.
+- No real provider-backed turn or startup timing comparison was run for these changes.
+
 # STATUS (2026-11-12, voice latency instrumentation)
 - Worker startup now allows 30 s for process initialization and keeps one idle process. Concurrent room dispatches log both room IDs; care endpoint delays accept `ARJUN_ENDPOINT_MIN_DELAY` / `ARJUN_ENDPOINT_MAX_DELAY` with legacy-name fallback. Prisma TLS context creation runs off the event loop; TTS already prewarms through the startup probe. `GNANI_STT_TRANSPORT=rest` remains the transport selector and is included in the startup log.
 - Verification after these changes: voice-agent 430 passed; root `ruff check .` clean.

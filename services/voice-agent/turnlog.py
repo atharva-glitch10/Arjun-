@@ -113,6 +113,15 @@ class TurnLog:
         self._last_eos = None
         return int(turn["turn"])
 
+    def clip_transcript(self, t_eos: float, t_final: float, text: str, language: str | None) -> int:
+        """A push-to-record clip through REST STT: the EOS is when the recording stopped, the final is when Prisma
+        answered. There is no VAD end-of-speech event and no interim on this path, so both times are set explicitly
+        (otherwise every REST turn logged the four latency fields as null and complete=False)."""
+        turn = self._new()
+        turn.update(t_final_transcript=t_final, t_last_final=t_final, t_end_of_speech=t_eos,
+                    transcript=text, language_detected=language)
+        return int(turn["turn"])
+
     def reasoning_started(self, transcript: str, t: float | None = None, source: str = "voice") -> int:
         """The agent took this transcript for reasoning: claim its turn and return the turn index.
 

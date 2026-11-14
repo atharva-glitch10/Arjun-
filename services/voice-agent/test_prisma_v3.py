@@ -10,6 +10,28 @@ from prisma_v3 import PrismaV3STT, user_context_terms
 _HTTPX_CLIENT = httpx.Client
 
 
+def test_one_tls_context_is_built_from_certifi_and_reused(monkeypatch):
+    """The Windows cert store made ssl.create_default_context block the event loop 1.2-1.8 s at startup
+    (2026-11-13). ONE context from the certifi bundle, built in a thread at worker start and reused."""
+    import certifi
+
+    calls = []
+
+    def fake_create(*args, **kwargs):
+        calls.append((args, kwargs))
+        return object()
+
+    prisma_v3._tls.cache_clear()
+    monkeypatch.setattr(prisma_v3.ssl, "create_default_context", fake_create)
+    try:
+        first = prisma_v3.tls_context()
+        second = prisma_v3.warm_tls()
+    finally:
+        prisma_v3._tls.cache_clear()
+    assert first is second and len(calls) == 1  # built once, reused by every Prisma reconnect
+    assert calls[0] == ((), {"cafile": certifi.where()})
+
+
 def test_context_fetch_only_uses_bias_fields(monkeypatch):
     def route(request):
         if request.url.path.endswith("/contacts"):
