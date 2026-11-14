@@ -34,6 +34,14 @@ describe("elder strings: all ten Gnani languages", () => {
     }
   });
 
+  it("invites speaking by pressing the button in every language", () => {
+    for (const lang of ELDER_LANGUAGES) {
+      expect(t("tap_and_speak", undefined, lang)).not.toBe(t("speak", undefined, lang));
+    }
+    expect(t("tap_and_speak", undefined, "mr")).toBe("बोलण्यासाठी बटण दाबा");
+    expect(t("tap_and_speak", undefined, "en")).toBe("Press the button to talk");
+  });
+
   it("keeps the original Marathi wording", () => {
     expect(t("speak", undefined, "mr")).toBe("बोला");
     expect(t("ok", undefined, "mr")).toBe("ठीक आहे");

@@ -73,7 +73,7 @@ export function ChatMessages({
           <MessageScrollerContent className="px-1 py-3" aria-busy={busy || undefined}>
             {messages.length === 0 && !live && emptyText && (
               <MessageScrollerItem>
-                <Marker variant="separator">
+                <Marker variant="separator" className="text-2xl leading-relaxed text-foreground">
                   <MarkerContent>{emptyText}</MarkerContent>
                 </Marker>
               </MessageScrollerItem>

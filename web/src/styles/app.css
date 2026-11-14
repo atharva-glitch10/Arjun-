@@ -169,7 +169,7 @@ h1, h2, p { margin: 0; }
 .orb-rings.md .orb-core { width: 64%; height: 64%; box-shadow: 0 0 0 10px rgba(255, 255, 255, .35), 0 0 0 22px rgba(255, 255, 255, .15); }
 .speak-orb { border: 0; background: transparent; padding: 0; border-radius: 50%; display: flex; flex-direction: column; align-items: center; gap: 14px;
   color: var(--navy); }
-.speak-orb .label { font-size: 18px; font-weight: 700; }
+.speak-orb .label { font-size: 26px; line-height: 1.4; font-weight: 700; }
 .orb-pulse { animation: orb-pulse 3.2s ease-in-out infinite; }
 @keyframes orb-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 @media (prefers-reduced-motion: reduce) { .orb-pulse { animation: none; } }
@@ -197,7 +197,7 @@ h1, h2, p { margin: 0; }
   .home .home-cards { display: none; }
   .home-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; flex: 1 1 0; min-width: 0; align-content: center; }
   .home .home-speak { flex: 0 0 340px; flex-grow: 0; gap: 22px; }
-  .home .speak-orb .label { font-size: 22px; color: #8a5a1f; }
+  .home .speak-orb .label { font-size: 28px; color: #8a5a1f; }
   .home .actions { max-width: 440px; }
   .home .hint-chip { display: inline-block; align-self: flex-start; font-size: 16px; font-weight: 500; padding: 10px 20px; border-radius: 999px;
     background: #f7f5f0; border: 1px solid #ece7dc; color: #4a5470; }
