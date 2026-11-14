@@ -32,8 +32,9 @@ MR_WORDS = frozenset("""
 मराठीतच इंग्रजीत आणि पण होय छान बरं सगळं सगळे खूप फार आता मध्ये साठी वाटतं वाटतंय चाललंय चाललं झालं झाली झाले होतं होतो होते असते
 असतो आलो गेलो गेले जातो जाते जातोय येतो येते येतोय घेतो घेतली दिलं दिली म्हणून म्हणजे म्हणाला म्हणाली म्हणालात म्हणतात आवडतं आवडतो हवं हवा
 हवी पाहिजे पाहिजेत लागतं लागतो नक्की बरोबर उद्या परवा सकाळी संध्याकाळी रात्री दुपारी जेवण जेवलो जेवलात झोप
+दाखवा लावा लाव मग करा का ना
 """.split())
-_MR_ENDING = re.compile(r"(?:तोय|तंय|ायचं|ायचंय|ायला|ल्यावर|ऱ्या|ाऱ्या|तोस|तेस|लात|णार)$")
+_MR_ENDING = re.compile(r"(?:तोय|तंय|ायचं|ायचंय|ायला|ल्यावर|ऱ्या|ाऱ्या|तोस|तेस|लात|णार|ची|चा|चे)$")
 
 # Hindi-only words (never Marathi)
 HI_WORDS = frozenset("""
@@ -90,23 +91,26 @@ def classify(text: str, default: str = "") -> Guess:
                 counts["latin"] = counts.get("latin", 0) + 1
     if not counts:
         return Guess("", 0.0)
-    top, n = max(counts.items(), key=lambda kv: kv[1])
-    share = n / len(letters)
+    # A Latin loanword or brand ("recipe", "YouTube") cannot outvote the spoken Indic script.
+    non_latin = {script: count for script, count in counts.items() if script != "latin"}
+    considered = non_latin or counts
+    top, n = max(considered.items(), key=lambda kv: kv[1])
+    share = n / sum(considered.values())
     if top == "latin":
         return Guess("en", round(share, 2))
     if top != "dev":
         return Guess(top, round(share, 2))
     mr, hi = devanagari_scores(text)
-    if mr == hi:
+    if mr == hi == 0:
         return Guess(default if default in ("mr", "hi") else "mr", 0.0, mr, hi)
-    lang = "mr" if mr > hi else "hi"
+    lang = "mr" if mr and mr >= hi else "hi"
     return Guess(lang, round(abs(mr - hi) / (mr + hi), 2), mr, hi)
 
 
 def confident(guess: Guess) -> bool:
     """Enough evidence to overrule a label: another script, or a Devanagari margin of at least two words."""
     if guess.lang in ("mr", "hi"):
-        return abs(guess.mr - guess.hi) >= 2
+        return (guess.lang == "mr" and guess.mr > 0 and guess.mr >= guess.hi) or abs(guess.mr - guess.hi) >= 2
     return bool(guess.lang) and guess.confidence >= 0.6
 
 

@@ -86,9 +86,7 @@ from .readings import format_bp, parse_bp
 from .textutil import (
     collapse_repeats,
     has_any,
-    hindi_evidence,
     latin_share,
-    marathi_evidence,
     normalize,
     tokens,
 )
@@ -103,18 +101,22 @@ def _language_signal(language_code: str | None, text: str, previous: str | None)
     a. the text's own non-Latin script when unambiguous (Kannada, ..., Devanagari with Marathi / Hindi word markers)
     b. Prisma's detected_language_code when it is mr / hi / en / kn
     c. Latin-script text: English words -> en; romanised Marathi / Hindi -> the language of the last turn (else its word markers)
-    A mixed text goes to its dominant script (langid counts letters per script)."""
+    Latin loanwords never outvote Devanagari words."""
     guess = langid.classify(text)
     if guess.lang and guess.lang != "en":
         if guess.lang not in ("mr", "hi"):
             if guess.confidence >= 0.5:
                 return guess.lang
-        else:  # Devanagari: Marathi vs Hindi by word markers FIRST; a tie (no markers) falls through to Prisma's label, then the last turn
-            mr, hi = marathi_evidence(text), hindi_evidence(text)
-            if langid.confident(guess):
-                return guess.lang
-            if mr != hi:
-                return "mr" if mr > hi else "hi"
+        else:  # Marathi markers beat a mistaken hi-IN label; an evidence-free tie uses Prisma's label.
+            mr, hi = langid.devanagari_scores(text)
+            if mr and mr >= hi:
+                return "mr"
+            if hi > mr:
+                return "hi"
+            detected = _detected_reply_language(language_code)
+            if detected in ("mr", "hi"):
+                return detected
+            return previous if previous in ("mr", "hi") else "mr"
     detected = _detected_reply_language(language_code)
     if detected in _STT_LANGS:
         return detected
@@ -473,6 +475,8 @@ class TurnEngine:
         memory afterwards, so no spoken line is ever missing from the history the LLM sees."""
         depth = getattr(self._local, "depth", 0)
         self._local.depth = depth + 1
+        if depth == 0:
+            self._local.fallback = "none"
         try:
             res = self._handle(user_id, text, language_code, reply_language)
         finally:
@@ -482,7 +486,8 @@ class TurnEngine:
             res = replace(res, active_language=self._active_lang(user_id))
             if res.reply and not res.silent and res.language in _REPLY_LANGS:
                 self._last_reply_lang[user_id] = res.language
-            log.info(json.dumps({"user_lang": language_code or "-", "reply_lang": res.language}))
+            log.info(json.dumps({"user_lang": language_code or "-", "reply_lang": res.language,
+                                 "final_lang": res.language, "fallback": getattr(self._local, "fallback", "none")}))
             try:
                 self._record_turn(user_id, text, res)
             except Exception as exc:  # noqa: BLE001 - memory must never break the turn
@@ -587,6 +592,7 @@ class TurnEngine:
                 log.info(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": actual, "retried": retried, "fixed": True}))
                 return fixed
         self.lang_guard["fallback"] += 1
+        self._local.fallback = "language_guard"
         log.warning(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": actual, "retried": retried, "fixed": False}))
         return _VARIED.get(lang, _VARIED["en"])[0]  # a fixed line in HER language: never the wrong one
 
@@ -1414,6 +1420,12 @@ class TurnEngine:
         query = p.query.strip() or media_topic(text)
         specific = bool(p.media_specific)
 
+        if (is_media_request(text) and re.search(r"दाखव|लाव|show|play", text, re.I)
+                and media_kind(text) == "unknown" and not media_specific(text, "video")):
+            self._media_ask[uid] = self._mono()
+            self._local.fallback = "ask_video"
+            return res(a["ask_video"])
+
         if kind == "unknown":
             if query:  # a named thing after "what should I play?" is a video search, not "what kind?"
                 kind = "video"
@@ -1452,6 +1464,7 @@ class TurnEngine:
         if found is None:
             return self._results_page(query, a, res)
         if not found:
+            self._local.fallback = "not_found"
             return res(a["play_none"])
         items = [self._video_item(i, x) for i, x in enumerate(found)]
         if specific:
@@ -2905,15 +2918,20 @@ class TurnEngine:
         from_llm = reply is not None
         if reply is None:
             reply = self._specific_clarification(uid, text, lang)
+            if reply:
+                self._local.fallback = "clarification"
         if not reply and len(text.split()) >= 2:
             # No model reply (none configured, busy, timed out) and no topic to ask about: a real sentence still gets
             # a short listening line, never silence (live run 2026-11-09: five chat turns in a row got no answer).
             reply = relevance.listening(text, lang)  # her own words back, never a generic "सांगा ना"
-            if not reply:
+            if reply:
+                self._local.fallback = "echo"
+            else:
                 pool = _VARIED.get(lang, _VARIED["mr"])
                 n = self._listen_i.get(uid, 0)
                 self._listen_i[uid] = n + 1
                 reply = pool[n % len(pool)]
+                self._local.fallback = "listening"
         if from_llm:  # at most one question, not in every reply, never the same one twice in a day
             shaped = shape_questions(reply, self.memory.asked_today(uid, now), self.memory.previous_reply_was_question(uid, now))
             if shaped != reply:
@@ -2987,6 +3005,7 @@ class TurnEngine:
         self.relevance["clarified"] += 1
         self.last_relevance[uid] = info
         log.info(json.dumps({"relevance_score": info["score"], "retried": info["retried"], "clarified": True}))
+        self._local.fallback = "echo"
         return relevance.clarify_or_ack(text, lang), ""
 
     # ---- live web facts ---------------------------------------------------------------------------------

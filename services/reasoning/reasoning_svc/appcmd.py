@@ -30,7 +30,7 @@ _WHATSAPP = re.compile(r"व्?ह?[ाॉॅ]ट्?स\s?[अआएऐॲऍ]
 _FILLER = frozenset(
     "मला मी आहे आहेत आहेस ना जरा आता तू तुम्ही अर्जुन arjun please वर मध्ये ते ती एक एखादं एखादे काहीतरी काही "
     "की आणि पण mujhe मुझे ek एक zara जरा abhi अभी kar कर kara करा karo करो de दे dya द्या "
-    "नाही नहीं nahi nahin नको nako".split()
+    "नाही नहीं nahi nahin नको nako मग का".split()
 )
 # The request itself is never part of the search: "बघायचं" / "उघड" / "व्हिडिओ" are how she asks, not what she wants.
 _QUERY_DROP = _FILLER | frozenset(

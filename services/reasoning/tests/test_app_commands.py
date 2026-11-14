@@ -181,7 +181,8 @@ def test_empty_query_asks_and_the_next_answer_becomes_the_query(core_http, uid, 
 
     media.reset_quota_for_tests()
     eng2 = engine(core_http)
-    assert eng2.handle(uid, "व्हिडिओ लाव").reply == "काय बघायचं आहे — बातम्या, गाणी की रेसिपी?"
+    # A video request without a title asks which video, not which media category.
+    assert eng2.handle(uid, "व्हिडिओ लाव").reply == "कोणता व्हिडिओ लावू?"
     res = eng2.handle(uid, "लता मंगेशकर")
     assert g.calls[-1]["q"] == "लता मंगेशकर" and res.action["kind"] == "youtube_video"
 
