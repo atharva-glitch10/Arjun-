@@ -157,6 +157,16 @@ class TurnLog:
         if idx in self._open and self._open[idx].get("t_llm_first_token") is None:
             self._open[idx]["t_llm_first_token"] = t
 
+    def tts_event(self, idx: int, name: str, t: float) -> None:
+        if idx not in self._open or name not in {
+            "t_request_start", "t_first_chunk_received", "t_first_frame_pushed", "t_last_chunk",
+        }:
+            return
+        if name == "t_last_chunk":
+            self._open[idx][name] = t
+        else:
+            self._open[idx].setdefault(name, t)  # first request/frame defines the turn's start latency
+
     def set_tts_prewarm(self, status: str, idx: int | None = None) -> None:
         if status not in ("hit", "miss"):
             raise ValueError("tts prewarm status must be hit or miss")
@@ -247,7 +257,8 @@ class TurnLog:
         # a tapped turn has no speech: the tap itself marks its start
         start = turn.get("t_end_of_speech") or (turn.get("t_final_transcript") if turn.get("source") == "tap" else None)
         turn.setdefault("t_last_final", turn.get("t_final_transcript"))
-        for key in ("eos_to_final_ms", "final_to_llm_first_token_ms", "llm_to_first_audio_ms", "eos_to_speaking_ms"):
+        for key in ("eos_to_final_ms", "final_to_llm_first_token_ms", "llm_to_first_audio_ms",
+                    "eos_to_speaking_ms", "tts_first_chunk_ms", "tts_first_frame_ms"):
             turn.setdefault(key, None)
         for name, a, b in (
             ("eos_to_final_ms", "t_end_of_speech", "t_final_transcript"),
@@ -258,6 +269,8 @@ class TurnLog:
             ("reasoning_to_audio_ms", "t_reasoning_done", "t_agent_speaking"),
             ("eos_to_audio_ms", "t_end_of_speech", "t_agent_speaking"),
             ("tts_first_audio_ms", "t_say_start", "t_agent_speaking"),
+            ("tts_first_chunk_ms", "t_request_start", "t_first_chunk_received"),
+            ("tts_first_frame_ms", "t_request_start", "t_first_frame_pushed"),
         ):
             if turn.get(a) is not None and turn.get(b) is not None:
                 turn[name] = round((turn[b] - turn[a]) * 1000)

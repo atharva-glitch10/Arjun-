@@ -1,3 +1,8 @@
+# Deploy prep Step 1b (2026-11-14)
+- Gnani's SSE stream already pushes each decoded chunk to LiveKit's audio emitter. The first-sentence prefetch then collected every decoded frame into a list and `say_reply` awaited the entire synthesis, delaying playback until the sentence ended. It now hands off frames through a bounded queue as they arrive, with cancellation propagated on interruption.
+- TTS requests log request start, first SSE audio chunk, first frame handed to playback, last chunk, and active concurrency; turn rows and the latency report include request-to-first-chunk/frame durations. A configurable decoded-audio prebuffer defaults to 150 ms. It can cover short chunk gaps but cannot prevent stutter if generation remains slower than playback; that effect and any start delay require a live v3.0 measurement.
+- LiveKit's `flush audio emitter due to slow audio generation` debug line is its timer flushing buffered audio when generation lags real-time playout. The line alone does not establish an audible stutter.
+
 # Deploy prep Step 1 (2026-11-14)
 - REST clip turns now record clip completion, final transcript, first reply output, and first spoken audio in the turn log; synthetic tests cover all requested timing fields and `complete`.
 - The worker warms a shared certifi TLS context in a startup thread for Prisma and the Timbre session. LiveKit's job HTTP context has no public context-injection hook, so its own session still builds a separate context from the certifi bundle.

@@ -23,6 +23,7 @@ class TtsGate:
     ) -> None:
         self.retries, self.delay_s, self._sleep = retries, delay_s, sleep
         self._lock = asyncio.Lock()
+        self.active_count = 0
 
     async def run(self, call: Callable[[], Awaitable[T]], is_busy: Callable[[Exception], bool]) -> T:
         """Run `call` alone. If it fails with a "busy" error, wait and try again (at most `retries` times)."""
@@ -30,7 +31,11 @@ class TtsGate:
             attempt = 0
             while True:
                 try:
-                    return await call()
+                    self.active_count += 1
+                    try:
+                        return await call()
+                    finally:
+                        self.active_count -= 1
                 except Exception as exc:  # noqa: BLE001 - only the busy kind is retried, everything else is re-raised
                     if not is_busy(exc) or attempt >= self.retries:
                         raise

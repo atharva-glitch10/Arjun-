@@ -46,7 +46,7 @@ from endpointing import (
 )
 from familyroom import FamilyPresence
 from idle import IdleCloser, IdlePolicy
-from livekit import agents, rtc
+from livekit import agents
 from livekit.agents import (
     DEFAULT_API_CONNECT_OPTIONS,
     Agent,
@@ -97,6 +97,7 @@ from soundevents import (
     enabled as sound_events_enabled,
 )
 from ttsgate import TtsGate
+from ttspipeline import PrefetchedFrames, TtsTiming, prebuffer, prebuffer_ms
 from turnlog import TurnLog
 from usermeta import language_from_metadata, user_id_from_metadata
 from voice import (
@@ -197,7 +198,24 @@ class _GatedSse(SSEChunkedStream):
     """One SSE request at a time per process, a busy answer retried a couple of times (ttsgate.py)."""
 
     async def _run(self, output_emitter) -> None:  # type: ignore[no-untyped-def]
-        await TTS_GATE.run(lambda: SSEChunkedStream._run(self, output_emitter), _timbre_busy)
+        timing = self.timing
+
+        class EmitterProbe:
+            def __getattr__(self, name):  # type: ignore[no-untyped-def]
+                return getattr(output_emitter, name)
+
+            def push(self, chunk):  # type: ignore[no-untyped-def]
+                timing.chunk()  # the plugin pushes each decoded SSE audio payload immediately on receipt
+                return output_emitter.push(chunk)
+
+        async def once() -> None:
+            timing.start(TTS_GATE.active_count)
+            try:
+                await SSEChunkedStream._run(self, EmitterProbe())
+            finally:
+                timing.log("request_end")
+
+        await TTS_GATE.run(once, _timbre_busy)
 
 
 class SseTimbre(gnani.TTS):
@@ -210,18 +228,29 @@ class SseTimbre(gnani.TTS):
         self._capabilities = lk_tts.TTSCapabilities(streaming=False)
 
     def synthesize(self, text, *, conn_options=DEFAULT_API_CONNECT_OPTIONS):  # type: ignore[no-untyped-def]
-        return _GatedSse(tts=self, input_text=text, conn_options=conn_options)
+        stream = _GatedSse(tts=self, input_text=text, conn_options=conn_options)
+        stream.timing = TtsTiming()
+        return stream
 
 
-async def tts_audio(tts_obj, text: str):  # type: ignore[no-untyped-def]
+async def tts_audio(tts_obj, text: str, *, timing: TtsTiming | None = None, prefetch: bool = False):  # type: ignore[no-untyped-def]
     """Synthesize `text` with a specific TTS and yield its audio frames.
 
     LiveKit Agents 1.8.6 `AgentSession.say()` has NO `tts=` argument (it raised TypeError, so every reply that
     picked a per-language or cloned voice was silent). It does take `audio=`: we synthesize with the chosen TTS here
     and hand the frames over, so the text and the voice stay exactly what we chose."""
     async with tts_obj.synthesize(text) as stream:
-        async for ev in stream:
-            yield ev.frame
+        if timing is not None and hasattr(stream, "timing"):
+            stream.timing = timing
+
+        async def frames():
+            async for ev in stream:
+                yield ev.frame
+
+        async for frame in prebuffer(frames(), prebuffer_ms(os.environ.get("ARJUN_TTS_PREBUFFER_MS"))):
+            if not prefetch and timing is not None:
+                timing.frame()  # this frame is handed to LiveKit's audio= emitter now
+            yield frame
 
 
 class _ClonedRest(RESTChunkedStream):
@@ -581,7 +610,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     logger.info("TTS active for this session: model=%s voice=%s language=%s",
                 active_model, active_voice, _tts_prewarm_language())  # which voice this session really speaks with
     turns.set_tts_prewarm("hit" if _PROBED.get((asyncio.get_running_loop(), active_model, active_voice, _tts_prewarm_language())) is True else "miss")
-    prefetched_audio: dict[int, tuple[str, asyncio.Task[list[rtc.AudioFrame]]]] = {}
+    prefetched_audio: dict[int, tuple[str, PrefetchedFrames, TtsTiming]] = {}
+
+    def tts_timing(idx: int | None) -> TtsTiming:
+        return TtsTiming(idx, (lambda name, when: turns.tts_event(idx, name, when)) if idx is not None else None)
 
     # The elder's user id travels in the dispatch metadata from /livekit/token; ARJUN_USER_ID is the fallback.
     logger.info("session serves user %s (%s)", user_id, "dispatch metadata" if from_metadata else "ARJUN_USER_ID fallback")
@@ -604,13 +636,12 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     stream_client = streamclient.StreamClient() if streamclient.enabled() else None  # ARJUN_STREAM=1: WebSocket /turn/stream
 
-    async def prewarm_sentence(sentence: str, detected: str) -> list[rtc.AudioFrame]:
+    def prewarm_sentence(sentence: str, detected: str, timing: TtsTiming):
         detected = detected or langid.classify(sentence).lang
         language = tts_language_for(detected, f"{detected}-IN" if detected else "")
         voice = tts_voice_for(detected, language, TTS_VOICE if active_model == TTS_MODEL else TTS["fallback_voice"], active_model)
         plugin = make_tts(active_model, voice, language)
-        async with plugin.synthesize(sentence) as stream:
-            return [ev.frame async for ev in stream]
+        return tts_audio(plugin, sentence, timing=timing, prefetch=True)
 
     def on_llm_sentence(seq: int, sentence: str, language: str) -> None:
         if use_sarvam or not sentence:
@@ -619,14 +650,21 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if idx is None:
             return
         turns.llm_first_token(idx, time.time())
-        task = asyncio.create_task(prewarm_sentence(sentence, language))
+        if idx in prefetched_audio:
+            return  # prefetch only the first guarded sentence
+        for old_idx, (_, old, _) in list(prefetched_audio.items()):
+            if old_idx != idx:
+                old.cancel()
+                del prefetched_audio[old_idx]
+        timing = tts_timing(idx)
+        cached = PrefetchedFrames(lambda: prewarm_sentence(sentence, language, timing))
 
-        def log_prefetch_failure(done: asyncio.Task[list[rtc.AudioFrame]]) -> None:
+        def log_prefetch_failure(done: asyncio.Task[None]) -> None:
             if not done.cancelled() and done.exception() is not None:
                 logger.warning("first-sentence TTS prewarm failed (%s)", type(done.exception()).__name__)
 
-        task.add_done_callback(log_prefetch_failure)
-        prefetched_audio[idx] = (sentence, task)
+        cached.task.add_done_callback(log_prefetch_failure)
+        prefetched_audio[idx] = (sentence, cached, timing)
 
     async def ask(text: str):  # type: ignore[no-untyped-def]
         if stream_client is not None:  # falls back to the HTTP /turn below by itself
@@ -687,24 +725,36 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             cached = prefetched_audio.pop(idx, None) if idx is not None else None
             audio = None
             if cached is not None:
-                cached_text, task = cached
-                try:
-                    frames = await task
-                    if frames and text.startswith(cached_text):
-                        turns.set_tts_prewarm("hit", idx)
-                        remainder = text[len(cached_text):].lstrip()
+                cached_text, prefetch, timing = cached
+                if text.startswith(cached_text):
+                    turns.set_tts_prewarm("hit", idx)
+                    remainder = text[len(cached_text):].lstrip()
 
-                        async def cached_audio():
-                            for frame in frames:
-                                yield frame
-                            if remainder:
-                                async for frame in tts_audio(plugin, remainder):
+                    async def cached_audio():
+                        try:
+                            pushed = False
+                            try:
+                                async for frame in prefetch.frames():
+                                    timing.frame()
+                                    pushed = True
                                     yield frame
+                            except Exception:  # noqa: BLE001 - an empty failed prefetch gets the ordinary synthesis path
+                                if pushed:
+                                    raise
+                            if not pushed:
+                                async for frame in tts_audio(plugin, text, timing=tts_timing(idx)):
+                                    yield frame
+                                return
+                            if remainder:
+                                async for frame in tts_audio(plugin, remainder, timing=tts_timing(idx)):
+                                    yield frame
+                        finally:
+                            prefetch.cancel()  # interruption closes the in-flight SSE request
 
-                        audio = cached_audio()
-                except Exception:  # noqa: BLE001 - prewarm errors are logged by the task callback; use normal synthesis
-                    pass
-            handle = session.say(text, audio=audio if audio is not None else tts_audio(plugin, text))
+                    audio = cached_audio()
+                else:
+                    prefetch.cancel()
+            handle = session.say(text, audio=audio if audio is not None else tts_audio(plugin, text, timing=tts_timing(idx)))
             await handle
             return not handle.interrupted and handle.exception() is None and state.speaking_count > before
 

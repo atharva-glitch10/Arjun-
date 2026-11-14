@@ -16,6 +16,8 @@ STAGES = (
     ("eos_to_final_ms", "EOS to final (STT)"),
     ("final_to_llm_first_token_ms", "Final to first safe LLM sentence"),
     ("llm_to_first_audio_ms", "First safe sentence to first audio"),
+    ("tts_first_chunk_ms", "TTS request to first SSE chunk"),
+    ("tts_first_frame_ms", "TTS request to first frame pushed"),
     ("eos_to_speaking_ms", "EOS to speaking (total)"),
 )
 DOMINANT_STAGES = STAGES[:3]
