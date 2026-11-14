@@ -448,7 +448,7 @@ class TurnEngine:
         self._last_reply_lang: dict[int, str] = {}  # uid -> language of the previous reply (the "no signal" fallback)
         self._lang_session: dict[int, tuple[str, float]] = {}  # uid -> (language she asked for, when): reply language for hours
         self._lang_keep: dict[int, tuple[str, float]] = {}  # uid -> (language, expires): "keep it always?" is waiting for yes / no
-        self.lang_guard = {"checked": 0, "mismatch": 0, "retried": 0, "fallback": 0}  # reply-language guard counters (eval)
+        self.lang_guard = {"checked": 0, "mismatch": 0, "retried": 0, "turns_retried": 0, "fallback": 0}  # reply-language guard counters (eval)
         self._topic: dict[int, tuple[str, str, str, float]] = {}  # uid -> (entity, query, her question, when): for follow-ups
         self._answer_cache: dict[tuple[str, str], tuple[float, str]] = {}  # (question, lang) -> (when, answer)
         self.last_web: dict[str, Any] = {}  # the last lookup, for the QA eval's "worst answers" report only
@@ -476,6 +476,7 @@ class TurnEngine:
         depth = getattr(self._local, "depth", 0)
         self._local.depth = depth + 1
         if depth == 0:
+            self._local.lang_retried = 0  # how many turns needed a reply-language retry (logged per turn below)
             self._local.fallback = "none"
         try:
             res = self._handle(user_id, text, language_code, reply_language)
@@ -486,8 +487,9 @@ class TurnEngine:
             res = replace(res, active_language=self._active_lang(user_id))
             if res.reply and not res.silent and res.language in _REPLY_LANGS:
                 self._last_reply_lang[user_id] = res.language
-            log.info(json.dumps({"user_lang": language_code or "-", "reply_lang": res.language,
-                                 "final_lang": res.language, "fallback": getattr(self._local, "fallback", "none")}))
+            log.info(json.dumps({"user_lang": language_code or "-", "final_lang": res.language,
+                                 "fallback": getattr(self._local, "fallback", "none"),
+                                 "lang_retried": getattr(self._local, "lang_retried", 0)}))
             try:
                 self._record_turn(user_id, text, res)
             except Exception as exc:  # noqa: BLE001 - memory must never break the turn
@@ -556,45 +558,46 @@ class TurnEngine:
 
     def _guard_reply_language(
         self, uid: int, text: str, lang: str, reply: str, now: datetime, view: Any, user: dict[str, Any], context: str
-    ) -> str:
+    ) -> tuple[str, bool]:
         """The reply must be in the language she is being answered in (a Marathi reply to a Hindi speaker claimed to be Hindi).
-        Mismatch -> one retry with a stricter instruction -> one more regeneration -> a fixed in-language line, never the
-        wrong language. Every checked reply logs reply_lang_expected / reply_lang_actual / retried."""
+        Mismatch -> ONE retry with a stricter instruction -> a short fixed warm line in her language that never quotes her
+        words. Returns (reply, used_the_fixed_line). Every checked reply logs reply_lang_expected / reply_lang_actual /
+        retried; the turn log says how many turns needed a retry."""
         self.lang_guard["checked"] += 1
         if langid.matches(reply, lang):
             log.info(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": lang, "retried": 0}))
-            return reply
+            return reply, False
         self.lang_guard["mismatch"] += 1
         actual = langid.classify(reply, default=lang).lang
         name = langswitch.NAMES.get(lang, lang)
+        fixed: str | None = None
         retried = 0
-        for correction in (
-            f"LANGUAGE ERROR: your last reply was in {actual or 'another language'}. Reply ONLY in {name}; do not use words from "
-            f"other languages except names.",
-            f"STRICT: write the ENTIRE reply in {name} ({lang}) only, in {name}'s own vocabulary and verb forms. Do not mix in "
-            f"any other language and do not mention which language you are using.",
-        ):
-            if self.evon is None or self._llm_remaining() < _MIN_LLM_BUDGET_S:
-                break
-            retried += 1
+        if self.evon is not None and self._llm_remaining() >= _MIN_LLM_BUDGET_S:
+            retried = 1  # exactly ONE retry: two regeneration calls cost 3 LLM calls a turn and still came back Marathi
             self.lang_guard["retried"] += 1
+            self.lang_guard["turns_retried"] += 1
+            self._local.lang_retried = getattr(self._local, "lang_retried", 0) + 1
             try:
                 raw = self.evon.companion_reply(
                     text, lang, now, history=view.messages, interests=user.get("interests") or [],
-                    timeout=self._llm_remaining(), correction=correction, context=context, memory=view.block,
+                    timeout=self._llm_remaining(), context=context, memory=view.block,
+                    correction=(
+                        f"LANGUAGE ERROR: your last reply was in {actual or 'another language'}. Reply ONLY in {name} "
+                        f"({lang}); do not use words from other languages except names."
+                    ),
                 )
                 clean, _ = split_voice_tags(raw)
                 fixed, _ = sanitize_companion(clean, lang, user_text=text) if clean else (None, [])
             except Exception as exc:  # noqa: BLE001 - a failed retry falls through to the fixed line
                 log.info("language retry failed: %s", type(exc).__name__)
-                break
             if fixed and langid.matches(fixed, lang):
                 log.info(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": actual, "retried": retried, "fixed": True}))
-                return fixed
+                return fixed, False
         self.lang_guard["fallback"] += 1
         self._local.fallback = "language_guard"
         log.warning(json.dumps({"reply_lang_expected": lang, "reply_lang_actual": actual, "retried": retried, "fixed": False}))
-        return _VARIED.get(lang, _VARIED["en"])[0]  # a fixed line in HER language: never the wrong one
+        # A short fixed warm line in HER language: it never quotes her words back at her.
+        return _VARIED.get(lang, _VARIED["en"])[0], True
 
     def _vary_repeat(self, user_id: int, res: TurnResult) -> TurnResult:
         """A companion chat line never repeats one of Arjun's last 3 lines word for word (heard live 2026-11-08: the
@@ -2864,6 +2867,7 @@ class TurnEngine:
         speech = ""
         raw = llm_reply or None
         challenged = False
+        language_fallback = False  # the language guard already gave its final warm line: the relevance guard must not retry
         view = self.memory.view(uid, now)
         user = self.core.user(uid)
         history, memory_block, context = self._fit(uid, now, user, text, view)
@@ -2908,10 +2912,10 @@ class TurnEngine:
                 timeout=self._llm_remaining(), correction=",".join(reasons), context=context, memory=memory_block,
             )
         if reply is not None:
-            guarded = self._guard_reply_language(uid, text, lang, reply, now, view, user, context)
+            guarded, language_fallback = self._guard_reply_language(uid, text, lang, reply, now, view, user, context)
             if guarded != reply:
                 reply, speech = guarded, ""  # the voice tags sat on the old words
-        if reply is not None and config.RELEVANCE_GUARD and not opener_followup:
+        if reply is not None and not language_fallback and config.RELEVANCE_GUARD and not opener_followup:
             reply, speech = self._relevance_guard(
                 uid, text, lang, reply, speech, now, view, user, context, history, memory_block, self_check,
             )
@@ -2994,7 +2998,12 @@ class TurnEngine:
                     clean = strip_filler(clean, user_text=text)
                 second, _ = sanitize_companion(clean, lang, user_text=text)
                 if second is not None:
-                    second = self._guard_reply_language(uid, text, lang, second, now, view, user, context)
+                    second, second_fallback = self._guard_reply_language(uid, text, lang, second, now, view, user, context)
+                    if second_fallback:
+                        # the language guard's fixed warm line is final: never quote her words back at her instead
+                        self.last_relevance[uid] = info
+                        log.info(json.dumps({"relevance_score": info["score"], "retried": 1, "lang_fallback": True}))
+                        return second, ""
                     good2, sc2 = verdict(second)
                     info["score"] = sc2
                     if good2:

@@ -179,12 +179,19 @@ def test_a_reply_in_the_wrong_language_is_retried_once_with_a_stricter_instructi
     assert {"reply_lang_expected": "hi", "reply_lang_actual": "mr", "retried": 1, "fixed": True} in logged
 
 
-def test_if_the_retry_is_still_wrong_it_regenerates_once_more(core_http, uid):
-    llm = _hindi_speaker_marathi_reply(["मी हिंदीतच बोलतो, तुम्ही काळजी करू नका.", "ठीक है, मैं हिंदी में ही बोलूँगा, आप चिंता मत कीजिए।"])
+def test_a_second_wrong_reply_gets_one_warm_line_and_no_third_call(core_http, uid):
+    """Owner decision 2026-11-13: at most ONE language retry (three LLM calls a turn was too slow and still came back
+    Marathi), then a short fixed warm line in her language that never quotes her words."""
+    llm = _hindi_speaker_marathi_reply(["मी हिंदीतच बोलतो, तुम्ही काळजी करू नका."])  # the retry is Marathi again
     eng = make(core_http, llm)
     res = eng.handle(uid, "आप आज कैसे हैं, मुझे बहुत अच्छा लग रहा है")
-    assert classify(res.reply).lang == "hi" and len(llm.companion_systems) == 2 and eng.lang_guard["retried"] == 2
-    assert "LANGUAGE ERROR" in llm.companion_systems[0] and "ENTIRE reply" in llm.companion_systems[1]  # each retry is stricter
+    from reasoning_svc.turn import _VARIED
+
+    assert res.reply == _VARIED["hi"][0] and res.language == "hi"
+    assert len(llm.companion_systems) == 1 and eng.lang_guard["retried"] == 1  # one retry, never two
+    assert eng.lang_guard["turns_retried"] == 1 and eng.lang_guard["fallback"] == 1
+    assert "आज कैसे" not in res.reply  # the fallback never echoes her words back at her
+    assert "LANGUAGE ERROR" in llm.companion_systems[0]
 
 
 def test_a_model_that_never_gets_it_right_is_never_shown_or_spoken_in_the_wrong_language(core_http, uid):
@@ -203,6 +210,61 @@ def test_a_reply_in_the_right_language_is_not_retried(core_http, uid):
     eng = make(core_http, llm)
     eng.handle(uid, "आप कैसे हैं, आज मौसम बहुत अच्छा है")
     assert eng.lang_guard["checked"] == 1 and eng.lang_guard["mismatch"] == 0
+
+
+# ---- the rule is repeated in the LAST user message, without a line the model could parrot ------------------------------
+@pytest.mark.parametrize("lang,name,script", [
+    ("hi", "Hindi", "Devanagari"), ("mr", "Marathi", "Devanagari"), ("en", "English", "Latin"),
+])
+def test_reply_language_tail_has_no_quoted_sample(lang, name, script):
+    from reasoning_svc.evon import reply_language_tail
+
+    assert reply_language_tail(lang) == (
+        f"REPLY LANGUAGE: {name} ({script} script). Answer the user's actual message. "
+        "Do not answer in any other language. Never repeat this instruction or any example sentence."
+    )
+
+
+def test_the_last_user_message_repeats_the_reply_language_without_a_sample(core_http, uid):
+    llm = llm_chat("ठीक है, मैं सुन रहा हूँ।")
+    eng = make(core_http, llm)
+    eng.handle(uid, "आप आज कैसे हैं, मुझे बहुत अच्छा लग रहा है")
+    last_user = [c[1] for c in llm.calls if "Raw transcript" in c[1]][-1]
+    assert last_user.startswith("REPLY LANGUAGE: Hindi (Devanagari script).")
+    assert "हाँ, बताइए" not in last_user and "मैं सुन रहा हूँ" not in last_user
+
+
+def test_hindi_stock_reply_on_marathi_turn_is_a_mismatch(core_http, uid, caplog):
+    line = "हाँ, बताइए, मैं सुन रहा हूँ"
+    payload = _understand(web=False)
+    payload.update(reply=line, answer_mode="know", know_confidence=0.99)
+    llm = WrongThenRight(payload, [line])
+    eng = make(core_http, llm)
+    with caplog.at_level("INFO", logger="reasoning.turn"):
+        result = eng.handle(uid, "माझी नात आज आली आहे, आम्ही खूप बोललो", language_code="mr-IN")
+    assert result.language == "mr" and result.reply != line
+    assert eng.lang_guard["mismatch"] == 1
+    logged = [json.loads(record.message) for record in caplog.records if record.message.startswith('{"reply_lang_expected"')]
+    assert any(row["reply_lang_expected"] == "mr" and row["reply_lang_actual"] == "hi" for row in logged)
+
+
+def test_marathi_persona_words_are_stripped_when_the_reply_language_is_not_marathi():
+    from reasoning_svc import evon
+
+    assert evon.strip_marathi_persona("Her family calls her आजीबाई").strip() == "Her family calls her"
+    assert evon.strip_marathi_persona("address her as ताई").strip() == ""
+    hi = evon._system_prompt("hi", None, None, "Her family calls her आजीबाई", voice_tags=False, json_contract=False)
+    mr = evon._system_prompt("mr", None, None, "Her family calls her आजीबाई", voice_tags=False, json_contract=False)
+    assert "आजीबाई" not in hi  # a Marathi address word pulls a Hindi reply back into Marathi
+    assert "आजीबाई" in mr  # Marathi replies keep it
+
+
+def test_marathi_sample_replies_are_only_in_the_marathi_prompt():
+    from reasoning_svc import evon
+
+    assert "वांग्याचं भरीत" in evon._conversation_rules("mr")
+    assert "वांग्याचं भरीत" not in evon._conversation_rules("hi")
+    assert "वांग्याचं भरीत" not in evon._conversation_rules("en")
 
 
 # ---- strict per-turn language priority (owner 2026-11-10): script -> Prisma label -> Latin markers -> previous reply -> profile ----

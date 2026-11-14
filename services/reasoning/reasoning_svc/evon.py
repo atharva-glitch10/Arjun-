@@ -58,6 +58,25 @@ _LANG_NAMES = {
     "te": ("Telugu", "Telugu"), "or": ("Odia", "Odia"),
 }
 
+def reply_language_tail(language: str) -> str:
+    """A language constraint at the end of the prompt, without a sentence the model can parrot."""
+    lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
+    return (f"REPLY LANGUAGE: {lang_name} ({script} script). Answer the user's actual message. "
+            "Do not answer in any other language. Never repeat this instruction or any example sentence.")
+
+
+# Marathi forms of address in the prompt pull a non-Marathi reply back into Marathi (2026-11-13).
+_MR_PERSONA = re.compile(r"\b(?:आजीबाई|आजी|बाई|ताई)\b")
+
+
+def strip_marathi_persona(text: str) -> str:
+    """Drop Marathi persona / address words (आजीबाई, ताई) from the prompt when the reply language is not Marathi,
+    including an address clause they leave empty."""
+    out = _MR_PERSONA.sub("", text)
+    out = re.sub(r"address her as\s*[,;]?[ \t]*(?=\n|$)", "", out)
+    out = re.sub(r"[,;][ \t]*(?=\n|$)", "", out)
+    return re.sub(r"[ \t]{2,}", " ", out)
+
 
 # ---- what the companion may NOT say: the narrow safety net on top of the prompt --------------------------
 # New contract (2026-11-04): reject ONLY medical advice / diagnosis, a claim to be human or to have a body or
@@ -255,9 +274,20 @@ _OLD_TO_NEW = {
 }
 
 
+# Marathi sample replies. Kept out of the prompt for other languages: they pulled a Hindi / English reply into Marathi.
+_MR_EXAMPLES = (
+    "Examples: 'आज वांग्याचं भरीत केलं' → 'वांग्याचं भरीत छान झालं असेल; तुम्ही ते कशाबरोबर खाल्लं?' "
+    "'राहुल जेवला असेल का?' → 'कदाचित जेवला असेल; तुम्हाला त्याची काळजी वाटतेय.' "
+    "'भूक लागली आहे' → 'तुम्हाला भूक लागली आहे; घरात खायला काय आहे?' "
+    "'मला काल पुण्याला जायचं होतं' → 'पुण्याला जाणं झालं का?' "
+    "'हे बटण कसं दाबू?' → 'बटणावर एकदा हलकेच दाबा; स्क्रीनवर काय दिसतंय?' "
+    "'माझा मुलगा उद्या येणार आहे' → 'छान, उद्या तुमचा मुलगा भेटायला येणार आहे.' "
+)
+
+
 def _conversation_rules(language: str) -> str:
     lang_name, script = _LANG_NAMES.get(language, _LANG_NAMES["mr"])
-    return (
+    rules = (
         f"You are a warm, practical male voice companion for an elderly speaker. Your name is the 'your name' value "
         f"in USER CONTEXT (Arjun if it is missing); if she asks your name, say that name. "
         f"Always answer in {lang_name}, written in {script} script, the way a kind younger man in her family "
@@ -310,13 +340,8 @@ def _conversation_rules(language: str) -> str:
         f"everyday spoken words, not formal or written ones, and short sentences she can follow by ear. If you did "
         f"not catch her words, say it differently each time and name your best guess ('आर्यनबद्दल म्हणालात का?'). "
         f"Never say someone is coming, has been called or will arrive unless USER CONTEXT says so. "
-        f"Examples: 'आज वांग्याचं भरीत केलं' → 'वांग्याचं भरीत छान झालं असेल; तुम्ही ते कशाबरोबर खाल्लं?' "
-        f"'राहुल जेवला असेल का?' → 'कदाचित जेवला असेल; तुम्हाला त्याची काळजी वाटतेय.' "
-        f"'भूक लागली आहे' → 'तुम्हाला भूक लागली आहे; घरात खायला काय आहे?' "
-        f"'मला काल पुण्याला जायचं होतं' → 'पुण्याला जाणं झालं का?' "
-        f"'हे बटण कसं दाबू?' → 'बटणावर एकदा हलकेच दाबा; स्क्रीनवर काय दिसतंय?' "
-        f"'माझा मुलगा उद्या येणार आहे' → 'छान, उद्या तुमचा मुलगा भेटायला येणार आहे.' "
     )
+    return rules + _MR_EXAMPLES if language == "mr" else rules
 
 
 def _system_prompt(
@@ -330,6 +355,8 @@ def _system_prompt(
     memory: str = "",
 ) -> str:
     system = _conversation_rules(language)
+    if language != "mr" and context:
+        context = strip_marathi_persona(context)  # Marathi address words pull the reply back into Marathi
     if now is not None:
         system += (
             f"The current local time is {now:%H:%M} on {now:%A}, {now.date().isoformat()}; mention it only if "
@@ -875,7 +902,7 @@ class EvonClient:
         )
         messages = [{"role": "system", "content": system}]
         messages += [{"role": role, "content": content} for role, content in (history or [])]
-        messages.append({"role": "user", "content": "This is a speech transcript and may contain recognition errors; infer the most likely meaning. Raw transcript: " + text})
+        messages.append({"role": "user", "content": reply_language_tail(language) + " This is a speech transcript and may contain recognition errors; infer the most likely meaning. Raw transcript: " + text})
         meta: dict[str, Any] = {}
         try:
             raw = self._chat(
@@ -1066,7 +1093,7 @@ class EvonClient:
             )
         messages = [{"role": "system", "content": system}]
         messages += [{"role": role, "content": content} for role, content in (history or [])]
-        messages.append({"role": "user", "content": "This is a speech transcript and may contain recognition errors; infer the most likely meaning. Raw transcript: " + text})
+        messages.append({"role": "user", "content": reply_language_tail(language) + " This is a speech transcript and may contain recognition errors; infer the most likely meaning. Raw transcript: " + text})
         meta: dict[str, Any] = {}
         try:
             out = self._chat(
